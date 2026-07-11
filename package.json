@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-37-version-display-uiux-base",
-  "version": "0.41.37",
+  "name": "beyond-os-v41-38-apple-style-light",
+  "version": "0.41.38",
   "private": true,
   "scripts": {
     "dev": "next dev",

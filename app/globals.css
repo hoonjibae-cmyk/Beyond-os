@@ -18131,3 +18131,176 @@ textarea,
 .kiosk-hold-history-actions{display:flex;align-items:center;gap:8px}.kiosk-hold-history-actions em{font-style:normal;font-size:12px;color:#7c7468;white-space:nowrap}
 @media(max-width:1000px){.kiosk-hold-period-head{grid-template-columns:28px minmax(0,1fr)}.kiosk-hold-period-summary{grid-column:1/-1;justify-content:flex-start;padding-left:40px}.kiosk-hold-student-group{grid-template-columns:28px minmax(0,1fr)}.kiosk-hold-student-group .kiosk-hold-actions{grid-column:1/-1}.kiosk-hold-history-item{grid-template-columns:1fr}.kiosk-hold-history-actions{justify-content:flex-end}}
 @media(max-width:700px){.kiosk-hold-period-summary{padding-left:0}.kiosk-hold-period-summary button{width:100%}.kiosk-hold-student-group .kiosk-hold-actions button{flex:1}.kiosk-hold-history-actions{justify-content:flex-start}}
+
+
+/* ============================================================
+   Beyond OS · Apple-style theme layer (v41-38, Light)
+   - 파일 맨 끝에 추가되는 "겉모습만" 오버라이드 레이어입니다.
+   - 기능/구조/상태 로직/DOM은 건드리지 않습니다.
+   - 되돌리려면 이 블록(APPLE THEME START ~ END)만 삭제하면 됩니다.
+   - 상태색 의미·우선순위 보존: 관리필요(빨강) > 결석(보라)/퇴실(회색) > 멘토링(파랑)
+   ============================================================ */
+/* APPLE THEME START */
+:root{
+  --ap-ground:#f5f5f7; --ap-surface:#ffffff; --ap-surface-2:#fbfbfd; --ap-surface-3:#f0f0f3;
+  --ap-text:#1d1d1f; --ap-text-2:#6e6e73; --ap-text-3:#8e8e93;
+  --ap-sep:rgba(0,0,0,.09); --ap-sep-strong:rgba(0,0,0,.16);
+  --ap-accent:#0071e3; --ap-accent-press:#0060c8; --ap-accent-tint:#e8f1fe;
+  --ap-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 22px rgba(0,0,0,.06);
+  --ap-shadow-sm:0 1px 2px rgba(0,0,0,.05),0 2px 6px rgba(0,0,0,.05);
+  --ap-bar:rgba(255,255,255,.72); --ap-side:rgba(246,246,248,.85);
+  --ap-r:15px; --ap-r-lg:20px; --ap-pill:980px;
+  /* 상태색 (애플 시스템 컬러) */
+  --ap-ok:#34c759; --ap-ok-fill:#e7f9ee; --ap-ok-text:#12813f;
+  --ap-away:#ffcc00; --ap-away-fill:#fff8e0; --ap-away-text:#7a5c00;
+  --ap-arrive:#c7c7cc; --ap-arrive-fill:#f4f4f6; --ap-arrive-text:#8a8a8f;
+  --ap-out:#8e8e93; --ap-out-fill:#e4e4e8; --ap-out-text:#5c5c62;
+  --ap-absent:#af52de; --ap-absent-fill:#f6ecfb; --ap-absent-text:#7d2fb0;
+  --ap-attn:#ff3b30; --ap-attn-fill:#ffece9; --ap-attn-text:#c4271d;
+  --ap-mentor:#0a84ff; --ap-mentor-fill:#e8f1ff; --ap-mentor-text:#0060c8;
+}
+body{ background:var(--ap-ground) !important; color:var(--ap-text) !important;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Pretendard,"Apple SD Gothic Neo","Malgun Gothic",sans-serif !important;
+  -webkit-font-smoothing:antialiased; }
+h1{ letter-spacing:-.022em; }
+h1,h2,h3{ color:var(--ap-text); }
+
+/* ── Sidebar (dark → light translucent) ── */
+.sidebar{ background:var(--ap-side) !important; color:var(--ap-text) !important;
+  border-right:1px solid var(--ap-sep) !important;
+  -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px); }
+.sidebar-brand{ border-bottom:1px solid var(--ap-sep) !important; }
+.sidebar-brand strong{ color:var(--ap-text) !important; letter-spacing:-.015em; }
+.sidebar-brand span{ color:var(--ap-text-3) !important; }
+.nav button{ color:var(--ap-text-2) !important; background:transparent !important; font-weight:560 !important; border-radius:9px !important; }
+.nav button:hover:not(.active){ background:rgba(120,120,128,.12) !important; color:var(--ap-text) !important; }
+.nav button.active{ background:var(--ap-surface) !important; color:var(--ap-text) !important; font-weight:680 !important; box-shadow:var(--ap-shadow-sm) !important; }
+
+/* ── Header + toolbar ── */
+.sub{ color:var(--ap-text-2) !important; }
+.toolbar button, .toggle-btn{ background:var(--ap-surface) !important; color:var(--ap-text) !important;
+  border:1px solid var(--ap-sep-strong) !important; border-radius:var(--ap-pill) !important; font-weight:600 !important; }
+.toolbar button:hover, .toggle-btn:hover{ background:var(--ap-surface-2) !important; }
+.utility-action.refresh{ border-radius:var(--ap-pill) !important; }
+
+/* ── Pills / version badge ── */
+.current-user-pill{ background:var(--ap-surface-2) !important; border:1px solid var(--ap-sep) !important; color:var(--ap-text-2) !important; font-weight:600 !important; }
+.sync-status-pill{ border-radius:var(--ap-pill) !important; }
+.sync-status-pill.synced{ background:var(--ap-ok-fill) !important; color:var(--ap-ok-text) !important; }
+.sync-status-pill.failed{ background:var(--ap-attn-fill) !important; color:var(--ap-attn-text) !important; }
+.app-version-badge{ background:var(--ap-accent-tint) !important; border:0 !important; color:var(--ap-accent-press) !important; }
+.app-version-badge::before{ background:var(--ap-accent) !important; }
+
+/* ── Content cards / tables ── */
+.summary-card, .content-card{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-radius:var(--ap-r) !important; box-shadow:var(--ap-shadow-sm) !important; }
+.summary-card span{ color:var(--ap-text-2) !important; }
+.content-card p{ color:var(--ap-text-2) !important; }
+.data-table th{ color:var(--ap-text-3) !important; }
+.data-table th, .data-table td{ border-bottom:1px solid var(--ap-sep) !important; }
+
+/* ── Map shell / seat map ── */
+.map-shell{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-radius:var(--ap-r-lg) !important; box-shadow:var(--ap-shadow) !important; }
+.brand{ color:var(--ap-text) !important; }
+.legend{ color:var(--ap-text-2) !important; }
+.seat-map{ background:
+    linear-gradient(90deg, var(--ap-sep) 1px, transparent 1px),
+    linear-gradient(var(--ap-sep) 1px, transparent 1px) !important;
+  background-size:38px 38px !important; border:1px solid var(--ap-sep) !important; border-radius:16px !important;
+  max-width:775px !important; aspect-ratio:775 / 600 !important; }
+.zone-label{ color:var(--ap-text-3) !important; font-weight:680 !important; }
+
+/* Seat tiles — 크게(위치는 데이터 기준, 크기만 CSS로 확대) */
+.seat{ width:92px !important; height:64px !important; border-radius:14px !important;
+  border:1px solid var(--ap-sep-strong) !important; background:var(--ap-surface) !important;
+  box-shadow:var(--ap-shadow-sm) !important; gap:2px; padding:6px 8px !important; justify-content:center !important; }
+.seat:hover{ box-shadow:0 8px 18px rgba(0,0,0,.12) !important; }
+.seat.selected{ outline:3px solid color-mix(in srgb, var(--ap-accent) 40%, transparent) !important; border-color:var(--ap-accent) !important; }
+.seat-no{ color:var(--ap-text) !important; }
+.seat-topline .seat-no{ font-size:16px !important; }
+.seat-topline i{ background:rgba(120,120,128,.16) !important; border:0 !important; color:var(--ap-text-2) !important; font-size:8px !important; font-weight:800 !important; }
+.student-name{ color:var(--ap-text-2) !important; }
+.seat-map-v4111 .student-name, .seat-map-v4112 .student-name{ font-size:12px !important; }
+.seat-live-mini{ color:var(--ap-text-3) !important; font-size:9px !important; }
+.seat::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--_sc,transparent); border-radius:14px 0 0 14px; }
+
+/* Seat status colors (의미 보존, 애플톤) */
+.seat.occupied{ --_sc:var(--ap-ok); background:var(--ap-ok-fill) !important; border-color:color-mix(in srgb,var(--ap-ok) 30%,var(--ap-sep)) !important; }
+.seat.occupied .student-name{ color:var(--ap-ok-text) !important; }
+.seat.away{ --_sc:var(--ap-away); background:var(--ap-away-fill) !important; border-color:color-mix(in srgb,var(--ap-away) 45%,var(--ap-sep)) !important; }
+.seat.away .student-name{ color:var(--ap-away-text) !important; }
+.seat.not_arrived{ --_sc:var(--ap-arrive); background:var(--ap-arrive-fill) !important; border:1px dashed var(--ap-sep-strong) !important; }
+.seat.not_arrived .seat-no, .seat.not_arrived .student-name{ color:var(--ap-arrive-text) !important; }
+.seat.out{ --_sc:var(--ap-out); background:var(--ap-out-fill) !important; border-color:color-mix(in srgb,var(--ap-out) 22%,var(--ap-sep)) !important; }
+.seat.out .seat-no, .seat.out .student-name, .seat.out .seat-live-mini{ color:var(--ap-out-text) !important; }
+.seat.absent{ --_sc:var(--ap-absent); background:var(--ap-absent-fill) !important; border-color:color-mix(in srgb,var(--ap-absent) 30%,var(--ap-sep)) !important; }
+/* 관리필요(빨강)는 기존 !important 규칙이 유지됨 + 스트라이프/링 보강 */
+.seat.needs_attention{ --_sc:var(--ap-attn); border-color:color-mix(in srgb,var(--ap-attn) 40%,var(--ap-sep)) !important; box-shadow:0 0 0 2px color-mix(in srgb,var(--ap-attn) 16%,transparent), var(--ap-shadow-sm) !important; }
+
+/* Legend chips */
+.chip{ border-radius:4px !important; }
+.occupied-chip{ background:var(--ap-ok) !important; border-color:var(--ap-ok) !important; }
+.away-chip{ background:var(--ap-away) !important; border-color:var(--ap-away) !important; }
+.out-chip{ background:var(--ap-out) !important; border-color:var(--ap-out) !important; }
+.absent-chip{ background:var(--ap-absent) !important; border-color:var(--ap-absent) !important; }
+.warning-chip{ background:var(--ap-attn) !important; border-color:var(--ap-attn) !important; }
+
+/* List view cards */
+.list-card{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-radius:var(--ap-r) !important; box-shadow:var(--ap-shadow-sm) !important; }
+.list-no{ background:var(--ap-surface-3) !important; border:1px solid var(--ap-sep) !important; color:var(--ap-text) !important; border-radius:12px !important; }
+.list-main span{ color:var(--ap-text-2) !important; }
+
+/* ── Right panel (dark → Apple light) ── */
+.panel{ background:var(--ap-surface-2) !important; color:var(--ap-text) !important; border-left:1px solid var(--ap-sep) !important; }
+.panel h2{ color:var(--ap-text) !important; letter-spacing:-.02em; }
+.muted{ color:var(--ap-text-2) !important; }
+.panel .info-card, .info-card{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-radius:var(--ap-r) !important; box-shadow:var(--ap-shadow-sm) !important; }
+.info-card h3{ color:var(--ap-text-3) !important; text-transform:uppercase; letter-spacing:.05em; font-size:12px !important; }
+.info-item span{ color:var(--ap-text-3) !important; }
+.info-item strong{ color:var(--ap-text) !important; }
+.field label{ color:var(--ap-text-2) !important; }
+.content-card .field label{ color:var(--ap-text-2) !important; }
+.hint{ color:var(--ap-text-3) !important; }
+.readonly-main-name, .pname{ color:var(--ap-text) !important; }
+.panel-guardian-title{ color:var(--ap-text-3) !important; }
+.history{ border-top:1px solid var(--ap-sep) !important; }
+.history-item{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-radius:12px !important; box-shadow:var(--ap-shadow-sm) !important; }
+
+/* ── Inputs (dark panel inputs → light) ── */
+input, select, textarea{ background:var(--ap-surface) !important; color:var(--ap-text) !important; border:1px solid var(--ap-sep-strong) !important; border-radius:11px !important; }
+input::placeholder, textarea::placeholder{ color:var(--ap-text-3) !important; }
+input:focus, select:focus, textarea:focus{ border-color:var(--ap-accent) !important; box-shadow:0 0 0 4px color-mix(in srgb, var(--ap-accent) 18%, transparent) !important; outline:none; }
+.content-card input, .content-card select, .content-card textarea{ background:var(--ap-surface) !important; color:var(--ap-text) !important; border-color:var(--ap-sep-strong) !important; }
+/* 더 특정한 다크 인풋들(오른쪽 패널·팝업·리포트) → 라이트 */
+.panel input, .panel select, .panel textarea,
+.panel textarea.report-preview-textarea,
+.mentor-comment-editor textarea,
+.activity-popup input, .activity-popup select, .activity-popup textarea,
+.schedule-popup input, .schedule-popup select, .schedule-popup textarea,
+.small-action-popup input, .small-action-popup select, .small-action-popup textarea,
+.rules-keywords-field textarea{
+  background:var(--ap-surface) !important; color:var(--ap-text) !important; border:1px solid var(--ap-sep-strong) !important;
+}
+.panel input::placeholder, .panel textarea::placeholder{ color:var(--ap-text-3) !important; }
+
+/* ── Buttons ── */
+.primary{ background:var(--ap-accent) !important; color:#fff !important; border-radius:11px !important; }
+.primary:hover{ background:var(--ap-accent-press) !important; }
+.secondary{ background:var(--ap-surface-3) !important; color:var(--ap-text) !important; border-radius:11px !important; }
+.danger{ background:var(--ap-attn) !important; color:#fff !important; border-radius:11px !important; }
+.btn-row button{ border-radius:11px !important; font-weight:640 !important; }
+
+/* 출결 상태 변경 버튼 (입실/외출/퇴실/결석) — 상태 점 색 */
+.status-btn{ border-radius:11px !important; font-weight:680 !important; border:1px solid var(--ap-sep-strong) !important; }
+.status-btn.occupied{ background:var(--ap-ok-fill) !important; color:var(--ap-ok-text) !important; border-color:color-mix(in srgb,var(--ap-ok) 32%,var(--ap-sep)) !important; }
+.status-btn.away{ background:var(--ap-away-fill) !important; color:var(--ap-away-text) !important; border-color:color-mix(in srgb,var(--ap-away) 45%,var(--ap-sep)) !important; }
+.status-btn.out{ background:var(--ap-out-fill) !important; color:var(--ap-out-text) !important; border-color:color-mix(in srgb,var(--ap-out) 24%,var(--ap-sep)) !important; }
+.status-btn.absent{ background:var(--ap-absent-fill) !important; color:var(--ap-absent-text) !important; border-color:color-mix(in srgb,var(--ap-absent) 30%,var(--ap-sep)) !important; }
+
+/* 퀵 칩(과목/학습상태 선택) */
+.quick-chip-row button{ background:var(--ap-surface) !important; color:var(--ap-text-2) !important; border:1px solid var(--ap-sep-strong) !important; border-radius:var(--ap-pill) !important; font-weight:560 !important; }
+.quick-chip-row button.active{ background:var(--ap-accent) !important; color:#fff !important; border-color:var(--ap-accent) !important; }
+
+/* PanelSection (details.info-card) 헤더 톤 */
+.panel-section.info-card{ background:var(--ap-surface) !important; }
+.panel-section > summary, details.panel-section summary{ color:var(--ap-text) !important; }
+/* APPLE THEME END */
