@@ -1,0 +1,16 @@
+{
+  "name": "beyond-os-v41-36-2-kiosk-break-hold-stability",
+  "version": "0.41.36-2",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.108.2",
+    "next": "16.2.9",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  }
+}
