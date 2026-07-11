@@ -8572,6 +8572,31 @@ button.danger {
   font-size: 12px;
   font-weight: 950;
 }
+/* v41-37 배포 버전 배지 (재배포 확인용) */
+.app-version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: #fff7e0;
+  border: 1px solid #f0d48a;
+  color: #7a5c00;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: .2px;
+  cursor: default;
+}
+.app-version-badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #f2b600;
+  flex: 0 0 auto;
+}
 .user-admin-actions {
   grid-template-columns: repeat(3, 1fr);
 }

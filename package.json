@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-36-2-kiosk-break-hold-stability",
-  "version": "0.41.36-2",
+  "name": "beyond-os-v41-37-version-display-uiux-base",
+  "version": "0.41.37",
   "private": true,
   "scripts": {
     "dev": "next dev",

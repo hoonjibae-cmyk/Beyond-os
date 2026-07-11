@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
-import { APP_VERSION_SUBTITLE } from '../lib/appVersion';
+import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
 
 const STUDY_STATUS_OPTIONS = ['인강', '문제풀이', '암기', '독서', '수면', '비학습'];
@@ -4698,6 +4698,7 @@ export default function Page() {
           <div>
             <h1>{allowedTabs.find(([key]) => key === activeTab)?.[1] || TABS.find(([key]) => key === activeTab)?.[1] || 'Beyond OS'}</h1>
             <div className="sub">{APP_VERSION_SUBTITLE}</div>
+            <span className="app-version-badge" title={`${APP_VERSION_NAME} · ${APP_VERSION_DESCRIPTION}`}>버전 {APP_VERSION}</span>
             <div className={`sync-status-pill ${syncStatus === 'failed' ? 'failed' : 'synced'}`}>{renderSyncStatusContent(syncStatus, lastSyncAt)}</div>
             <div className="current-user-pill">{currentUser?.displayName || '공용 관리자'} · {USER_ROLE_LABELS[currentUser?.role] || currentUser?.role || '관리자'} · 접근 {allowedTabs.length}개</div>
           </div>
