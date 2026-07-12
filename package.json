@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-39-patrol-mobile-fullscreen",
-  "version": "0.41.39",
+  "name": "beyond-os-v41-39-1-weekend-schedule-fallback-fix",
+  "version": "0.41.39-1",
   "private": true,
   "scripts": {
     "dev": "next dev",
