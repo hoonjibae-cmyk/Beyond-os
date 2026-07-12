@@ -18343,4 +18343,39 @@ body{ font-size:var(--fs-body) !important; line-height:var(--lh); }
 .current-user-pill, .sync-status-pill, .app-version-badge{ font-size:var(--fs-cap) !important; }
 /* 퀵 칩(과목/학습상태) */
 .quick-chip-row button{ font-size:var(--fs-label) !important; }
+
+/* ===========================================================
+   버튼 테두리 정리 — 두꺼운/진한 테두리를 얇고 연한 선으로 통일
+   =========================================================== */
+button{ border-width:1px !important; }
+.main button:not(.primary):not(.status-btn):not(.seat),
+.content-card button:not(.primary),
+.panel button:not(.primary):not(.status-btn):not(.seat),
+.toolbar button, .toggle-btn, .utility-action,
+.report-action-row button, .attention-history-actions button,
+.date-filter-grid button, .compact-actions button{
+  border-color: var(--ap-sep-strong) !important;
+}
+
+/* ===========================================================
+   관리주의 이력 탭 — 애플 톤 + 폰트 스케일 통일 (누락 보정)
+   =========================================================== */
+.attention-history-header h2{ font-size:var(--fs-h1) !important; }
+.attention-history-header p{ color:var(--ap-text-2) !important; font-weight:500 !important; font-size:var(--fs-body) !important; }
+.attention-history-mode-badge{ background:var(--ap-accent-tint) !important; border:0 !important; color:var(--ap-accent-press) !important; font-weight:700 !important; font-size:var(--fs-cap) !important; }
+.attention-history-toolbar{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-radius:var(--ap-r-lg) !important; }
+.attention-history-toolbar .date-filter-grid label{ color:var(--ap-text-2) !important; font-weight:600 !important; font-size:var(--fs-label) !important; }
+.attention-history-toolbar .date-filter-grid input,
+.attention-history-toolbar .date-filter-grid select{ background:var(--ap-surface) !important; color:var(--ap-text) !important; -webkit-text-fill-color:var(--ap-text) !important; border:1px solid var(--ap-sep-strong) !important; border-radius:11px !important; font-weight:500 !important; font-size:var(--fs-body) !important; }
+.attention-history-summary > div{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-radius:var(--ap-r) !important; box-shadow:var(--ap-shadow-sm) !important; }
+.attention-history-summary span{ color:var(--ap-text-3) !important; font-weight:560 !important; font-size:var(--fs-cap) !important; }
+.attention-history-summary strong{ font-size:var(--fs-data) !important; font-weight:680 !important; }
+.attention-history-card{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-radius:var(--ap-r) !important; box-shadow:var(--ap-shadow-sm) !important; }
+.attention-history-card.pending{ border-color:color-mix(in srgb,var(--ap-attn) 30%,var(--ap-sep)) !important; background:var(--ap-attn-fill) !important; }
+.attention-history-card.done{ border-color:color-mix(in srgb,var(--ap-ok) 25%,var(--ap-sep)) !important; }
+.attention-history-topline > strong{ font-size:var(--fs-sub) !important; font-weight:680 !important; }
+.attention-history-card h3{ font-size:var(--fs-sub) !important; font-weight:680 !important; }
+.attention-history-card p{ color:var(--ap-text-2) !important; font-weight:500 !important; font-size:var(--fs-body) !important; }
+.attention-history-meta span{ background:var(--ap-surface-2) !important; border:1px solid var(--ap-sep) !important; color:var(--ap-text-2) !important; font-weight:560 !important; font-size:var(--fs-cap) !important; }
+.attention-history-empty{ color:var(--ap-text-3) !important; }
 /* APPLE THEME END */
