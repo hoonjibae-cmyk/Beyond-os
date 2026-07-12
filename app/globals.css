@@ -18423,4 +18423,19 @@ button{ border-width:1px !important; }
 .toolbar.utility-toolbar .utility-label{ overflow:visible !important; text-overflow:clip !important; }
 .toolbar.utility-toolbar .utility-action:hover{ background:var(--ap-surface-2) !important; border-color:var(--ap-sep-strong) !important; }
 .toolbar.utility-toolbar .utility-icon{ color:var(--ap-text-2) !important; }
+
+/* ===========================================================
+   우측 컨트롤 패널 고정(데스크톱)
+   - 알림센터가 길어 좌석맵이 아래로 밀려도, 좌석 클릭 시 패널이 항상 시야에.
+   - 스크롤을 다시 올릴 필요 없이 바로 조작 가능.
+   =========================================================== */
+@media (min-width:1261px){
+  .app > .panel{
+    position:sticky !important;
+    top:0 !important;
+    align-self:start !important;
+    max-height:100vh !important;
+    overflow-y:auto !important;
+  }
+}
 /* APPLE THEME END */
