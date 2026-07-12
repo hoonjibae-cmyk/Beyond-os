@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-40-day-type-default-schedules",
-  "version": "0.41.40",
+  "name": "beyond-os-v41-40-1-schedules-tab-per-date-fix",
+  "version": "0.41.40-1",
   "private": true,
   "scripts": {
     "dev": "next dev",
