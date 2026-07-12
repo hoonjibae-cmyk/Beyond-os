@@ -18303,4 +18303,44 @@ input:focus, select:focus, textarea:focus{ border-color:var(--ap-accent) !import
 /* PanelSection (details.info-card) 헤더 톤 */
 .panel-section.info-card{ background:var(--ap-surface) !important; }
 .panel-section > summary, details.panel-section summary{ color:var(--ap-text) !important; }
+
+/* ===========================================================
+   Typography scale — 제각각인 폰트 크기를 일관 단계로 통일
+   (크기감은 기존과 비슷하게 유지, 들쭉날쭉한 값만 표준화)
+   단계: 대제목28 / 제목20 / 소제목16 / 본문14 / 라벨13 / 보조12 / 큰숫자24
+   =========================================================== */
+:root{
+  --fs-h1:28px; --fs-title:20px; --fs-sub:16px; --fs-body:14px;
+  --fs-label:13px; --fs-cap:12px; --fs-data:24px; --lh:1.5;
+}
+body{ font-size:var(--fs-body) !important; line-height:var(--lh); }
+/* 대제목 / 제목 */
+.main .header h1, .main h1{ font-size:var(--fs-h1) !important; }
+.panel h2, .content-card h2{ font-size:var(--fs-title) !important; }
+.content-card h3{ font-size:var(--fs-sub) !important; }
+/* 본문 / 부제 / 설명 */
+.sub{ font-size:var(--fs-label) !important; }
+.content-card p, .panel .muted, .muted{ font-size:var(--fs-body) !important; }
+/* 라벨 */
+.field label, .content-card .field label{ font-size:var(--fs-label) !important; }
+/* 보조/힌트/작은 글씨 */
+.hint{ font-size:var(--fs-cap) !important; }
+/* 섹션 소제목(패널 카드 h3)은 보조 라벨 톤 유지 */
+.panel .info-card h3, .info-card h3{ font-size:var(--fs-cap) !important; }
+/* 버튼류 */
+.toolbar button, .toggle-btn, .utility-action, .nav button,
+.primary, .secondary, .danger, .btn-row button, .status-btn{ font-size:var(--fs-body) !important; }
+/* 표 */
+.data-table{ font-size:var(--fs-label) !important; }
+.data-table th{ font-size:var(--fs-cap) !important; }
+/* 통계 카드 */
+.summary-card span{ font-size:var(--fs-cap) !important; }
+.summary-card strong{ font-size:var(--fs-data) !important; }
+/* 정보 항목 */
+.info-item span{ font-size:var(--fs-cap) !important; }
+.info-item strong{ font-size:var(--fs-body) !important; }
+/* pill / 배지 */
+.current-user-pill, .sync-status-pill, .app-version-badge{ font-size:var(--fs-cap) !important; }
+/* 퀵 칩(과목/학습상태) */
+.quick-chip-row button{ font-size:var(--fs-label) !important; }
 /* APPLE THEME END */
