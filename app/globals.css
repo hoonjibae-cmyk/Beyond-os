@@ -18397,4 +18397,25 @@ button{ border-width:1px !important; }
   .student-care-picker-student{ grid-column:1 / -1; }
   .student-care-picker-presets{ grid-column:1 / -1; }
 }
+
+/* ===========================================================
+   추가 보정
+   =========================================================== */
+/* 학생 기본정보 이름 박스: 다크(#0f0d0a) → 라이트 (검정+검정으로 안 보이던 문제) */
+.readonly-student-card .readonly-main-name{
+  background:var(--ap-surface-2) !important;
+  border:1px solid var(--ap-sep) !important;
+  color:var(--ap-text) !important;
+}
+/* 상단 유틸리티 툴바: 버튼 폭/여백을 줄여 '로그아웃'만 혼자 줄바꿈되지 않게 */
+.toolbar.utility-toolbar{ gap:6px !important; }
+.toolbar.utility-toolbar .utility-action{
+  min-width:0 !important; flex:0 0 auto !important; padding:8px 13px !important; border-radius:var(--ap-pill) !important;
+  border:1px solid var(--ap-sep-strong) !important; background:var(--ap-surface) !important;
+  color:var(--ap-text) !important; font-weight:620 !important; letter-spacing:0 !important;
+  box-shadow:var(--ap-shadow-sm) !important; overflow:visible !important;
+}
+.toolbar.utility-toolbar .utility-label{ overflow:visible !important; text-overflow:clip !important; }
+.toolbar.utility-toolbar .utility-action:hover{ background:var(--ap-surface-2) !important; border-color:var(--ap-sep-strong) !important; }
+.toolbar.utility-toolbar .utility-icon{ color:var(--ap-text-2) !important; }
 /* APPLE THEME END */

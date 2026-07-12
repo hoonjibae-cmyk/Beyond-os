@@ -11923,7 +11923,6 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
     <section className="student-care-page student-care-unified-page">
       <div className="content-card student-care-hero">
         <div>
-          <h2>출결·관리 이력</h2>
           <p>출결 현황, 오늘 학습멘토 코멘트, 누적 학생 관리 이력을 한 화면에서 이어서 확인합니다.</p>
         </div>
         <div className="student-care-selected-pill">
