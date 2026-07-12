@@ -1355,12 +1355,13 @@ function getDayOfWeekFromDateString(dateString = getKstDateString()) {
   return new Date(`${dateString}T12:00:00+09:00`).getUTCDay();
 }
 
-// 자동(기본) 시간표 폴백은 평일(월~금)에만 적용합니다.
-// 주말(토·일)은 개인 시간표가 '명시적으로' 저장된 경우에만 등원으로 처리하므로,
-// 평일 반복만 설정한 학생이 주말에 등원해야 하는 것으로 잘못 표시되지 않습니다.
+// 자동(기본) 시간표 폴백은 운영일(월~토)에 적용합니다. 일요일은 제외.
+// 일요일은 개인 시간표가 '명시적으로' 저장된 경우에만 등원으로 처리하므로,
+// 평일/토요일 반복만 설정한 학생이 일요일에 등원해야 하는 것으로 잘못 표시되지 않습니다.
+// (추후 설정 탭의 요일 유형별 시간표에서 운영 요일을 직접 지정하도록 개편 예정)
 function isDefaultAttendanceDay(dateString = getKstDateString()) {
   const dow = getDayOfWeekFromDateString(dateString);
-  return dow >= 1 && dow <= 5;
+  return dow >= 1 && dow <= 6;
 }
 
 function startOfWeek(dateString) {
