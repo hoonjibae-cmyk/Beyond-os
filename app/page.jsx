@@ -11931,6 +11931,47 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
         </div>
       </div>
 
+      <div className="content-card student-care-picker">
+        <div className="student-care-picker-head">
+          <strong>학생 선택</strong>
+          <span>먼저 학생과 조회 기간을 선택하세요. 선택하면 아래 두 영역에 함께 적용됩니다.</span>
+        </div>
+        <div className="student-care-picker-row">
+          <div className="field student-care-picker-student">
+            <label>학생</label>
+            <select
+              value={attendanceProps.studentFilter || ''}
+              onChange={(event) => {
+                const value = event.target.value;
+                attendanceProps.setStudentFilter?.(value);
+                if (value) attendanceProps.loadHistory?.(attendanceProps.start, attendanceProps.end, value);
+              }}
+            >
+              <option value="">학생을 선택하세요</option>
+              {(attendanceProps.students || []).map((student) => (
+                <option key={student.id} value={student.id}>
+                  {student.name} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>시작일</label>
+            <input type="date" value={attendanceProps.start || ''} onClick={(event) => event.target.showPicker?.()} onChange={(event) => { attendanceProps.setStart?.(event.target.value); if (attendanceProps.studentFilter) attendanceProps.loadHistory?.(event.target.value, attendanceProps.end, attendanceProps.studentFilter); }} />
+          </div>
+          <div className="field">
+            <label>종료일</label>
+            <input type="date" value={attendanceProps.end || ''} onClick={(event) => event.target.showPicker?.()} onChange={(event) => { attendanceProps.setEnd?.(event.target.value); if (attendanceProps.studentFilter) attendanceProps.loadHistory?.(attendanceProps.start, event.target.value, attendanceProps.studentFilter); }} />
+          </div>
+          <div className="student-care-picker-presets">
+            <button type="button" className="secondary" onClick={() => attendanceProps.setPreset?.('today')}>오늘</button>
+            <button type="button" className="secondary" onClick={() => attendanceProps.setPreset?.('week')}>이번 주</button>
+            <button type="button" className="secondary" onClick={() => attendanceProps.setPreset?.('month')}>이번 달</button>
+            <button type="button" className="primary" onClick={() => attendanceProps.loadHistory?.()} disabled={attendanceProps.loading || !attendanceProps.studentFilter}>{attendanceProps.loading ? '조회 중...' : '조회'}</button>
+          </div>
+        </div>
+      </div>
+
       <div className="content-card student-care-unified-guide">
         <div>
           <strong>통합 관리 화면</strong>

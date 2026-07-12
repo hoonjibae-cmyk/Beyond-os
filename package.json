@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-38-apple-style-light",
-  "version": "0.41.38",
+  "name": "beyond-os-v41-38-1-apple-style-light",
+  "version": "0.41.38-1",
   "private": true,
   "scripts": {
     "dev": "next dev",
