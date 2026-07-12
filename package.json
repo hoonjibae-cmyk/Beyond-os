@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-38-1-apple-style-light",
-  "version": "0.41.38-1",
+  "name": "beyond-os-v41-39-patrol-mobile-fullscreen",
+  "version": "0.41.39",
   "private": true,
   "scripts": {
     "dev": "next dev",

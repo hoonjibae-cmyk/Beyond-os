@@ -18438,4 +18438,60 @@ button{ border-width:1px !important; }
     overflow-y:auto !important;
   }
 }
+
+/* ===========================================================
+   순찰 모드 — 모바일/태블릿 전용 전체화면
+   - 순찰모드 ON + 화면폭<=1024px 이면 좌석맵+입력콘솔이 한 화면 오버레이로.
+   - 입력 콘솔은 하단 고정(항상 보임), 좌석맵은 화면폭에 맞게 축소(zoom).
+   - 데스크톱은 .patrol-shell가 투명 래퍼(display:contents)라 영향 없음.
+   =========================================================== */
+.patrol-shell{ display:contents; }
+.patrol-topbar{ display:none; }
+@media (max-width:1024px){
+  .patrol-shell.is-patrol{
+    display:flex !important; flex-direction:column; gap:8px;
+    position:fixed; inset:0; z-index:1000;
+    background:var(--ap-ground); height:100dvh; padding:10px;
+  }
+  body:has(.patrol-shell.is-patrol){ overflow:hidden; }
+  .patrol-shell.is-patrol .patrol-topbar{
+    display:flex; align-items:center; gap:10px; flex:0 0 auto; padding:4px 4px 2px;
+  }
+  .patrol-shell.is-patrol .patrol-topbar strong{ font-size:16px; font-weight:700; }
+  .patrol-shell.is-patrol .patrol-topbar span{ font-size:11.5px; color:var(--ap-text-2); flex:1 1 auto; line-height:1.35; }
+  .patrol-shell.is-patrol .patrol-close{
+    flex:0 0 auto; border:1px solid var(--ap-sep-strong) !important; background:var(--ap-surface) !important;
+    border-radius:var(--ap-pill) !important; padding:9px 15px !important; font-weight:660 !important; color:var(--ap-text) !important;
+  }
+  /* 좌석맵 영역: 남는 공간 채움 */
+  .patrol-shell.is-patrol .map-shell{
+    flex:1 1 auto; min-height:0; overflow:auto; margin:0 !important; padding:10px !important; border-radius:16px !important;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  /* 순찰에 불필요한 요소 숨겨 공간 확보 */
+  .patrol-shell.is-patrol .map-shell .map-head,
+  .patrol-shell.is-patrol .map-shell .seat-search-box{ display:none !important; }
+  /* 필터칩은 한 줄 컴팩트로 유지 */
+  .patrol-shell.is-patrol .dashboard-seat-controls{ margin:0 !important; flex:0 0 auto; }
+  .patrol-shell.is-patrol .seat-filter-row{ flex-wrap:nowrap; overflow-x:auto; gap:6px; padding-bottom:2px; }
+  .patrol-shell.is-patrol .seat-filter-row button{ white-space:nowrap; }
+  /* 좌석맵: 화면폭에 맞게 축소(zoom은 모바일 브라우저에서 레이아웃 크기까지 축소됨) */
+  .patrol-shell.is-patrol .seat-map-wrap{ flex:1 1 auto; min-height:0; overflow:auto; display:flex; justify-content:center; align-items:flex-start; }
+  .patrol-shell.is-patrol .seat-map{ zoom:0.92; }
+  /* 하단 입력 콘솔: 항상 보이도록 고정 */
+  .patrol-shell.is-patrol .quick-patrol-console{
+    flex:0 0 auto; margin:0 !important; max-height:44dvh; overflow:auto; border-radius:16px !important;
+  }
+  .patrol-shell.is-patrol .quick-patrol-head{ display:none; }
+}
+@media (max-width:820px){ .patrol-shell.is-patrol .seat-map{ zoom:0.64; } }
+@media (max-width:560px){
+  .patrol-shell.is-patrol .seat-map{ zoom:0.46; }
+  .patrol-shell.is-patrol .quick-patrol-console{ max-height:50dvh; }
+  /* 폰: 과목/학습상태 칩을 한 줄 가로 스크롤로 → 콘솔 높이 축소, 저장 버튼까지 한눈에 */
+  .patrol-shell.is-patrol .quick-chip-row{ flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; }
+  .patrol-shell.is-patrol .quick-chip-row button{ white-space:nowrap; flex:0 0 auto; }
+  .patrol-shell.is-patrol .quick-patrol-selectors{ gap:8px; }
+  .patrol-shell.is-patrol .quick-patrol-content-row{ gap:8px; }
+}
 /* APPLE THEME END */
