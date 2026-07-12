@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-45-schedule-management-polish",
-  "version": "0.41.45",
+  "name": "beyond-os-v41-45-1-blank-click-day-view",
+  "version": "0.41.45-1",
   "private": true,
   "scripts": {
     "dev": "next dev",

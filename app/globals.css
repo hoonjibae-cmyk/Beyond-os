@@ -18522,4 +18522,9 @@ button{ border-width:1px !important; }
 @media (max-width: 900px){
   .default-schedule-editor .schedule-window-row .time-grid{ grid-template-columns: 1fr 1fr !important; }
 }
+/* ─── v41-45.1: 주간/월별 공백 클릭 → 일별 보기 진입 ─── */
+.clickable-blank-day{ cursor: pointer; }
+.clickable-blank-day:hover{ border-color: #b9b3a6 !important; }
+button.month-summary-chip.month-chip-button{ display: block; width: 100%; text-align: left; cursor: pointer; border: 0; font: inherit; font-size: 12px; }
+button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* APPLE THEME END */
