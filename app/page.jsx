@@ -12463,7 +12463,6 @@ function AttentionTab({ apiFetch, students = [], scheduleAlerts = [], dismissedA
     <section className="content-card attention-history-page">
       <div className="attention-history-header">
         <div>
-          <h2>관리주의 이력</h2>
           <p>실시간 관리는 메인 대시보드의 빨간 좌석과 관리 포커스에서 처리하고, 이 화면에서는 처리 이력과 현재 미처리 항목을 조회합니다.</p>
         </div>
         <div className="attention-history-mode-badge">실시간 처리: 메인 대시보드</div>
