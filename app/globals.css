@@ -18527,4 +18527,9 @@ button{ border-width:1px !important; }
 .clickable-blank-day:hover{ border-color: #b9b3a6 !important; }
 button.month-summary-chip.month-chip-button{ display: block; width: 100%; text-align: left; cursor: pointer; border: 0; font: inherit; font-size: 12px; }
 button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
+/* ─── v41-46: 오늘 시간표 배지 색상 (부합=파랑 / 외출=금색 / 편차=주황 / 안내=중립) ─── */
+.today-schedule-line.match{ background:#12315c; color:#dbe9ff; border:1px solid #3f7ae0; }
+.today-schedule-line.break{ background:#47350b; color:#ffe6aa; border:1px solid #d99b1d; }
+.today-schedule-line.adjusted{ background:#4a2410; color:#ffd9b8; border:1px solid #e07b2e; }
+.today-schedule-line.info{ background:#2b2b2b; color:#e6e2d8; border:1px solid #5a544a; font-weight:700; }
 /* APPLE THEME END */

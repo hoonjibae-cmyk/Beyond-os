@@ -4557,37 +4557,76 @@ export default function Page() {
     }
   }
 
+  // 오늘 시간표를 배지(chip) 목록으로 요약합니다.
+  // - 기본 시간표와 부합하는 연속 차시는 하나의 파란색(match) 배지로 병합
+  // - 외출은 별도 배지(break) + 다른 색
+  // - 기본 등하원보다 늦게 오거나 일찍 가는 편차 구간은 별도 배지(adjusted) + 다른 색
   function getTodayScheduleSummary(studentId) {
+    if (!studentId) return [{ label: '배정된 학생이 없습니다.', kind: 'info' }];
     const schedule = (todaySchedules || []).find((item) => item.student_id === studentId);
-    if (!studentId) return ['배정된 학생이 없습니다.'];
+    if (!schedule) {
+      return [{ label: '오늘은 개인 시간표가 없습니다. (등원 예정 없음 · 학생 시간표 탭에서 추가)', kind: 'info' }];
+    }
 
     const scheduleDefaults = normalizeDefaultScheduleSettings(defaultSchedule);
     const start = schedule?.planned_check_in?.slice(0, 5) || scheduleDefaults.plannedCheckIn;
     const end = schedule?.planned_check_out?.slice(0, 5) || scheduleDefaults.plannedCheckOut;
+    const startMin = timeToMinutes(start);
+    const endMin = timeToMinutes(end);
+    const baseInMin = timeToMinutes(scheduleDefaults.plannedCheckIn);
+    const baseOutMin = timeToMinutes(scheduleDefaults.plannedCheckOut);
 
-    if (!schedule) {
-      return ['오늘은 개인 시간표가 없습니다. (등원 예정 없음 · 학생 시간표 탭에서 추가)'];
+    const rawBreaks = (todayScheduleBreaks || [])
+      .filter((item) => item.schedule_id === schedule.id);
+
+    const segments = getDefaultScheduleSegmentsExcludingBreaks(start, end, rawBreaks, defaultSchedule)
+      .map((seg) => ({ startMinute: seg.startMinute, endMinute: seg.endMinute, label: seg.label, kind: 'seg' }));
+
+    const breakItems = rawBreaks
+      .map((item) => ({
+        startMinute: timeToMinutes(item.leave_start),
+        endMinute: timeToMinutes(item.return_time),
+        reason: [item.reason, item.reason_detail].filter(Boolean).join(' · ') || '기타',
+        kind: 'break',
+      }))
+      .filter((item) => item.startMinute !== null && item.endMinute !== null && item.endMinute > item.startMinute);
+
+    // 학습 세그먼트 + 외출을 시간순으로 병합. 외출을 만나면 그 전까지의 연속 차시를 한 배지로 flush.
+    const events = [...segments, ...breakItems]
+      .sort((a, b) => a.startMinute - b.startMinute || (a.kind === 'break' ? 1 : -1));
+
+    const chips = [];
+    let run = [];
+    const flushRun = () => {
+      if (!run.length) return;
+      const first = run[0];
+      const last = run[run.length - 1];
+      const label = run.length === 1
+        ? `${minutesToTime(first.startMinute)}~${minutesToTime(first.endMinute)} ${first.label}`
+        : `${minutesToTime(first.startMinute)} ${first.label} ~ ${minutesToTime(last.endMinute)} ${last.label}`;
+      chips.push({ label, kind: 'match' });
+      run = [];
+    };
+    for (const ev of events) {
+      if (ev.kind === 'break') {
+        flushRun();
+        chips.push({ label: `${minutesToTime(ev.startMinute)}~${minutesToTime(ev.endMinute)} 외출_${ev.reason}`, kind: 'break' });
+      } else {
+        run.push(ev);
+      }
+    }
+    flushRun();
+
+    // 기본 등원보다 늦게 옴 / 기본 하원보다 일찍 감 → 편차 구간 배지
+    if (startMin !== null && baseInMin !== null && startMin > baseInMin) {
+      chips.unshift({ label: `${minutesToTime(baseInMin)}~${minutesToTime(startMin)} 늦은 등원`, kind: 'adjusted' });
+    }
+    if (endMin !== null && baseOutMin !== null && endMin < baseOutMin) {
+      chips.push({ label: `${minutesToTime(endMin)}~${minutesToTime(baseOutMin)} 이른 하원`, kind: 'adjusted' });
     }
 
-    const breaks = (todayScheduleBreaks || [])
-      .filter((item) => item.schedule_id === schedule.id)
-      .sort((a, b) => String(a.leave_start).localeCompare(String(b.leave_start)));
-
-    const periodLines = getDefaultScheduleSummaryLines(start, end, breaks, defaultSchedule);
-    if (!breaks.length) return periodLines;
-
-    const breakLines = breaks.map((item) => {
-      const leave = item.leave_start?.slice(0, 5);
-      const ret = item.return_time?.slice(0, 5);
-      const reason = [item.reason, item.reason_detail].filter(Boolean).join(' · ');
-      return leave && ret ? `${leave}~${ret} 외출_${reason || '기타'}` : null;
-    }).filter(Boolean);
-
-    return [...periodLines, ...breakLines].sort((a, b) => {
-      const aTime = a.slice(0, 5);
-      const bTime = b.slice(0, 5);
-      return aTime.localeCompare(bTime);
-    });
+    if (!chips.length) return [{ label: `${start}~${end} 등원 예정`, kind: 'match' }];
+    return chips;
   }
 
   if (!isLoggedIn) {
@@ -5100,9 +5139,9 @@ export default function Page() {
         </PanelSection>
 
         <PanelSection title="오늘 시간표" defaultMobileOpen={false} className="today-schedule-card">
-{getTodayScheduleSummary(form.studentId).map((line, index) => (
-            <div key={index} className={`today-schedule-line ${line.includes('외출_') ? 'break' : 'study'}`}>
-              {line}
+{getTodayScheduleSummary(form.studentId).map((chip, index) => (
+            <div key={index} className={`today-schedule-line ${chip.kind || 'info'}`}>
+              {chip.label}
             </div>
           ))}
         </PanelSection>

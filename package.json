@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-45-2-bulk-generate-to-settings",
-  "version": "0.41.45-2",
+  "name": "beyond-os-v41-46-today-schedule-badges",
+  "version": "0.41.46",
   "private": true,
   "scripts": {
     "dev": "next dev",
