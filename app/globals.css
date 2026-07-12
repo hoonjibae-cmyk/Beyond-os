@@ -18409,6 +18409,11 @@ button{ border-width:1px !important; }
 }
 /* 상단 유틸리티 툴바: 버튼 폭/여백을 줄여 '로그아웃'만 혼자 줄바꿈되지 않게 */
 .toolbar.utility-toolbar{ gap:6px !important; }
+/* 데스크톱: 공간이 부족하면 버튼 하나만 떨어지지 말고 툴바 전체가 한 줄로 내려가도록 */
+@media (min-width:1261px){
+  .header{ flex-wrap:wrap !important; row-gap:12px !important; }
+  .header > .toolbar.utility-toolbar{ flex-wrap:nowrap !important; margin-left:auto !important; }
+}
 .toolbar.utility-toolbar .utility-action{
   min-width:0 !important; flex:0 0 auto !important; padding:8px 13px !important; border-radius:var(--ap-pill) !important;
   border:1px solid var(--ap-sep-strong) !important; background:var(--ap-surface) !important;
