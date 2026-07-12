@@ -18498,4 +18498,16 @@ button{ border-width:1px !important; }
   .week-nav-btn{ flex-basis: 32px; }
   .base-date-nav{ flex-wrap: wrap; }
 }
+/* ─── v41-44: 날짜별 예외 운영 달력 + 반복 삭제 ─── */
+.override-calendar .calendar-day{ cursor: pointer; text-align: left; }
+.override-calendar .calendar-day.selected{ border-color: #3478f6 !important; box-shadow: 0 0 0 2px rgba(52,120,246,.22); }
+.override-calendar .calendar-day.overridden{ border-color: #d68b2e !important; }
+.override-controls{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.override-controls > strong{ font-size: 14px; }
+.delete-repeat-group{ display: flex; gap: 8px; align-items: center; margin-right: auto; flex-wrap: wrap; }
+.delete-repeat-group select, .delete-repeat-group input[type="date"]{ max-width: 150px; }
+@media (max-width: 900px){
+  .delete-repeat-group{ margin-right: 0; width: 100%; }
+  .override-controls{ align-items: flex-start; }
+}
 /* APPLE THEME END */

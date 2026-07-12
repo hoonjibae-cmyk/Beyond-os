@@ -4397,8 +4397,14 @@ export default function Page() {
 
   async function deleteActivitySchedule() {
     if (!activityPopup?.studentId || !activityPopup?.scheduleDate) return alert('학생/날짜 정보가 없습니다.');
+    const repeat = activityPopup.deleteRepeat || 'none';
+    const repeatUntil = activityPopup.deleteRepeatUntil || activityPopup.scheduleDate;
+    const repeatLabel = (REPEAT_OPTIONS.find(([value]) => value === repeat) || [])[1] || '반복 없음';
+    const rangeText = repeat === 'none'
+      ? `${activityPopup.scheduleDate} 개인 시간표를 삭제할까요?`
+      : `${activityPopup.scheduleDate}부터 ${repeatUntil}까지 (${repeatLabel}) 개인 시간표를 반복 삭제할까요?`;
     const confirmed = window.confirm(
-      `${activityPopup.studentName || '학생'} · ${activityPopup.scheduleDate} 개인 시간표를 삭제할까요?\n\n삭제하면 이 날짜는 빈 날(등원 예정 없음)이 되고, 결석/지각 판정 대상에서 제외됩니다.\n외출 일정도 함께 삭제됩니다.`
+      `${activityPopup.studentName || '학생'} · ${rangeText}\n\n삭제된 날짜는 빈 날(등원 예정 없음)이 되고, 결석/지각 판정 대상에서 제외됩니다.\n외출 일정도 함께 삭제됩니다.`
     );
     if (!confirmed) return;
 
@@ -4409,13 +4415,17 @@ export default function Page() {
         body: JSON.stringify({
           studentId: activityPopup.studentId,
           scheduleDate: activityPopup.scheduleDate,
+          repeat,
+          repeatUntil,
           studentName: activityPopup.studentName,
         }),
       });
       setActivityPopup(null);
       await loadSchedules();
       await loadDashboard({ silent: true, suppressChangeNotice: true });
-      setMessage(data.deleted ? `${activityPopup.scheduleDate} 개인 시간표 삭제 완료 (빈 날로 처리)` : (data.message || '삭제할 개인 시간표가 없습니다.'));
+      setMessage(data.deleted
+        ? `개인 시간표 ${data.deletedCount || 1}건 삭제 완료 (빈 날로 처리)`
+        : (data.message || '삭제할 개인 시간표가 없습니다.'));
     } catch (error) {
       setMessage(error.message);
     }
@@ -5697,7 +5707,7 @@ function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent }) {
 
 function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBreak, removeBreak, deletePopupSchedule }) {
   if (!popup) return null;
-  return <div className="modal-backdrop" onClick={() => setPopup(null)}><div className="activity-popup" onClick={(event) => event.stopPropagation()}><div className="popup-head"><div><h2>액티비티 블록 수정</h2><p>{popup.studentName} / {popup.studentInfo || '학생 정보 없음'} / {popup.scheduleDate}</p></div><button onClick={() => setPopup(null)}>닫기</button></div><div className="activity-popup-grid"><section className="activity-popup-card"><h3>기본 등하원 조정</h3><div className="student-fixed-name"><span>학생</span><strong>{popup.studentName}</strong></div><div className="time-grid"><div className="field"><label>날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.scheduleDate} onChange={(e) => setPopup({ ...popup, scheduleDate: e.target.value })} /></div><div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setPopup({ ...popup, parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div><div className="field"><label>예정 등원</label><TimeSelect value={popup.plannedCheckIn} onChange={(value) => setPopup({ ...popup, plannedCheckIn: value })} /></div><div className="field"><label>예정 하원</label><TimeSelect value={popup.plannedCheckOut} onChange={(value) => setPopup({ ...popup, plannedCheckOut: value })} /></div></div><div className="repeat-box"><h4>등하원 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.commuteRepeat} onChange={(e) => setPopup({ ...popup, commuteRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.commuteRepeatUntil} onChange={(e) => setPopup({ ...popup, commuteRepeatUntil: e.target.value })} /></div></div></div><div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote} onChange={(e) => setPopup({ ...popup, confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div><div className="field"><label>일정 메모</label><textarea value={popup.scheduleNote} onChange={(e) => setPopup({ ...popup, scheduleNote: e.target.value })} placeholder="예: 학교 행사로 10시 등원" /></div></section><section className="activity-popup-card"><h3>외출 일정 입력</h3>{(popup.breaks || []).map((item, index) => <div className="break-row" key={index}><div className="time-grid"><div className="field"><label>외출 시작</label><TimeSelect value={item.leaveStart} onChange={(value) => updateBreak(index, 'leaveStart', value)} /></div><div className="field"><label>복귀 예정</label><TimeSelect value={item.returnTime} onChange={(value) => updateBreak(index, 'returnTime', value)} /></div><div className="field"><label>외출 사유</label><select value={item.reason} onChange={(e) => updateBreak(index, 'reason', e.target.value)}>{BREAK_REASON_OPTIONS.map((reason) => <option key={reason}>{reason}</option>)}</select></div><div className="field"><label>상세 사유</label><input value={item.reasonDetail} onChange={(e) => updateBreak(index, 'reasonDetail', e.target.value)} placeholder="예: 고수학 특강" /></div></div><div className="field"><label>외출 메모</label><input value={item.breakNote} onChange={(e) => updateBreak(index, 'breakNote', e.target.value)} placeholder="예: 학부모 확인 완료" /></div><button className="danger" onClick={() => removeBreak(index)}>외출 항목 삭제</button></div>)}<button className="secondary add-break-button" onClick={addBreak}>외출 항목 추가</button><div className="repeat-box"><h4>외출 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.breakRepeat} onChange={(e) => setPopup({ ...popup, breakRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.breakRepeatUntil} onChange={(e) => setPopup({ ...popup, breakRepeatUntil: e.target.value })} /></div></div></div><div className="activity-preview"><strong>반영 후 액티비티 구조</strong><span>차시 구간은 설정 탭의 요일 유형별 기본 시간표 기준으로 표시되며, 외출과 겹치는 학습 구간은 자동으로 제외됩니다. 저장하면 이 날짜가 등원 예정으로 처리됩니다.</span></div></section></div><div className="popup-bottom-actions">{deletePopupSchedule ? <button className="danger" onClick={deletePopupSchedule}>이 날짜 개인 시간표 삭제</button> : null}<button className="secondary" onClick={() => setPopup(null)}>취소</button><button className="primary" onClick={savePopup}>확인 및 시간표 반영</button></div></div></div>;
+  return <div className="modal-backdrop" onClick={() => setPopup(null)}><div className="activity-popup" onClick={(event) => event.stopPropagation()}><div className="popup-head"><div><h2>액티비티 블록 수정</h2><p>{popup.studentName} / {popup.studentInfo || '학생 정보 없음'} / {popup.scheduleDate}</p></div><button onClick={() => setPopup(null)}>닫기</button></div><div className="activity-popup-grid"><section className="activity-popup-card"><h3>기본 등하원 조정</h3><div className="student-fixed-name"><span>학생</span><strong>{popup.studentName}</strong></div><div className="time-grid"><div className="field"><label>날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.scheduleDate} onChange={(e) => setPopup({ ...popup, scheduleDate: e.target.value })} /></div><div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setPopup({ ...popup, parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div><div className="field"><label>예정 등원</label><TimeSelect value={popup.plannedCheckIn} onChange={(value) => setPopup({ ...popup, plannedCheckIn: value })} /></div><div className="field"><label>예정 하원</label><TimeSelect value={popup.plannedCheckOut} onChange={(value) => setPopup({ ...popup, plannedCheckOut: value })} /></div></div><div className="repeat-box"><h4>등하원 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.commuteRepeat} onChange={(e) => setPopup({ ...popup, commuteRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.commuteRepeatUntil} onChange={(e) => setPopup({ ...popup, commuteRepeatUntil: e.target.value })} /></div></div></div><div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote} onChange={(e) => setPopup({ ...popup, confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div><div className="field"><label>일정 메모</label><textarea value={popup.scheduleNote} onChange={(e) => setPopup({ ...popup, scheduleNote: e.target.value })} placeholder="예: 학교 행사로 10시 등원" /></div></section><section className="activity-popup-card"><h3>외출 일정 입력</h3>{(popup.breaks || []).map((item, index) => <div className="break-row" key={index}><div className="time-grid"><div className="field"><label>외출 시작</label><TimeSelect value={item.leaveStart} onChange={(value) => updateBreak(index, 'leaveStart', value)} /></div><div className="field"><label>복귀 예정</label><TimeSelect value={item.returnTime} onChange={(value) => updateBreak(index, 'returnTime', value)} /></div><div className="field"><label>외출 사유</label><select value={item.reason} onChange={(e) => updateBreak(index, 'reason', e.target.value)}>{BREAK_REASON_OPTIONS.map((reason) => <option key={reason}>{reason}</option>)}</select></div><div className="field"><label>상세 사유</label><input value={item.reasonDetail} onChange={(e) => updateBreak(index, 'reasonDetail', e.target.value)} placeholder="예: 고수학 특강" /></div></div><div className="field"><label>외출 메모</label><input value={item.breakNote} onChange={(e) => updateBreak(index, 'breakNote', e.target.value)} placeholder="예: 학부모 확인 완료" /></div><button className="danger" onClick={() => removeBreak(index)}>외출 항목 삭제</button></div>)}<button className="secondary add-break-button" onClick={addBreak}>외출 항목 추가</button><div className="repeat-box"><h4>외출 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.breakRepeat} onChange={(e) => setPopup({ ...popup, breakRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.breakRepeatUntil} onChange={(e) => setPopup({ ...popup, breakRepeatUntil: e.target.value })} /></div></div></div><div className="activity-preview"><strong>반영 후 액티비티 구조</strong><span>차시 구간은 설정 탭의 요일 유형별 기본 시간표 기준으로 표시되며, 외출과 겹치는 학습 구간은 자동으로 제외됩니다. 저장하면 이 날짜가 등원 예정으로 처리됩니다.</span></div></section></div><div className="popup-bottom-actions">{deletePopupSchedule ? <div className="delete-repeat-group"><select value={popup.deleteRepeat || 'none'} onChange={(e) => setPopup({ ...popup, deleteRepeat: e.target.value })} title="삭제 반복">{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{value === 'none' ? '이 날짜만' : `${label} 삭제`}</option>)}</select>{(popup.deleteRepeat || 'none') !== 'none' ? <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.deleteRepeatUntil || popup.scheduleDate} onChange={(e) => setPopup({ ...popup, deleteRepeatUntil: e.target.value })} title="삭제 반복 종료일" /> : null}<button className="danger" onClick={deletePopupSchedule}>{(popup.deleteRepeat || 'none') !== 'none' ? '반복 삭제' : '이 날짜 삭제'}</button></div> : null}<button className="secondary" onClick={() => setPopup(null)}>취소</button><button className="primary" onClick={savePopup}>확인 및 시간표 반영</button></div></div></div>;
 }
 
 
@@ -15724,15 +15734,40 @@ function validateScheduleVariantDraft(variant = {}, dayLabel = '') {
 function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading }) {
   const [activeDayType, setActiveDayType] = useState('weekday');
   const [holidayInput, setHolidayInput] = useState('');
+  const [overrideBaseDate, setOverrideBaseDate] = useState(getKstDateString());
+  const [selectedOverrideDate, setSelectedOverrideDate] = useState('');
 
   const configDraft = defaultScheduleConfigDraft && defaultScheduleConfigDraft.variants
     ? defaultScheduleConfigDraft
     : normalizeDefaultScheduleConfig(defaultScheduleConfigDraft || DEFAULT_SCHEDULE_CONFIG);
   const variants = configDraft.variants || DEFAULT_SCHEDULE_CONFIG.variants;
   const holidays = Array.isArray(configDraft.holidays) ? configDraft.holidays : [];
+  const dateOverrides = configDraft.dateOverrides && typeof configDraft.dateOverrides === 'object' ? configDraft.dateOverrides : {};
   const variant = variants[activeDayType] || variants.weekday;
   const dayLabel = DEFAULT_SCHEDULE_DAY_TYPE_LABELS[activeDayType];
-  const todayDayType = getDayTypeForDate(configDraft, getKstDateString());
+
+  // 날짜별 예외 운영 달력 데이터
+  const overrideMonthDates = makeDateRange(startOfMonth(overrideBaseDate), endOfMonth(overrideBaseDate));
+  const overrideMonthLabel = overrideBaseDate.slice(0, 7).replace('-', '년 ') + '월';
+
+  function shiftOverrideMonth(direction) {
+    const d = new Date(`${startOfMonth(overrideBaseDate)}T00:00:00`);
+    d.setMonth(d.getMonth() + direction);
+    setOverrideBaseDate(getKstDateString(d));
+  }
+
+  function setDateOverride(date, dayType) {
+    if (!date) return;
+    const next = { ...dateOverrides };
+    if (!dayType) delete next[date];
+    else next[date] = dayType;
+    setDefaultScheduleConfigDraft({ ...configDraft, dateOverrides: next });
+  }
+
+  // dateOverrides를 제외한 '자동 판정' 유형 (지정 해제 시 돌아갈 값 안내용)
+  function getAutoDayType(date) {
+    return getDayTypeForDate({ holidays }, date);
+  }
 
   function updateVariant(nextVariant) {
     setDefaultScheduleConfigDraft({
@@ -15835,7 +15870,6 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
           >
             {DEFAULT_SCHEDULE_DAY_TYPE_LABELS[dt]}
             {variants[dt]?.enabled === false ? ' · 휴무' : ''}
-            {todayDayType === dt ? ' · 오늘' : ''}
           </button>
         ))}
       </div>
@@ -15956,6 +15990,64 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
             </span>
           )) : <span className="hint">등록된 공휴일이 없습니다.</span>}
         </div>
+      </div>
+
+      <div className="send-payload-preview default-schedule-editor">
+        <div className="send-payload-head">
+          <div>
+            <h3>날짜별 예외 운영 (달력)</h3>
+            <p>특정 날짜만 다른 요일 유형의 시간표로 운영할 때 사용합니다. 예: 평일인데 토요일 시간표로 운영. 날짜를 클릭해 유형을 지정하세요.</p>
+          </div>
+          <div className="planner-head-actions">
+            <button className="secondary section-action" onClick={() => shiftOverrideMonth(-1)}>◀ 지난달</button>
+            <strong style={{ alignSelf: 'center' }}>{overrideMonthLabel}</strong>
+            <button className="secondary section-action" onClick={() => shiftOverrideMonth(1)}>다음달 ▶</button>
+          </div>
+        </div>
+        <div className="calendar-grid month-grid month-calendar override-calendar">
+          {['일', '월', '화', '수', '목', '금', '토'].map((dowLabel) => <div key={`ov-dow-${dowLabel}`} className="month-weekday-head">{dowLabel}</div>)}
+          {Array.from({ length: overrideMonthDates.length ? getDayOfWeekFromDateString(overrideMonthDates[0]) : 0 }, (_, padIndex) => <div key={`ov-pad-${padIndex}`} className="month-pad-cell" aria-hidden="true" />)}
+          {overrideMonthDates.map((date) => {
+            const overriddenType = dateOverrides[date] || null;
+            const effectiveType = overriddenType || getAutoDayType(date);
+            return (
+              <button
+                key={date}
+                type="button"
+                className={`calendar-day override-day ${date === getKstDateString() ? 'today' : ''} ${selectedOverrideDate === date ? 'selected' : ''} ${overriddenType ? 'overridden' : ''}`}
+                onClick={() => setSelectedOverrideDate(date)}
+              >
+                <strong>{Number(date.slice(8))}일</strong>
+                <div className={`month-summary-chip ${overriddenType ? 'break' : ''}`}>{DEFAULT_SCHEDULE_DAY_TYPE_LABELS[effectiveType]}{overriddenType ? ' 지정' : ''}</div>
+              </button>
+            );
+          })}
+        </div>
+        {selectedOverrideDate ? (
+          <div className="override-controls">
+            <strong>{selectedOverrideDate}</strong>
+            <span className="hint" style={{ marginTop: 0 }}>
+              자동 판정: {DEFAULT_SCHEDULE_DAY_TYPE_LABELS[getAutoDayType(selectedOverrideDate)]}
+              {dateOverrides[selectedOverrideDate] ? ` → 현재 ${DEFAULT_SCHEDULE_DAY_TYPE_LABELS[dateOverrides[selectedOverrideDate]]} 시간표로 지정됨` : ''}
+            </span>
+            {DEFAULT_SCHEDULE_DAY_TYPES.map((dt) => (
+              <button key={`ov-set-${dt}`} className={`section-action ${dateOverrides[selectedOverrideDate] === dt ? 'primary' : 'secondary'}`} onClick={() => setDateOverride(selectedOverrideDate, dt)} disabled={defaultScheduleLoading}>{DEFAULT_SCHEDULE_DAY_TYPE_LABELS[dt]} 시간표로</button>
+            ))}
+            <button className="danger section-action" onClick={() => setDateOverride(selectedOverrideDate, null)} disabled={defaultScheduleLoading || !dateOverrides[selectedOverrideDate]}>지정 해제(자동)</button>
+          </div>
+        ) : (
+          <div className="hint">날짜를 클릭하면 해당 날짜의 운영 유형을 지정할 수 있습니다. 지정 후 상단의 &apos;기본 시간표 저장&apos;을 눌러야 적용됩니다.</div>
+        )}
+        {Object.keys(dateOverrides).length ? (
+          <div className="holiday-chip-list" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+            {Object.entries(dateOverrides).sort(([a], [b]) => a.localeCompare(b)).map(([date, dt]) => (
+              <span key={`ov-chip-${date}`} className="filter-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                {date} → {DEFAULT_SCHEDULE_DAY_TYPE_LABELS[dt]}
+                <button className="danger" style={{ padding: '0 6px', lineHeight: 1.4 }} onClick={() => setDateOverride(date, null)} disabled={defaultScheduleLoading}>×</button>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {allErrors.length ? (

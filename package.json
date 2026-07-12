@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-43-schedules-tab-ui-cleanup",
-  "version": "0.41.43",
+  "name": "beyond-os-v41-44-date-overrides-and-repeat-delete",
+  "version": "0.41.44",
   "private": true,
   "scripts": {
     "dev": "next dev",

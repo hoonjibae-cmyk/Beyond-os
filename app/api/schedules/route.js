@@ -221,8 +221,9 @@ export async function POST(request) {
   }
 }
 
-// 특정 날짜의 개인 시간표(등하원 조정 + 외출 일정)를 삭제합니다.
+// 개인 시간표(등하원 조정 + 외출 일정)를 삭제합니다.
 // v41-42부터 삭제하면 해당 날짜는 빈 날(등원 예정 없음)이 됩니다.
+// v41-44: 저장과 동일한 반복 옵션(repeat/repeatUntil)으로 여러 날짜를 한 번에 삭제할 수 있습니다.
 export async function DELETE(request) {
   if (!isAuthorized(request)) return unauthorizedResponse();
   try {
@@ -230,50 +231,62 @@ export async function DELETE(request) {
     const { searchParams } = new URL(request.url);
     const studentId = body.studentId || searchParams.get('studentId');
     const scheduleDate = body.scheduleDate || searchParams.get('scheduleDate');
+    const repeat = body.repeat || searchParams.get('repeat') || 'none';
+    const repeatUntil = body.repeatUntil || searchParams.get('repeatUntil') || scheduleDate;
 
     if (!studentId || !scheduleDate) {
       return Response.json({ error: 'studentId and scheduleDate are required' }, { status: 400 });
     }
 
+    const targetDates = expandDates(scheduleDate, repeat, repeatUntil);
     const supabase = getSupabaseAdmin();
-    const { data: schedule, error: findError } = await supabase
+    const { data: schedules, error: findError } = await supabase
       .from('student_daily_schedules')
       .select('*, students(name)')
       .eq('student_id', studentId)
-      .eq('schedule_date', scheduleDate)
-      .maybeSingle();
+      .in('schedule_date', targetDates);
     if (findError) throw findError;
 
-    if (!schedule) {
-      return Response.json({ deleted: false, message: '이 날짜에는 저장된 개인 시간표가 없습니다. (이미 빈 날)' });
+    if (!schedules?.length) {
+      return Response.json({
+        deleted: false,
+        deletedCount: 0,
+        message: repeat === 'none'
+          ? '이 날짜에는 저장된 개인 시간표가 없습니다. (이미 빈 날)'
+          : '선택한 반복 범위에 저장된 개인 시간표가 없습니다.',
+      });
     }
 
+    const scheduleIds = schedules.map((schedule) => schedule.id);
     const { error: breaksError } = await supabase
       .from('student_schedule_breaks')
       .delete()
-      .eq('schedule_id', schedule.id);
+      .in('schedule_id', scheduleIds);
     if (breaksError) throw breaksError;
 
     const { error: deleteError } = await supabase
       .from('student_daily_schedules')
       .delete()
-      .eq('id', schedule.id);
+      .in('id', scheduleIds);
     if (deleteError) throw deleteError;
 
+    const deletedDates = schedules.map((schedule) => schedule.schedule_date).sort();
     await writeUserActionLog(supabase, request, {
       actionType: 'schedule.delete',
       targetType: 'student_schedule',
-      targetId: schedule.id,
-      targetName: schedule.students?.name || body.studentName || studentId,
+      targetId: scheduleIds[0],
+      targetName: schedules[0]?.students?.name || body.studentName || studentId,
       payload: {
         studentId,
         scheduleDate,
-        plannedCheckIn: schedule.planned_check_in,
-        plannedCheckOut: schedule.planned_check_out,
+        repeat,
+        repeatUntil,
+        deletedDates,
+        deletedCount: scheduleIds.length,
       },
     });
 
-    return Response.json({ deleted: true, scheduleDate });
+    return Response.json({ deleted: true, deletedCount: scheduleIds.length, deletedDates, scheduleDate });
   } catch (error) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
   }
