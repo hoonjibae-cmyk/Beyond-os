@@ -1359,9 +1359,9 @@ function getDayOfWeekFromDateString(dateString = getKstDateString()) {
   return new Date(`${dateString}T12:00:00+09:00`).getUTCDay();
 }
 
-// 자동(기본) 시간표 폴백의 '운영일' 판정은 설정 탭의 요일 유형별 시간표
-// (평일/토요일/일요일/공휴일) 운영 토글에 따릅니다. 대시보드에서는 오늘 날짜로
-// resolve 된 defaultSchedule.operating 값을 그대로 사용합니다.
+// v41-42 이후: 등원 예정/출결 알림은 개인 시간표(student_daily_schedules)가
+// 저장된 날짜에만 발생합니다. 요일 유형별 운영/휴무 토글(defaultSchedule.operating)은
+// '일괄 생성' 대상 날짜만 통제할 뿐, 대시보드 알림 판정에는 관여하지 않습니다.
 
 function startOfWeek(dateString) {
   const d = new Date(`${dateString}T00:00:00`);
