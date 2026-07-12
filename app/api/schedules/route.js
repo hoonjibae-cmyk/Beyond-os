@@ -220,3 +220,61 @@ export async function POST(request) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
   }
 }
+
+// 특정 날짜의 개인 시간표(등하원 조정 + 외출 일정)를 삭제합니다.
+// 삭제하면 해당 날짜는 설정 탭의 요일 유형별 기본 시간표(운영일) 또는 휴무 처리로 돌아갑니다.
+export async function DELETE(request) {
+  if (!isAuthorized(request)) return unauthorizedResponse();
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { searchParams } = new URL(request.url);
+    const studentId = body.studentId || searchParams.get('studentId');
+    const scheduleDate = body.scheduleDate || searchParams.get('scheduleDate');
+
+    if (!studentId || !scheduleDate) {
+      return Response.json({ error: 'studentId and scheduleDate are required' }, { status: 400 });
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { data: schedule, error: findError } = await supabase
+      .from('student_daily_schedules')
+      .select('*, students(name)')
+      .eq('student_id', studentId)
+      .eq('schedule_date', scheduleDate)
+      .maybeSingle();
+    if (findError) throw findError;
+
+    if (!schedule) {
+      return Response.json({ deleted: false, message: '이 날짜에는 저장된 개인 시간표가 없습니다. (기본 시간표가 적용 중)' });
+    }
+
+    const { error: breaksError } = await supabase
+      .from('student_schedule_breaks')
+      .delete()
+      .eq('schedule_id', schedule.id);
+    if (breaksError) throw breaksError;
+
+    const { error: deleteError } = await supabase
+      .from('student_daily_schedules')
+      .delete()
+      .eq('id', schedule.id);
+    if (deleteError) throw deleteError;
+
+    await writeUserActionLog(supabase, request, {
+      actionType: 'schedule.delete',
+      targetType: 'student_schedule',
+      targetId: schedule.id,
+      targetName: schedule.students?.name || body.studentName || studentId,
+      payload: {
+        studentId,
+        scheduleDate,
+        plannedCheckIn: schedule.planned_check_in,
+        plannedCheckOut: schedule.planned_check_out,
+      },
+    });
+
+    return Response.json({ deleted: true, scheduleDate });
+  } catch (error) {
+    return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
+  }
+}

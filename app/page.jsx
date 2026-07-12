@@ -208,6 +208,7 @@ const ACTION_LOG_LABELS = {
   'student.deactivate': '학생 비활성화',
   'student.delete': '학생 삭제',
   'schedule.save': '학생 시간표 저장',
+  'schedule.delete': '학생 시간표 삭제',
   'daily_report.share_link': '데일리 공개 리포트 링크 생성',
   'weekly_report.share_link': '위클리 공개 리포트 링크 생성',
   'report_share_link.revoke': '공개 리포트 링크 비활성화',
@@ -4410,6 +4411,32 @@ export default function Page() {
     }
   }
 
+  async function deleteActivitySchedule() {
+    if (!activityPopup?.studentId || !activityPopup?.scheduleDate) return alert('학생/날짜 정보가 없습니다.');
+    const confirmed = window.confirm(
+      `${activityPopup.studentName || '학생'} · ${activityPopup.scheduleDate} 개인 시간표를 삭제할까요?\n\n삭제하면 이 날짜는 설정 탭의 기본 시간표(운영일) 또는 휴무 처리로 돌아갑니다.\n외출 일정도 함께 삭제됩니다.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setMessage('개인 시간표 삭제 중...');
+      const data = await apiFetch('/api/schedules', {
+        method: 'DELETE',
+        body: JSON.stringify({
+          studentId: activityPopup.studentId,
+          scheduleDate: activityPopup.scheduleDate,
+          studentName: activityPopup.studentName,
+        }),
+      });
+      setActivityPopup(null);
+      await loadSchedules();
+      await loadDashboard({ silent: true, suppressChangeNotice: true });
+      setMessage(data.deleted ? `${activityPopup.scheduleDate} 개인 시간표 삭제 완료 (기본 시간표로 복귀)` : (data.message || '삭제할 개인 시간표가 없습니다.'));
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
   function openStudentEditor(student = null) {
     if (student) {
       setStudentEditor({
@@ -4792,6 +4819,7 @@ export default function Page() {
               updateBreak={updateActivityPopupBreak}
               addBreak={addActivityPopupBreak}
               removeBreak={removeActivityPopupBreak}
+              deletePopupSchedule={deleteActivitySchedule}
             />
           </>
         ) : null}
@@ -5685,9 +5713,9 @@ function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent }) {
 
 
 
-function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBreak, removeBreak }) {
+function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBreak, removeBreak, deletePopupSchedule }) {
   if (!popup) return null;
-  return <div className="modal-backdrop" onClick={() => setPopup(null)}><div className="activity-popup" onClick={(event) => event.stopPropagation()}><div className="popup-head"><div><h2>액티비티 블록 수정</h2><p>{popup.studentName} / {popup.studentInfo || '학생 정보 없음'} / {popup.scheduleDate}</p></div><button onClick={() => setPopup(null)}>닫기</button></div><div className="activity-popup-grid"><section className="activity-popup-card"><h3>기본 등하원 조정</h3><div className="student-fixed-name"><span>학생</span><strong>{popup.studentName}</strong></div><div className="time-grid"><div className="field"><label>날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.scheduleDate} onChange={(e) => setPopup({ ...popup, scheduleDate: e.target.value })} /></div><div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setPopup({ ...popup, parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div><div className="field"><label>예정 등원</label><TimeSelect value={popup.plannedCheckIn} onChange={(value) => setPopup({ ...popup, plannedCheckIn: value })} /></div><div className="field"><label>예정 하원</label><TimeSelect value={popup.plannedCheckOut} onChange={(value) => setPopup({ ...popup, plannedCheckOut: value })} /></div></div><div className="repeat-box"><h4>등하원 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.commuteRepeat} onChange={(e) => setPopup({ ...popup, commuteRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.commuteRepeatUntil} onChange={(e) => setPopup({ ...popup, commuteRepeatUntil: e.target.value })} /></div></div></div><div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote} onChange={(e) => setPopup({ ...popup, confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div><div className="field"><label>일정 메모</label><textarea value={popup.scheduleNote} onChange={(e) => setPopup({ ...popup, scheduleNote: e.target.value })} placeholder="예: 학교 행사로 10시 등원" /></div></section><section className="activity-popup-card"><h3>외출 일정 입력</h3>{(popup.breaks || []).map((item, index) => <div className="break-row" key={index}><div className="time-grid"><div className="field"><label>외출 시작</label><TimeSelect value={item.leaveStart} onChange={(value) => updateBreak(index, 'leaveStart', value)} /></div><div className="field"><label>복귀 예정</label><TimeSelect value={item.returnTime} onChange={(value) => updateBreak(index, 'returnTime', value)} /></div><div className="field"><label>외출 사유</label><select value={item.reason} onChange={(e) => updateBreak(index, 'reason', e.target.value)}>{BREAK_REASON_OPTIONS.map((reason) => <option key={reason}>{reason}</option>)}</select></div><div className="field"><label>상세 사유</label><input value={item.reasonDetail} onChange={(e) => updateBreak(index, 'reasonDetail', e.target.value)} placeholder="예: 고수학 특강" /></div></div><div className="field"><label>외출 메모</label><input value={item.breakNote} onChange={(e) => updateBreak(index, 'breakNote', e.target.value)} placeholder="예: 학부모 확인 완료" /></div><button className="danger" onClick={() => removeBreak(index)}>외출 항목 삭제</button></div>)}<button className="secondary add-break-button" onClick={addBreak}>외출 항목 추가</button><div className="repeat-box"><h4>외출 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.breakRepeat} onChange={(e) => setPopup({ ...popup, breakRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.breakRepeatUntil} onChange={(e) => setPopup({ ...popup, breakRepeatUntil: e.target.value })} /></div></div></div><div className="activity-preview"><strong>반영 후 액티비티 구조</strong><span>기본 시간표는 설정 탭의 기본 시간표 기준으로 표시되며, 외출과 겹치는 학습 구간은 자동으로 제외됩니다.</span></div></section></div><div className="popup-bottom-actions"><button className="secondary" onClick={() => setPopup(null)}>취소</button><button className="primary" onClick={savePopup}>확인 및 시간표 반영</button></div></div></div>;
+  return <div className="modal-backdrop" onClick={() => setPopup(null)}><div className="activity-popup" onClick={(event) => event.stopPropagation()}><div className="popup-head"><div><h2>액티비티 블록 수정</h2><p>{popup.studentName} / {popup.studentInfo || '학생 정보 없음'} / {popup.scheduleDate}</p></div><button onClick={() => setPopup(null)}>닫기</button></div><div className="activity-popup-grid"><section className="activity-popup-card"><h3>기본 등하원 조정</h3><div className="student-fixed-name"><span>학생</span><strong>{popup.studentName}</strong></div><div className="time-grid"><div className="field"><label>날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.scheduleDate} onChange={(e) => setPopup({ ...popup, scheduleDate: e.target.value })} /></div><div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setPopup({ ...popup, parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div><div className="field"><label>예정 등원</label><TimeSelect value={popup.plannedCheckIn} onChange={(value) => setPopup({ ...popup, plannedCheckIn: value })} /></div><div className="field"><label>예정 하원</label><TimeSelect value={popup.plannedCheckOut} onChange={(value) => setPopup({ ...popup, plannedCheckOut: value })} /></div></div><div className="repeat-box"><h4>등하원 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.commuteRepeat} onChange={(e) => setPopup({ ...popup, commuteRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.commuteRepeatUntil} onChange={(e) => setPopup({ ...popup, commuteRepeatUntil: e.target.value })} /></div></div></div><div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote} onChange={(e) => setPopup({ ...popup, confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div><div className="field"><label>일정 메모</label><textarea value={popup.scheduleNote} onChange={(e) => setPopup({ ...popup, scheduleNote: e.target.value })} placeholder="예: 학교 행사로 10시 등원" /></div></section><section className="activity-popup-card"><h3>외출 일정 입력</h3>{(popup.breaks || []).map((item, index) => <div className="break-row" key={index}><div className="time-grid"><div className="field"><label>외출 시작</label><TimeSelect value={item.leaveStart} onChange={(value) => updateBreak(index, 'leaveStart', value)} /></div><div className="field"><label>복귀 예정</label><TimeSelect value={item.returnTime} onChange={(value) => updateBreak(index, 'returnTime', value)} /></div><div className="field"><label>외출 사유</label><select value={item.reason} onChange={(e) => updateBreak(index, 'reason', e.target.value)}>{BREAK_REASON_OPTIONS.map((reason) => <option key={reason}>{reason}</option>)}</select></div><div className="field"><label>상세 사유</label><input value={item.reasonDetail} onChange={(e) => updateBreak(index, 'reasonDetail', e.target.value)} placeholder="예: 고수학 특강" /></div></div><div className="field"><label>외출 메모</label><input value={item.breakNote} onChange={(e) => updateBreak(index, 'breakNote', e.target.value)} placeholder="예: 학부모 확인 완료" /></div><button className="danger" onClick={() => removeBreak(index)}>외출 항목 삭제</button></div>)}<button className="secondary add-break-button" onClick={addBreak}>외출 항목 추가</button><div className="repeat-box"><h4>외출 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.breakRepeat} onChange={(e) => setPopup({ ...popup, breakRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.breakRepeatUntil} onChange={(e) => setPopup({ ...popup, breakRepeatUntil: e.target.value })} /></div></div></div><div className="activity-preview"><strong>반영 후 액티비티 구조</strong><span>기본 시간표는 설정 탭의 기본 시간표 기준으로 표시되며, 외출과 겹치는 학습 구간은 자동으로 제외됩니다.</span></div></section></div><div className="popup-bottom-actions">{deletePopupSchedule ? <button className="danger" onClick={deletePopupSchedule}>이 날짜 개인 시간표 삭제</button> : null}<button className="secondary" onClick={() => setPopup(null)}>취소</button><button className="primary" onClick={savePopup}>확인 및 시간표 반영</button></div></div></div>;
 }
 
 

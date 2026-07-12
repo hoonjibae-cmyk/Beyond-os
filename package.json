@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-40-1-schedules-tab-per-date-fix",
-  "version": "0.41.40-1",
+  "name": "beyond-os-v41-41-personal-schedule-delete",
+  "version": "0.41.41",
   "private": true,
   "scripts": {
     "dev": "next dev",
