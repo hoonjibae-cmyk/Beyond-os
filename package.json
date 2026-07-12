@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-46-today-schedule-badges",
-  "version": "0.41.46",
+  "name": "beyond-os-v41-47-today-badges-apple-two-tone",
+  "version": "0.41.47",
   "private": true,
   "scripts": {
     "dev": "next dev",
