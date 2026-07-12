@@ -6685,7 +6685,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
             <h3>순찰 퀵체크</h3>
             <p>좌석 카드에서 여러 학생을 선택해 같은 과목/학습상태를 한 번에 저장합니다.</p>
           </div>
-          <button type="button" className={quickMode ? 'primary' : 'secondary'} onClick={toggleQuickMode}>{quickMode ? '순찰 모드 ON' : '순찰 모드 켜기'}</button>
+          <button type="button" className={quickMode ? 'primary' : 'secondary'} onClick={toggleQuickMode}>{quickMode ? '순찰 모드 종료' : '순찰 모드 켜기'}</button>
         </div>
         {quickMode ? (
           <div className="quick-patrol-body">
