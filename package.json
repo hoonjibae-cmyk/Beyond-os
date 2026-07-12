@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-44-date-overrides-and-repeat-delete",
-  "version": "0.41.44",
+  "name": "beyond-os-v41-45-schedule-management-polish",
+  "version": "0.41.45",
   "private": true,
   "scripts": {
     "dev": "next dev",

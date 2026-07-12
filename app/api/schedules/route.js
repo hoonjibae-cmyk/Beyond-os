@@ -231,29 +231,43 @@ export async function DELETE(request) {
     const { searchParams } = new URL(request.url);
     const studentId = body.studentId || searchParams.get('studentId');
     const scheduleDate = body.scheduleDate || searchParams.get('scheduleDate');
+    // mode: 'single'(기본, repeat 지원) | 'from'(fromDate 이후 전부) | 'all'(전체 기간)
+    const mode = body.mode || searchParams.get('mode') || 'single';
     const repeat = body.repeat || searchParams.get('repeat') || 'none';
     const repeatUntil = body.repeatUntil || searchParams.get('repeatUntil') || scheduleDate;
+    const fromDate = body.fromDate || searchParams.get('fromDate') || scheduleDate;
 
-    if (!studentId || !scheduleDate) {
-      return Response.json({ error: 'studentId and scheduleDate are required' }, { status: 400 });
+    if (!studentId) {
+      return Response.json({ error: 'studentId is required' }, { status: 400 });
+    }
+    if (mode === 'single' && !scheduleDate) {
+      return Response.json({ error: 'scheduleDate is required' }, { status: 400 });
+    }
+    if (mode === 'from' && !fromDate) {
+      return Response.json({ error: 'fromDate is required' }, { status: 400 });
     }
 
-    const targetDates = expandDates(scheduleDate, repeat, repeatUntil);
     const supabase = getSupabaseAdmin();
-    const { data: schedules, error: findError } = await supabase
+    let findQuery = supabase
       .from('student_daily_schedules')
       .select('*, students(name)')
-      .eq('student_id', studentId)
-      .in('schedule_date', targetDates);
+      .eq('student_id', studentId);
+    if (mode === 'from') findQuery = findQuery.gte('schedule_date', fromDate);
+    else if (mode !== 'all') findQuery = findQuery.in('schedule_date', expandDates(scheduleDate, repeat, repeatUntil));
+    const { data: schedules, error: findError } = await findQuery;
     if (findError) throw findError;
 
     if (!schedules?.length) {
       return Response.json({
         deleted: false,
         deletedCount: 0,
-        message: repeat === 'none'
-          ? '이 날짜에는 저장된 개인 시간표가 없습니다. (이미 빈 날)'
-          : '선택한 반복 범위에 저장된 개인 시간표가 없습니다.',
+        message: mode === 'all'
+          ? '저장된 개인 시간표가 없습니다.'
+          : mode === 'from'
+            ? `${fromDate} 이후에 저장된 개인 시간표가 없습니다.`
+            : repeat === 'none'
+              ? '이 날짜에는 저장된 개인 시간표가 없습니다. (이미 빈 날)'
+              : '선택한 반복 범위에 저장된 개인 시간표가 없습니다.',
       });
     }
 
@@ -278,7 +292,9 @@ export async function DELETE(request) {
       targetName: schedules[0]?.students?.name || body.studentName || studentId,
       payload: {
         studentId,
+        mode,
         scheduleDate,
+        fromDate: mode === 'from' ? fromDate : undefined,
         repeat,
         repeatUntil,
         deletedDates,

@@ -18510,4 +18510,16 @@ button{ border-width:1px !important; }
   .delete-repeat-group{ margin-right: 0; width: 100%; }
   .override-controls{ align-items: flex-start; }
 }
+/* ─── v41-45: 타임라인 라벨 잘림 수정 + 설정 구간 1열 배치 + 학생 시간표 일괄 삭제 ─── */
+/* 1) 일별 타임라인: 첫(오전 9시)/끝(오후 11시) 시간 라벨이 overflow에 잘리지 않도록 고정 */
+.timeline-hour-labels > div:first-child{ transform: translateY(2px) !important; }
+.timeline-hour-labels > div:last-child{ transform: translateY(-18px) !important; }
+/* 2) 기본 시간표 설정: 구간명/시작/종료/인정시간을 데스크탑에서 한 줄 4칸 배치 */
+.default-schedule-editor .schedule-window-row .time-grid{ grid-template-columns: repeat(4, minmax(0, 1fr)) !important; align-items: end; }
+/* 4) 학생 시간표 일괄 삭제 박스 */
+.student-schedule-purge-box{ border-color: #f0c9c9 !important; }
+.student-schedule-purge-box h4{ color: #b23b3b; }
+@media (max-width: 900px){
+  .default-schedule-editor .schedule-window-row .time-grid{ grid-template-columns: 1fr 1fr !important; }
+}
 /* APPLE THEME END */
