@@ -18476,4 +18476,26 @@ button{ border-width:1px !important; }
   .patrol-shell.is-patrol .quick-chip-row{ flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; }
   .patrol-shell.is-patrol .quick-chip-row button{ white-space:nowrap; flex:0 0 auto; }
 }
+/* ─── v41-43: 학생 시간표 탭 UI 정리 ─── */
+/* 1) 일괄 생성 폼: 시작일/종료일/대상/실행 버튼을 1열 배치 */
+.bulk-generate-box .time-grid{ grid-template-columns: repeat(4, minmax(0, 1fr)) !important; align-items: end; }
+/* 2) 기준 날짜 이전/다음 이동 버튼 */
+.base-date-nav{ display: flex; align-items: flex-end; gap: 8px; }
+.base-date-nav .field{ margin-bottom: 0; }
+.base-date-nav > button{ white-space: nowrap; margin-bottom: 2px; }
+/* 2) 주간 시간표 좌우 화살표 */
+.week-nav-wrap{ display: flex; gap: 10px; align-items: stretch; }
+.week-nav-wrap .week-activity-grid{ flex: 1 1 auto; min-width: 0; }
+.week-nav-btn{ flex: 0 0 40px; border-radius: 14px !important; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+/* 3) 월별: 요일 헤더(일~토)를 갖춘 달력 배치 */
+.month-weekday-head{ text-align: center; font-weight: 800; font-size: 12px; color: #8a8f98; padding: 6px 0 2px; }
+.month-calendar .month-weekday-head:first-child{ color: #d64545; }
+.month-calendar .month-weekday-head:nth-child(7){ color: #3478f6; }
+.month-pad-cell{ background: transparent; border: none; min-height: 10px; }
+@media (max-width: 900px){
+  .bulk-generate-box .time-grid{ grid-template-columns: 1fr 1fr !important; }
+  .month-weekday-head, .month-pad-cell{ display: none; }
+  .week-nav-btn{ flex-basis: 32px; }
+  .base-date-nav{ flex-wrap: wrap; }
+}
 /* APPLE THEME END */

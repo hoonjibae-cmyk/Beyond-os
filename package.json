@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-42-explicit-schedules-only",
-  "version": "0.41.42",
+  "name": "beyond-os-v41-43-schedules-tab-ui-cleanup",
+  "version": "0.41.43",
   "private": true,
   "scripts": {
     "dev": "next dev",
