@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-45-1-blank-click-day-view",
-  "version": "0.41.45-1",
+  "name": "beyond-os-v41-45-2-bulk-generate-to-settings",
+  "version": "0.41.45-2",
   "private": true,
   "scripts": {
     "dev": "next dev",
