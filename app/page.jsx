@@ -6590,7 +6590,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
       <div className="patrol-topbar">
         <strong>순찰 모드</strong>
         <span>좌석을 눌러 선택하고, 아래에서 학습상태를 저장하세요.</span>
-        <button type="button" className="patrol-close" onClick={toggleQuickMode}>닫기 ✕</button>
+        <button type="button" className="patrol-close" onClick={toggleQuickMode}>순찰 종료 ✕</button>
       </div>
       <section className="map-shell dashboard-map-shell-v4111 dashboard-map-shell-v4112">
         <div className="map-head dashboard-map-head-v4111">
