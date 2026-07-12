@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-41-personal-schedule-delete",
-  "version": "0.41.41",
+  "name": "beyond-os-v41-42-explicit-schedules-only",
+  "version": "0.41.42",
   "private": true,
   "scripts": {
     "dev": "next dev",

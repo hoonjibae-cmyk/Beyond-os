@@ -222,7 +222,7 @@ export async function POST(request) {
 }
 
 // 특정 날짜의 개인 시간표(등하원 조정 + 외출 일정)를 삭제합니다.
-// 삭제하면 해당 날짜는 설정 탭의 요일 유형별 기본 시간표(운영일) 또는 휴무 처리로 돌아갑니다.
+// v41-42부터 삭제하면 해당 날짜는 빈 날(등원 예정 없음)이 됩니다.
 export async function DELETE(request) {
   if (!isAuthorized(request)) return unauthorizedResponse();
   try {
@@ -245,7 +245,7 @@ export async function DELETE(request) {
     if (findError) throw findError;
 
     if (!schedule) {
-      return Response.json({ deleted: false, message: '이 날짜에는 저장된 개인 시간표가 없습니다. (기본 시간표가 적용 중)' });
+      return Response.json({ deleted: false, message: '이 날짜에는 저장된 개인 시간표가 없습니다. (이미 빈 날)' });
     }
 
     const { error: breaksError } = await supabase

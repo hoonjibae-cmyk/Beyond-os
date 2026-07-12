@@ -304,6 +304,8 @@ function getLateIssueLabel(session = {}, schedule = null, rules = DEFAULT_OPERAT
   if (!session.check_in_at || session.seat_status === 'absent') return '';
 
   const normalizedSchedule = normalizeDailySchedule(schedule);
+  // v41-42: 개인 시간표(또는 리포트 스냅샷)가 있는 날짜만 지각 판정.
+  if (normalizedSchedule.is_default_schedule) return '';
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_in);
   const actualMinutes = getKstMinutesFromIso(session.check_in_at);
   const threshold = normalizeOperatingRules(rules).lateThresholdMinutes;
@@ -316,6 +318,8 @@ function getEarlyLeaveIssueLabel(session = {}, schedule = null, rules = DEFAULT_
   if (!session.check_out_at || session.seat_status === 'absent') return '';
 
   const normalizedSchedule = normalizeDailySchedule(schedule);
+  // v41-42: 개인 시간표(또는 리포트 스냅샷)가 있는 날짜만 조퇴 판정.
+  if (normalizedSchedule.is_default_schedule) return '';
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_out);
   const actualMinutes = getKstMinutesFromIso(session.check_out_at);
   const threshold = normalizeOperatingRules(rules).earlyLeaveThresholdMinutes;

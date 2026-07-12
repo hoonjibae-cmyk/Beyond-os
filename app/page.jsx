@@ -209,6 +209,7 @@ const ACTION_LOG_LABELS = {
   'student.delete': '학생 삭제',
   'schedule.save': '학생 시간표 저장',
   'schedule.delete': '학생 시간표 삭제',
+  'schedule.bulk_generate': '학생 시간표 일괄 생성',
   'daily_report.share_link': '데일리 공개 리포트 링크 생성',
   'weekly_report.share_link': '위클리 공개 리포트 링크 생성',
   'report_share_link.revoke': '공개 리포트 링크 비활성화',
@@ -1092,8 +1093,9 @@ function getAttendanceFlags(row, rulesInput = DEFAULT_OPERATING_RULES) {
   const flags = [];
   const checkInMinutes = timeTextToMinutes(row?.checkInTime);
   const checkOutMinutes = timeTextToMinutes(row?.checkOutTime);
-  const plannedCheckIn = timeTextToMinutes(row?.plannedCheckInTime || row?.plannedCheckIn || DEFAULT_SCHEDULE_CHECK_IN);
-  const plannedCheckOut = timeTextToMinutes(row?.plannedCheckOutTime || row?.plannedCheckOut || DEFAULT_SCHEDULE_CHECK_OUT);
+  // v41-42: 개인 시간표가 없는 행은 예정 등하원이 비어 있고, 이 경우 지각/조퇴 판정을 하지 않습니다.
+  const plannedCheckIn = timeTextToMinutes(row?.plannedCheckInTime || row?.plannedCheckIn);
+  const plannedCheckOut = timeTextToMinutes(row?.plannedCheckOutTime || row?.plannedCheckOut);
   const pureStudyMinutes = Number(row?.pureStudyMinutes || 0);
   const awayMinutes = Number(row?.awayMinutes || 0);
   const awayCount = Number(row?.awayCount || 0);
@@ -1787,62 +1789,18 @@ function createPresenceMismatchAlert({ schedule, session, scheduleBreaks = [], s
   };
 }
 
-function buildEffectiveSchedulesForPresence({ schedules = [], students = [], sessions = [], seats = [], defaultSchedule = DEFAULT_SCHEDULE_SETTINGS }) {
+// v41-42: 기본 시간표 자동 폴백 제거.
+// 등원 예정(결석/지각 판정 대상)은 개인 시간표가 '명시적으로' 저장된 학생만 포함합니다.
+// 개인 시간표가 없는 학생/날짜는 등원 예정 없음으로 처리되며,
+// 초기 입력은 학생 시간표 탭의 '기본 시간표로 일괄 생성' 도구를 사용합니다.
+function buildEffectiveSchedulesForPresence({ schedules = [] }) {
   const today = getKstDateString();
-  const settings = normalizeDefaultScheduleSettings(defaultSchedule);
-  const studentById = {};
-  for (const student of students || []) {
-    if (student?.id) studentById[student.id] = student;
-  }
-
   const explicitSchedules = [];
-  const explicitStudentIds = new Set();
   for (const schedule of schedules || []) {
     if (schedule?.schedule_date !== today || !schedule?.student_id) continue;
     explicitSchedules.push(schedule);
-    explicitStudentIds.add(String(schedule.student_id));
-    if (schedule.students?.id && !studentById[schedule.students.id]) studentById[schedule.students.id] = schedule.students;
   }
-
-  const candidateStudents = {};
-  const addCandidate = (studentOrId) => {
-    const student = typeof studentOrId === 'object' && studentOrId !== null
-      ? studentOrId
-      : studentById[studentOrId];
-    const id = student?.id || studentOrId;
-    if (!id) return;
-    const resolvedStudent = student || studentById[id] || { id };
-    candidateStudents[id] = resolvedStudent;
-    if (resolvedStudent?.id && !studentById[resolvedStudent.id]) studentById[resolvedStudent.id] = resolvedStudent;
-  };
-
-  for (const schedule of explicitSchedules) addCandidate(schedule.students || schedule.student_id);
-  for (const session of sessions || []) addCandidate(session.students || session.student_id);
-  for (const seat of seats || []) addCandidate(seat.current_student || seat.current_student_id);
-  for (const student of students || []) {
-    if (student?.default_seat_no) addCandidate(student);
-  }
-
-  // 오늘의 요일 유형이 '운영'일 때만 자동(기본) 시간표 폴백을 적용합니다.
-  // defaultSchedule 은 대시보드에서 오늘 날짜로 resolve 된 값이라 operating 메타를 포함합니다.
-  // (레거시 평탄값에는 operating 이 없어 undefined → 운영으로 간주)
-  const isOperatingToday = defaultSchedule?.operating !== false;
-  const defaultSchedules = (isOperatingToday ? Object.values(candidateStudents) : [])
-    .filter((student) => student?.id && !explicitStudentIds.has(String(student.id)))
-    .map((student) => ({
-      id: `default-${today}-${student.id}`,
-      student_id: student.id,
-      schedule_date: today,
-      planned_check_in: settings.plannedCheckIn,
-      planned_check_out: settings.plannedCheckOut,
-      parent_confirmed: false,
-      confirmation_note: null,
-      schedule_note: '기본 시간표 자동 적용',
-      students: student,
-      is_default_schedule: true,
-    }));
-
-  return [...explicitSchedules, ...defaultSchedules];
+  return explicitSchedules;
 }
 
 function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, students = [], defaultSchedule = DEFAULT_SCHEDULE_SETTINGS }) {
@@ -1995,6 +1953,7 @@ export default function Page() {
   const [todayScheduleBreaks, setTodayScheduleBreaks] = useState([]);
   const [scheduleRows, setScheduleRows] = useState([]);
   const [scheduleBreakRows, setScheduleBreakRows] = useState([]);
+  const [scheduleCoverage, setScheduleCoverage] = useState(null);
   const [fieldFocusAcknowledgements, setFieldFocusAcknowledgements] = useState([]);
   const [mentoringTodayAssignments, setMentoringTodayAssignments] = useState([]);
   const [dismissedAlerts, setDismissedAlerts] = useState([]);
@@ -2647,6 +2606,31 @@ export default function Page() {
       setScheduleRows(data.schedules || []);
       setScheduleBreakRows(data.breaks || []);
       setMessage('시간표 조회 완료');
+    } catch (error) {
+      setMessage(error.message);
+    }
+    loadScheduleCoverage();
+  }
+
+  async function loadScheduleCoverage() {
+    try {
+      const data = await apiFetch('/api/schedules/coverage');
+      setScheduleCoverage(data);
+    } catch {
+      setScheduleCoverage(null);
+    }
+  }
+
+  async function bulkGenerateSchedules({ studentIds = null, startDate, endDate }) {
+    try {
+      setMessage('기본 시간표로 개인 시간표 일괄 생성 중...');
+      const data = await apiFetch('/api/schedules/bulk-generate', {
+        method: 'POST',
+        body: JSON.stringify({ studentIds, startDate, endDate }),
+      });
+      setMessage(`일괄 생성 완료: 학생 ${data.studentCount}명 × 운영일 ${data.operatingDayCount}일 → ${data.created}건 생성 (기존 ${data.skippedExisting}건 보존${data.skippedRestDays ? ` · 휴무일 ${data.skippedRestDays}일 제외` : ''})`);
+      await loadSchedules();
+      await loadDashboard({ silent: true, suppressChangeNotice: true });
     } catch (error) {
       setMessage(error.message);
     }
@@ -4414,7 +4398,7 @@ export default function Page() {
   async function deleteActivitySchedule() {
     if (!activityPopup?.studentId || !activityPopup?.scheduleDate) return alert('학생/날짜 정보가 없습니다.');
     const confirmed = window.confirm(
-      `${activityPopup.studentName || '학생'} · ${activityPopup.scheduleDate} 개인 시간표를 삭제할까요?\n\n삭제하면 이 날짜는 설정 탭의 기본 시간표(운영일) 또는 휴무 처리로 돌아갑니다.\n외출 일정도 함께 삭제됩니다.`
+      `${activityPopup.studentName || '학생'} · ${activityPopup.scheduleDate} 개인 시간표를 삭제할까요?\n\n삭제하면 이 날짜는 빈 날(등원 예정 없음)이 되고, 결석/지각 판정 대상에서 제외됩니다.\n외출 일정도 함께 삭제됩니다.`
     );
     if (!confirmed) return;
 
@@ -4431,7 +4415,7 @@ export default function Page() {
       setActivityPopup(null);
       await loadSchedules();
       await loadDashboard({ silent: true, suppressChangeNotice: true });
-      setMessage(data.deleted ? `${activityPopup.scheduleDate} 개인 시간표 삭제 완료 (기본 시간표로 복귀)` : (data.message || '삭제할 개인 시간표가 없습니다.'));
+      setMessage(data.deleted ? `${activityPopup.scheduleDate} 개인 시간표 삭제 완료 (빈 날로 처리)` : (data.message || '삭제할 개인 시간표가 없습니다.'));
     } catch (error) {
       setMessage(error.message);
     }
@@ -4547,11 +4531,7 @@ export default function Page() {
     const end = schedule?.planned_check_out?.slice(0, 5) || scheduleDefaults.plannedCheckOut;
 
     if (!schedule) {
-      if (defaultSchedule?.operating !== false) {
-        return getDefaultScheduleSummaryLines(start, end, [], defaultSchedule);
-      }
-      const dayTypeLabel = DEFAULT_SCHEDULE_DAY_TYPE_LABELS[defaultSchedule?.dayType] || '휴무일';
-      return [`오늘은 등원 예정이 없습니다. (${dayTypeLabel} · 개인 시간표 미설정)`];
+      return ['오늘은 개인 시간표가 없습니다. (등원 예정 없음 · 학생 시간표 탭에서 추가)'];
     }
 
     const breaks = (todayScheduleBreaks || [])
@@ -4811,6 +4791,8 @@ export default function Page() {
               setActivityPopup={setActivityPopup}
               defaultSchedule={defaultSchedule}
               defaultScheduleConfig={defaultScheduleConfig}
+              bulkGenerateSchedules={bulkGenerateSchedules}
+              scheduleCoverage={scheduleCoverage}
             />
             <ActivitySchedulePopup
               popup={activityPopup}
@@ -5715,7 +5697,7 @@ function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent }) {
 
 function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBreak, removeBreak, deletePopupSchedule }) {
   if (!popup) return null;
-  return <div className="modal-backdrop" onClick={() => setPopup(null)}><div className="activity-popup" onClick={(event) => event.stopPropagation()}><div className="popup-head"><div><h2>액티비티 블록 수정</h2><p>{popup.studentName} / {popup.studentInfo || '학생 정보 없음'} / {popup.scheduleDate}</p></div><button onClick={() => setPopup(null)}>닫기</button></div><div className="activity-popup-grid"><section className="activity-popup-card"><h3>기본 등하원 조정</h3><div className="student-fixed-name"><span>학생</span><strong>{popup.studentName}</strong></div><div className="time-grid"><div className="field"><label>날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.scheduleDate} onChange={(e) => setPopup({ ...popup, scheduleDate: e.target.value })} /></div><div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setPopup({ ...popup, parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div><div className="field"><label>예정 등원</label><TimeSelect value={popup.plannedCheckIn} onChange={(value) => setPopup({ ...popup, plannedCheckIn: value })} /></div><div className="field"><label>예정 하원</label><TimeSelect value={popup.plannedCheckOut} onChange={(value) => setPopup({ ...popup, plannedCheckOut: value })} /></div></div><div className="repeat-box"><h4>등하원 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.commuteRepeat} onChange={(e) => setPopup({ ...popup, commuteRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.commuteRepeatUntil} onChange={(e) => setPopup({ ...popup, commuteRepeatUntil: e.target.value })} /></div></div></div><div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote} onChange={(e) => setPopup({ ...popup, confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div><div className="field"><label>일정 메모</label><textarea value={popup.scheduleNote} onChange={(e) => setPopup({ ...popup, scheduleNote: e.target.value })} placeholder="예: 학교 행사로 10시 등원" /></div></section><section className="activity-popup-card"><h3>외출 일정 입력</h3>{(popup.breaks || []).map((item, index) => <div className="break-row" key={index}><div className="time-grid"><div className="field"><label>외출 시작</label><TimeSelect value={item.leaveStart} onChange={(value) => updateBreak(index, 'leaveStart', value)} /></div><div className="field"><label>복귀 예정</label><TimeSelect value={item.returnTime} onChange={(value) => updateBreak(index, 'returnTime', value)} /></div><div className="field"><label>외출 사유</label><select value={item.reason} onChange={(e) => updateBreak(index, 'reason', e.target.value)}>{BREAK_REASON_OPTIONS.map((reason) => <option key={reason}>{reason}</option>)}</select></div><div className="field"><label>상세 사유</label><input value={item.reasonDetail} onChange={(e) => updateBreak(index, 'reasonDetail', e.target.value)} placeholder="예: 고수학 특강" /></div></div><div className="field"><label>외출 메모</label><input value={item.breakNote} onChange={(e) => updateBreak(index, 'breakNote', e.target.value)} placeholder="예: 학부모 확인 완료" /></div><button className="danger" onClick={() => removeBreak(index)}>외출 항목 삭제</button></div>)}<button className="secondary add-break-button" onClick={addBreak}>외출 항목 추가</button><div className="repeat-box"><h4>외출 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.breakRepeat} onChange={(e) => setPopup({ ...popup, breakRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.breakRepeatUntil} onChange={(e) => setPopup({ ...popup, breakRepeatUntil: e.target.value })} /></div></div></div><div className="activity-preview"><strong>반영 후 액티비티 구조</strong><span>기본 시간표는 설정 탭의 기본 시간표 기준으로 표시되며, 외출과 겹치는 학습 구간은 자동으로 제외됩니다.</span></div></section></div><div className="popup-bottom-actions">{deletePopupSchedule ? <button className="danger" onClick={deletePopupSchedule}>이 날짜 개인 시간표 삭제</button> : null}<button className="secondary" onClick={() => setPopup(null)}>취소</button><button className="primary" onClick={savePopup}>확인 및 시간표 반영</button></div></div></div>;
+  return <div className="modal-backdrop" onClick={() => setPopup(null)}><div className="activity-popup" onClick={(event) => event.stopPropagation()}><div className="popup-head"><div><h2>액티비티 블록 수정</h2><p>{popup.studentName} / {popup.studentInfo || '학생 정보 없음'} / {popup.scheduleDate}</p></div><button onClick={() => setPopup(null)}>닫기</button></div><div className="activity-popup-grid"><section className="activity-popup-card"><h3>기본 등하원 조정</h3><div className="student-fixed-name"><span>학생</span><strong>{popup.studentName}</strong></div><div className="time-grid"><div className="field"><label>날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.scheduleDate} onChange={(e) => setPopup({ ...popup, scheduleDate: e.target.value })} /></div><div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setPopup({ ...popup, parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div><div className="field"><label>예정 등원</label><TimeSelect value={popup.plannedCheckIn} onChange={(value) => setPopup({ ...popup, plannedCheckIn: value })} /></div><div className="field"><label>예정 하원</label><TimeSelect value={popup.plannedCheckOut} onChange={(value) => setPopup({ ...popup, plannedCheckOut: value })} /></div></div><div className="repeat-box"><h4>등하원 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.commuteRepeat} onChange={(e) => setPopup({ ...popup, commuteRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.commuteRepeatUntil} onChange={(e) => setPopup({ ...popup, commuteRepeatUntil: e.target.value })} /></div></div></div><div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote} onChange={(e) => setPopup({ ...popup, confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div><div className="field"><label>일정 메모</label><textarea value={popup.scheduleNote} onChange={(e) => setPopup({ ...popup, scheduleNote: e.target.value })} placeholder="예: 학교 행사로 10시 등원" /></div></section><section className="activity-popup-card"><h3>외출 일정 입력</h3>{(popup.breaks || []).map((item, index) => <div className="break-row" key={index}><div className="time-grid"><div className="field"><label>외출 시작</label><TimeSelect value={item.leaveStart} onChange={(value) => updateBreak(index, 'leaveStart', value)} /></div><div className="field"><label>복귀 예정</label><TimeSelect value={item.returnTime} onChange={(value) => updateBreak(index, 'returnTime', value)} /></div><div className="field"><label>외출 사유</label><select value={item.reason} onChange={(e) => updateBreak(index, 'reason', e.target.value)}>{BREAK_REASON_OPTIONS.map((reason) => <option key={reason}>{reason}</option>)}</select></div><div className="field"><label>상세 사유</label><input value={item.reasonDetail} onChange={(e) => updateBreak(index, 'reasonDetail', e.target.value)} placeholder="예: 고수학 특강" /></div></div><div className="field"><label>외출 메모</label><input value={item.breakNote} onChange={(e) => updateBreak(index, 'breakNote', e.target.value)} placeholder="예: 학부모 확인 완료" /></div><button className="danger" onClick={() => removeBreak(index)}>외출 항목 삭제</button></div>)}<button className="secondary add-break-button" onClick={addBreak}>외출 항목 추가</button><div className="repeat-box"><h4>외출 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.breakRepeat} onChange={(e) => setPopup({ ...popup, breakRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.breakRepeatUntil} onChange={(e) => setPopup({ ...popup, breakRepeatUntil: e.target.value })} /></div></div></div><div className="activity-preview"><strong>반영 후 액티비티 구조</strong><span>차시 구간은 설정 탭의 요일 유형별 기본 시간표 기준으로 표시되며, 외출과 겹치는 학습 구간은 자동으로 제외됩니다. 저장하면 이 날짜가 등원 예정으로 처리됩니다.</span></div></section></div><div className="popup-bottom-actions">{deletePopupSchedule ? <button className="danger" onClick={deletePopupSchedule}>이 날짜 개인 시간표 삭제</button> : null}<button className="secondary" onClick={() => setPopup(null)}>취소</button><button className="primary" onClick={savePopup}>확인 및 시간표 반영</button></div></div></div>;
 }
 
 
@@ -8551,7 +8533,15 @@ function SchedulesTab(props) {
     setActivityPopup,
     defaultSchedule = DEFAULT_SCHEDULE_SETTINGS,
     defaultScheduleConfig = null,
+    bulkGenerateSchedules,
+    scheduleCoverage = null,
   } = props;
+
+  const today = getKstDateString();
+  const [bulkStart, setBulkStart] = useState(today);
+  const [bulkEnd, setBulkEnd] = useState(addDays(today, 27));
+  const [bulkTarget, setBulkTarget] = useState('all');
+  const [bulkWorking, setBulkWorking] = useState(false);
 
   const range = getScheduleRange(scheduleView, scheduleBaseDate);
   const dates = makeDateRange(range.start, range.end);
@@ -8577,16 +8567,32 @@ function SchedulesTab(props) {
     return { id: `default-${student.id}-${date}`, isDefault: true, student_id: student.id, schedule_date: date, planned_check_in: `${settings.plannedCheckIn}:00`, planned_check_out: `${settings.plannedCheckOut}:00`, parent_confirmed: true, confirmation_note: '', schedule_note: settings.scheduleLabel, students: student };
   }
   function getScheduleForStudentDate(student, date) { return findSchedule(student.id, date) || makeDefaultSchedule(student, date); }
-  function isRestDefault(schedule) { return Boolean(schedule?.isDefault) && resolveForDate(schedule.schedule_date).operating === false; }
   function getBreaks(schedule) { if (!schedule || schedule.isDefault) return []; return scheduleBreaksBySchedule[schedule.id] || []; }
+
+  async function runBulkGenerate() {
+    if (!bulkGenerateSchedules) return;
+    const targetStudent = bulkTarget === 'selected' ? selectedFilterStudent : null;
+    if (bulkTarget === 'selected' && !targetStudent) return alert('먼저 보기 대상에서 학생을 선택하세요.');
+    const confirmed = window.confirm(
+      `${targetStudent ? `${targetStudent.name} 학생` : '전체 학생'} · ${bulkStart} ~ ${bulkEnd}\n\n요일 유형별 기본 시간표(운영일 기준)로 개인 시간표를 일괄 생성합니다.\n이미 저장된 날짜는 변경하지 않습니다. 진행할까요?`
+    );
+    if (!confirmed) return;
+    setBulkWorking(true);
+    try {
+      await bulkGenerateSchedules({ studentIds: targetStudent ? [targetStudent.id] : null, startDate: bulkStart, endDate: bulkEnd });
+    } finally {
+      setBulkWorking(false);
+    }
+  }
 
   function buildActivityBlocks(schedule) {
     const blocks = [];
     const settings = resolveForDate(schedule.schedule_date);
     const start = timeToMinutes(schedule.planned_check_in || settings.plannedCheckIn) ?? timeToMinutes(settings.plannedCheckIn);
     const end = timeToMinutes(schedule.planned_check_out || settings.plannedCheckOut) ?? timeToMinutes(settings.plannedCheckOut);
-    // 휴무일(운영 안 함)이고 개인 시간표도 없는 날짜는 학습 블록을 만들지 않습니다.
-    if (schedule.isDefault && settings.operating === false) return blocks;
+    // v41-42: 개인 시간표가 저장되지 않은 날짜는 빈 날(등원 예정 없음)로 표시합니다.
+    // (기본 시간표는 신규 입력 기본값과 일괄 생성 템플릿으로만 사용)
+    if (schedule.isDefault) return blocks;
     const breaks = getBreaks(schedule);
     const periodBlocks = getDefaultScheduleSegmentsExcludingBreaks(minutesToTime(start), minutesToTime(end), breaks, settings).map((segment) => ({
       id: `period-${schedule.student_id}-${schedule.schedule_date}-${segment.label}-${segment.startMinute}-${segment.endMinute}-${segment.splitIndex || 0}`,
@@ -8652,7 +8658,7 @@ function SchedulesTab(props) {
     return <div className="activity-timeline-wrap"><div className="timeline-title"><strong>{student.name} 학생 시간표 · {date}</strong><span>{blocks.length}개 액티비티 블록</span></div><div className="day-timeline activity-mode"><div className="timeline-hour-labels">{HOURS.map((hour) => <div key={hour} style={{ top: `${((hour * 60 - TIMELINE_START) / TIMELINE_TOTAL) * 100}%` }}>{hour < 12 ? `오전 ${hour}시` : hour === 12 ? '오후 12시' : `오후 ${hour - 12}시`}</div>)}</div><div className="timeline-grid-lines">{HOURS.map((hour) => <div key={hour} style={{ top: `${((hour * 60 - TIMELINE_START) / TIMELINE_TOTAL) * 100}%` }} />)}</div>{nowStyle ? <div className="now-line" style={nowStyle}><span>현재 시간</span></div> : null}{blocks.map((block, index) => <button key={block.id} className={`activity-block ${block.type}`} style={activityStyle(block, index)} onClick={() => openActivityPopup(schedule)}><b>{block.title}</b><span>{block.detail}</span><em>클릭하여 수정</em></button>)}</div></div>;
   }
 
-  return <section className="content-card"><h2>학생 시간표</h2><p>모든 학생은 설정 탭의 기본 시간표를 기준으로 학습 블록을 가집니다. 예외 일정은 액티비티 블록을 클릭해 수정합니다.</p><div className="schedule-target-bar"><div><span>보기 대상</span><strong>{selectedFilterStudent ? `${selectedFilterStudent.name} 학생 시간표` : '전체 학생 시간표'}</strong></div><select value={scheduleStudentFilter} onChange={(e) => setScheduleStudentFilter(e.target.value)}><option value="all">전체 학생</option>{students.map((student) => <option key={student.id} value={student.id}>{student.name} / {[student.school, student.grade].filter(Boolean).join(' ')}</option>)}</select></div><div className="calendar-controls"><div className="view-buttons"><button className={scheduleView === 'day' ? 'active' : ''} onClick={() => setScheduleView('day')}>일별</button><button className={scheduleView === 'week' ? 'active' : ''} onClick={() => setScheduleView('week')}>주간</button><button className={scheduleView === 'month' ? 'active' : ''} onClick={() => setScheduleView('month')}>월별</button></div><div className="field"><label>기준 날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={scheduleBaseDate} onChange={(e) => setScheduleBaseDate(e.target.value)} /></div><button className="primary" onClick={() => selectedFilterStudent ? openActivityPopup(getScheduleForStudentDate(selectedFilterStudent, scheduleBaseDate)) : alert('개별 학생을 먼저 선택하세요.')}>선택 학생 시간표 수정</button></div><div className="timeline-legend"><span><i className="event-dot self-study"></i>차시 학습</span><span><i className="event-dot break"></i>외출</span><span><i className="event-dot early-checkout"></i>조정된 등하원</span></div>{scheduleView === 'day' ? (selectedFilterStudent ? renderDayTimeline(scheduleBaseDate, selectedFilterStudent) : <div className="student-timeline-overview">{students.map((student) => { const schedule = getScheduleForStudentDate(student, scheduleBaseDate); const blocks = buildActivityBlocks(schedule); return <button key={student.id} className="student-activity-row" onClick={() => { setScheduleStudentFilter(student.id); openActivityPopup(schedule); }}><strong>{student.name}</strong><div>{blocks.length ? blocks.map((block) => <span key={block.id} className={`mini-activity ${block.type}`}>{block.title} {block.detail}</span>) : (isRestDefault(schedule) ? <span className="mini-activity">휴무일</span> : null)}</div></button>; })}</div>) : null}{scheduleView === 'week' ? <div className="week-activity-grid">{dates.map((date) => <div key={date} className={`calendar-day ${date === getKstDateString() ? 'today' : ''}`}><strong>{date.slice(5)}</strong>{selectedFilterStudent ? (() => { const schedule = getScheduleForStudentDate(selectedFilterStudent, date); const blocks = buildActivityBlocks(schedule); if (!blocks.length && isRestDefault(schedule)) return <div className="muted">휴무일 · 개인 시간표 없음</div>; return blocks.map((block) => <button key={block.id} className={`schedule-chip activity-chip ${block.type}`} onClick={() => openActivityPopup(schedule)}><b>{block.title}</b>{block.detail}</button>); })() : <div className="muted">학생을 선택하면 주간 액티비티가 표시됩니다.</div>}</div>)}</div> : null}{scheduleView === 'month' ? <div className="calendar-grid month-grid">{dates.map((date) => { const dayDefaults = resolveForDate(date); const dateSchedules = filteredStudents.map((student) => getScheduleForStudentDate(student, date)); const breakCount = dateSchedules.reduce((sum, schedule) => sum + getBreaks(schedule).length, 0); const lateCount = dateSchedules.filter((schedule) => normalizeTime(schedule.planned_check_in) !== dayDefaults.plannedCheckIn).length; const earlyCount = dateSchedules.filter((schedule) => normalizeTime(schedule.planned_check_out) !== dayDefaults.plannedCheckOut).length; return <button key={date} className={`calendar-day clickable-month-day ${date === getKstDateString() ? 'today' : ''}`} onClick={() => selectedFilterStudent ? openActivityPopup(getScheduleForStudentDate(selectedFilterStudent, date)) : alert('월별 시간표 수정은 개별 학생을 먼저 선택하세요.')}><strong>{date.slice(5)}</strong><div className="month-summary-chip">{selectedFilterStudent ? (dayDefaults.operating === false ? `${dayDefaults.scheduleLabel} · 휴무` : dayDefaults.scheduleLabel) : `기본 시간표 ${dateSchedules.length}명`}</div>{breakCount ? <div className="month-summary-chip break">외출 {breakCount}건</div> : null}{lateCount ? <div className="month-summary-chip checkin">늦은 등원 {lateCount}건</div> : null}{earlyCount ? <div className="month-summary-chip early-checkout">등하원 조정 {earlyCount}건</div> : null}</button>; })}</div> : null}</section>;
+  return <section className="content-card"><h2>학생 시간표</h2><p>개인 시간표가 저장된 날짜만 등원 예정으로 처리됩니다. 아래 일괄 생성으로 기본 시간표를 채운 뒤, 예외 일정은 블록을 클릭해 수정하거나 삭제하세요.</p>{scheduleCoverage?.warnings?.length ? <div className="template-validation-list failed"><strong>개인 시간표 공백 경고 ({scheduleCoverage.warnings.length}명)</strong><span>{scheduleCoverage.warnings.map((warning) => warning.kind === 'missing' ? `${warning.name}: 시간표 없음` : `${warning.name}: ${warning.lastDate}까지만 있음`).join(' · ')} — 이 학생들은 시간표가 없는 날 결석해도 감지되지 않습니다. 아래 일괄 생성으로 채워주세요.</span></div> : null}<div className="repeat-box bulk-generate-box"><h4>기본 시간표로 개인 시간표 일괄 생성</h4><div className="time-grid"><div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={bulkStart} onChange={(e) => setBulkStart(e.target.value)} /></div><div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={bulkEnd} onChange={(e) => setBulkEnd(e.target.value)} /></div><div className="field"><label>대상</label><select value={bulkTarget} onChange={(e) => setBulkTarget(e.target.value)}><option value="all">전체 학생</option><option value="selected">선택 학생만</option></select></div><div className="field"><label>&nbsp;</label><button className="primary" onClick={runBulkGenerate} disabled={bulkWorking}>{bulkWorking ? '생성 중...' : '일괄 생성'}</button></div></div><div className="hint">요일 유형별 기본 시간표의 운영일에만 생성되며(휴무일 제외), 이미 저장된 날짜는 변경하지 않습니다. 한 번에 최대 92일.</div></div><div className="schedule-target-bar"><div><span>보기 대상</span><strong>{selectedFilterStudent ? `${selectedFilterStudent.name} 학생 시간표` : '전체 학생 시간표'}</strong></div><select value={scheduleStudentFilter} onChange={(e) => setScheduleStudentFilter(e.target.value)}><option value="all">전체 학생</option>{students.map((student) => <option key={student.id} value={student.id}>{student.name} / {[student.school, student.grade].filter(Boolean).join(' ')}</option>)}</select></div><div className="calendar-controls"><div className="view-buttons"><button className={scheduleView === 'day' ? 'active' : ''} onClick={() => setScheduleView('day')}>일별</button><button className={scheduleView === 'week' ? 'active' : ''} onClick={() => setScheduleView('week')}>주간</button><button className={scheduleView === 'month' ? 'active' : ''} onClick={() => setScheduleView('month')}>월별</button></div><div className="field"><label>기준 날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={scheduleBaseDate} onChange={(e) => setScheduleBaseDate(e.target.value)} /></div><button className="primary" onClick={() => selectedFilterStudent ? openActivityPopup(getScheduleForStudentDate(selectedFilterStudent, scheduleBaseDate)) : alert('개별 학생을 먼저 선택하세요.')}>선택 학생 시간표 수정</button></div><div className="timeline-legend"><span><i className="event-dot self-study"></i>차시 학습</span><span><i className="event-dot break"></i>외출</span><span><i className="event-dot early-checkout"></i>조정된 등하원</span></div>{scheduleView === 'day' ? (selectedFilterStudent ? renderDayTimeline(scheduleBaseDate, selectedFilterStudent) : <div className="student-timeline-overview">{students.map((student) => { const schedule = getScheduleForStudentDate(student, scheduleBaseDate); const blocks = buildActivityBlocks(schedule); return <button key={student.id} className="student-activity-row" onClick={() => { setScheduleStudentFilter(student.id); openActivityPopup(schedule); }}><strong>{student.name}</strong><div>{blocks.length ? blocks.map((block) => <span key={block.id} className={`mini-activity ${block.type}`}>{block.title} {block.detail}</span>) : <span className="mini-activity">시간표 없음 · 클릭하여 추가</span>}</div></button>; })}</div>) : null}{scheduleView === 'week' ? <div className="week-activity-grid">{dates.map((date) => <div key={date} className={`calendar-day ${date === getKstDateString() ? 'today' : ''}`}><strong>{date.slice(5)}</strong>{selectedFilterStudent ? (() => { const schedule = getScheduleForStudentDate(selectedFilterStudent, date); const blocks = buildActivityBlocks(schedule); if (!blocks.length) return <button className="schedule-chip activity-chip" onClick={() => openActivityPopup(schedule)}><b>시간표 없음</b>클릭하여 추가</button>; return blocks.map((block) => <button key={block.id} className={`schedule-chip activity-chip ${block.type}`} onClick={() => openActivityPopup(schedule)}><b>{block.title}</b>{block.detail}</button>); })() : <div className="muted">학생을 선택하면 주간 액티비티가 표시됩니다.</div>}</div>)}</div> : null}{scheduleView === 'month' ? <div className="calendar-grid month-grid">{dates.map((date) => { const dayDefaults = resolveForDate(date); const dateSchedules = filteredStudents.map((student) => getScheduleForStudentDate(student, date)).filter((schedule) => !schedule.isDefault); const breakCount = dateSchedules.reduce((sum, schedule) => sum + getBreaks(schedule).length, 0); const lateCount = dateSchedules.filter((schedule) => normalizeTime(schedule.planned_check_in) !== dayDefaults.plannedCheckIn).length; const earlyCount = dateSchedules.filter((schedule) => normalizeTime(schedule.planned_check_out) !== dayDefaults.plannedCheckOut).length; return <button key={date} className={`calendar-day clickable-month-day ${date === getKstDateString() ? 'today' : ''}`} onClick={() => selectedFilterStudent ? openActivityPopup(getScheduleForStudentDate(selectedFilterStudent, date)) : alert('월별 시간표 수정은 개별 학생을 먼저 선택하세요.')}><strong>{date.slice(5)}</strong><div className="month-summary-chip">{selectedFilterStudent ? (dateSchedules.length ? '개인 시간표 있음' : '시간표 없음') : `개인 시간표 ${dateSchedules.length}명`}</div>{breakCount ? <div className="month-summary-chip break">외출 {breakCount}건</div> : null}{lateCount ? <div className="month-summary-chip checkin">늦은 등원 {lateCount}건</div> : null}{earlyCount ? <div className="month-summary-chip early-checkout">등하원 조정 {earlyCount}건</div> : null}</button>; })}</div> : null}</section>;
 }
 
 
@@ -15794,7 +15800,7 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
       <div className="section-head">
         <div>
           <h2>설정 · 기본 시간표 (요일 유형별)</h2>
-          <p>평일 · 토요일 · 일요일 · 공휴일 시간표를 각각 설정합니다. 학생별 예외 시간표가 없을 때 해당 요일 유형의 기본 시간표가 자동 적용됩니다.</p>
+          <p>평일 · 토요일 · 일요일 · 공휴일 시간표를 각각 설정합니다. 이 시간표는 차시(순공 인정) 구간의 기준이며, 학생 시간표 탭의 일괄 생성과 신규 입력 기본값으로 사용됩니다.</p>
         </div>
         <div className="planner-head-actions">
           <button className="secondary section-action" onClick={loadCurrent} disabled={defaultScheduleLoading}>현재값 불러오기</button>
@@ -15827,9 +15833,9 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
               onChange={(e) => updateField('enabled', e.target.checked)}
               style={{ width: '18px', height: '18px' }}
             />
-            <span>{variant.enabled !== false ? '운영일 (기본 시간표 자동 적용)' : '휴무일 (개인 시간표가 있는 학생만 등원)'}</span>
+            <span>{variant.enabled !== false ? '운영일 (일괄 생성 대상)' : '휴무일 (일괄 생성에서 제외)'}</span>
           </label>
-          <div className="hint">휴무로 두면 이 요일 유형에는 자동 기본 시간표가 적용되지 않습니다. 개인 시간표가 저장된 학생만 등원으로 처리됩니다.</div>
+          <div className="hint">휴무로 두면 학생 시간표 일괄 생성에서 이 요일 유형의 날짜가 제외됩니다. 등원 예정은 개인 시간표가 저장된 날짜에만 적용됩니다.</div>
         </div>
         <div className="field">
           <label>시간표 이름</label>

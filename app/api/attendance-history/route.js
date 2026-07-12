@@ -113,18 +113,18 @@ export async function GET(request) {
     let reports = [];
     let schedules = [];
 
-    if (studentId !== 'all') {
-      try {
-        const { data: scheduleRows, error: schedulesError } = await supabase
-          .from('student_daily_schedules')
-          .select('*')
-          .eq('student_id', studentId)
-          .gte('schedule_date', start)
-          .lte('schedule_date', end);
-        if (!schedulesError) schedules = scheduleRows || [];
-      } catch {
-        schedules = [];
-      }
+    // v41-42: 전체 학생 보기에서도 지각/조퇴 판정이 가능하도록 기간 내 개인 시간표를 항상 조회합니다.
+    try {
+      let scheduleQuery = supabase
+        .from('student_daily_schedules')
+        .select('*')
+        .gte('schedule_date', start)
+        .lte('schedule_date', end);
+      if (studentId !== 'all') scheduleQuery = scheduleQuery.eq('student_id', studentId);
+      const { data: scheduleRows, error: schedulesError } = await scheduleQuery;
+      if (!schedulesError) schedules = scheduleRows || [];
+    } catch {
+      schedules = [];
     }
 
     if (sessionIds.length) {
@@ -152,8 +152,8 @@ export async function GET(request) {
     const reportsBySession = {};
     for (const report of reports || []) reportsBySession[report.session_id] = report;
 
-    const schedulesByDate = {};
-    for (const schedule of schedules || []) schedulesByDate[schedule.schedule_date] = schedule;
+    const schedulesByStudentDate = {};
+    for (const schedule of schedules || []) schedulesByStudentDate[`${schedule.student_id}|${schedule.schedule_date}`] = schedule;
 
     const rows = (sessions || []).map((session) => {
       const sessionEvents = eventsBySession[session.id] || [];
@@ -170,7 +170,7 @@ export async function GET(request) {
         ? awayEvents.map(formatEventSummaryPart).join(' / ')
         : (awayMinutes > 0 ? `${awayMinutes}분` : '-');
       const report = reportsBySession[session.id] || {};
-      const schedule = schedulesByDate[session.session_date] || {};
+      const schedule = schedulesByStudentDate[`${session.student_id}|${session.session_date}`] || {};
       const defaultSchedule = resolveScheduleForDate(scheduleConfig, session.session_date || today);
 
       return {
@@ -190,10 +190,11 @@ export async function GET(request) {
         awayCount,
         awaySummary,
         pureStudyMinutes: calculateLivePureStudyMinutes(session, sessionEvents, defaultSchedule.studyWindows),
-        plannedCheckIn: schedule.planned_check_in || `${defaultSchedule.plannedCheckIn}:00`,
-        plannedCheckOut: schedule.planned_check_out || `${defaultSchedule.plannedCheckOut}:00`,
-        plannedCheckInTime: schedule.planned_check_in || `${defaultSchedule.plannedCheckIn}:00`,
-        plannedCheckOutTime: schedule.planned_check_out || `${defaultSchedule.plannedCheckOut}:00`,
+        // v41-42: 개인 시간표가 없는 날짜는 예정 등하원을 비워 지각/조퇴 판정에서 제외합니다.
+        plannedCheckIn: schedule.planned_check_in || '',
+        plannedCheckOut: schedule.planned_check_out || '',
+        plannedCheckInTime: schedule.planned_check_in || '',
+        plannedCheckOutTime: schedule.planned_check_out || '',
         scheduleNote: schedule.schedule_note || '',
         mentorComment: report.mentor_comment || '',
         attendanceMemo: session.attendance_memo || '',

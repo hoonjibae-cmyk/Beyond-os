@@ -175,6 +175,8 @@ function calculateLivePureStudyMinutes(session = {}, nowIso = new Date().toISOSt
 
 function getLateIssueLabel(session = {}, schedule = null, rules = DEFAULT_OPERATING_RULES, defaultSchedule = null) {
   if (!session.check_in_at) return '';
+  // v41-42: 개인 시간표가 저장된 날짜만 지각 판정. (기본 시간표 폴백 기준 판정 제거)
+  if (!schedule?.id) return '';
 
   const normalizedSchedule = normalizeDailySchedule(schedule, defaultSchedule);
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_in);
@@ -189,6 +191,8 @@ function getLateIssueLabel(session = {}, schedule = null, rules = DEFAULT_OPERAT
 
 function getEarlyLeaveIssueLabel(session = {}, schedule = null, rules = DEFAULT_OPERATING_RULES, defaultSchedule = null) {
   if (!session.check_out_at || session.seat_status === 'absent') return '';
+  // v41-42: 개인 시간표가 저장된 날짜만 조퇴 판정. (기본 시간표 폴백 기준 판정 제거)
+  if (!schedule?.id) return '';
 
   const normalizedSchedule = normalizeDailySchedule(schedule, defaultSchedule);
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_out);
