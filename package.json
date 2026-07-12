@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-48-schedule-tab-apple-two-tone",
-  "version": "0.41.48",
+  "name": "beyond-os-v41-49-report-apple-style",
+  "version": "0.41.49",
   "private": true,
   "scripts": {
     "dev": "next dev",

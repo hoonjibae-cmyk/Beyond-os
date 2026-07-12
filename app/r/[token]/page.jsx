@@ -946,9 +946,10 @@ export default async function PublicReportPage({ params }) {
 const styles = `
   body {
     margin: 0;
-    background: #f5f1e9;
-    color: #211f1b;
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f5f7;
+    color: #1d1d1f;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro KR", "SF Pro Text", "Segoe UI", "Apple SD Gothic Neo", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
   .public-report-page {
     width: min(920px, calc(100vw - 28px));
@@ -956,44 +957,46 @@ const styles = `
     padding: 28px 0 42px;
   }
   .hero {
-    padding: 30px;
-    border-radius: 30px;
-    background: linear-gradient(135deg, #211f1b, #483a25);
-    color: #fffdf8;
-    box-shadow: 0 24px 60px rgba(47, 38, 25, .18);
+    padding: 32px;
+    border-radius: 24px;
+    background: #ffffff;
+    border: 1px solid #e3e3e6;
+    color: #1d1d1f;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
   }
   .hero span {
     display: block;
-    margin-bottom: 10px;
-    color: #d9bf7e;
+    color: #0071e3;
     font-size: 13px;
-    font-weight: 950;
+    font-weight: 800;
     letter-spacing: -.01em;
   }
   .hero h1 {
     margin: 0 0 8px;
-    font-size: clamp(31px, 6vw, 48px);
-    letter-spacing: -.055em;
-    line-height: 1.05;
+    color: #1d1d1f !important;
+    font-size: clamp(30px, 6vw, 46px);
+    letter-spacing: -.03em;
+    line-height: 1.08;
+    font-weight: 800;
   }
   .hero p {
     margin: 0;
-    color: #eee2ca;
-    font-size: 17px;
-    font-weight: 850;
+    color: #6e6e73;
+    font-size: 16px;
+    font-weight: 600;
   }
   .hero-brand {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
   }
   .hero-brand img {
     width: 34px;
     height: 34px;
     object-fit: contain;
     border-radius: 10px;
-    background: rgba(255, 253, 248, .12);
+    background: #f5f5f7;
     padding: 4px;
   }
   .hero-brand span {
@@ -1001,17 +1004,17 @@ const styles = `
   }
   .parent-overview-card {
     margin: 14px 0;
-    padding: 18px;
-    border: 1px solid #eadbb6;
-    border-radius: 24px;
-    background: linear-gradient(180deg, #fffdf8, #fff8ea);
-    box-shadow: 0 12px 34px rgba(47, 38, 25, .08);
+    padding: 20px;
+    border: 1px solid #e3e3e6;
+    border-radius: 20px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
   }
   .section-eyebrow {
     margin-bottom: 12px;
-    color: #7b622a;
+    color: #0071e3;
     font-size: 13px;
-    font-weight: 950;
+    font-weight: 800;
     letter-spacing: -.01em;
   }
   .overview-grid {
@@ -1024,19 +1027,19 @@ const styles = `
   }
   .card-subtitle {
     margin: -6px 0 14px !important;
-    color: #7b7163;
+    color: #6e6e73;
     font-size: 14px !important;
-    font-weight: 780;
+    font-weight: 600;
   }
   .learning-period-list {
     display: grid;
     gap: 12px;
   }
   .learning-period-card {
-    padding: 15px;
-    border: 1px solid #eadfce;
-    border-radius: 18px;
-    background: #fffaf0;
+    padding: 16px;
+    border: 1px solid #e3e3e6;
+    border-radius: 16px;
+    background: #fbfbfd;
   }
   .learning-period-head {
     display: flex;
@@ -1046,47 +1049,47 @@ const styles = `
     margin-bottom: 10px;
   }
   .learning-period-head span {
-    color: #6d5a32;
-    font-size: 13px;
-    font-weight: 950;
+    color: #1d1d1f;
+    font-size: 14px;
+    font-weight: 800;
   }
   .learning-period-head strong {
-    padding: 5px 9px;
+    padding: 5px 10px;
     border-radius: 999px;
-    background: #211f1b;
-    color: #fff8df;
+    background: #eaf2fe;
+    color: #0071e3;
     font-size: 12px;
-    font-weight: 950;
+    font-weight: 800;
     white-space: nowrap;
   }
   .learning-period-status {
-    color: #211f1b;
+    color: #1d1d1f;
     font-size: 17px;
-    font-weight: 950;
+    font-weight: 800;
     letter-spacing: -.02em;
   }
   .learning-period-card p {
     margin-top: 8px;
-    color: #3b332b;
+    color: #424245;
     font-size: 15px;
     line-height: 1.65;
   }
   .learning-period-card small {
     display: block;
     margin-top: 8px;
-    color: #897f72;
+    color: #86868b;
     font-size: 12px;
-    font-weight: 780;
+    font-weight: 600;
     line-height: 1.45;
   }
   .link-error-card {
     margin-top: 14px;
     padding: 22px;
-    border: 1px solid #e2ded6;
-    border-radius: 22px;
-    background: #fffdf8;
+    border: 1px solid #e3e3e6;
+    border-radius: 20px;
+    background: #ffffff;
     text-align: center;
-    box-shadow: 0 10px 28px rgba(47, 38, 25, .07);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
   }
   .link-error-card strong {
     display: block;
@@ -1097,19 +1100,19 @@ const styles = `
   .link-error-card p {
     margin: 0 auto 14px;
     max-width: 560px;
-    color: #7d7468;
+    color: #6e6e73;
     line-height: 1.65;
   }
   .link-error-card a {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 42px;
-    padding: 0 18px;
+    min-height: 44px;
+    padding: 0 20px;
     border-radius: 999px;
-    background: #211f1b;
-    color: #fff8df;
-    font-weight: 950;
+    background: #0071e3;
+    color: #ffffff;
+    font-weight: 700;
     text-decoration: none;
   }
   .meta-grid,
@@ -1126,10 +1129,10 @@ const styles = `
   }
   .metric-card,
   .card {
-    border: 1px solid #e2ded6;
-    border-radius: 21px;
-    background: #fffdf8;
-    box-shadow: 0 10px 28px rgba(47, 38, 25, .07);
+    border: 1px solid #e3e3e6;
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
   }
   .metric-card {
     display: grid;
@@ -1139,24 +1142,28 @@ const styles = `
     align-content: center;
   }
   .metric-card.good {
-    background: #ecfbf1;
-    border-color: #8bd3a5;
+    background: #eaf2fe;
+    border-color: #a9cbf5;
+  }
+  .metric-card.good span {
+    color: #0071e3;
   }
   .metric-card.warn {
-    background: #fff8df;
-    border-color: #f2c23b;
+    background: #fff8e6;
+    border-color: #f2d27a;
   }
   .metric-card span {
-    color: #776e62;
+    color: #6e6e73;
     font-size: 12px;
-    font-weight: 950;
+    font-weight: 700;
   }
   .metric-card strong {
-    color: #211f1b;
+    color: #1d1d1f;
     font-size: 16px;
     line-height: 1.35;
     word-break: keep-all;
     overflow-wrap: anywhere;
+    font-weight: 700;
   }
   .card {
     margin-top: 14px;
@@ -1166,6 +1173,7 @@ const styles = `
     margin: 0 0 14px;
     font-size: 22px;
     letter-spacing: -.035em;
+    font-weight: 800;
   }
   pre {
     margin: 0;
@@ -1193,19 +1201,19 @@ const styles = `
     grid-template-columns: 150px minmax(0, 1fr);
     gap: 10px;
     padding: 10px 12px;
-    border-radius: 14px;
-    background: #f8f4ec;
+    border-radius: 12px;
+    background: #f5f5f7;
   }
   .summary-list dt {
-    color: #7b7163;
+    color: #6e6e73;
     font-size: 13px;
-    font-weight: 950;
+    font-weight: 700;
   }
   .summary-list dd {
     margin: 0;
-    color: #211f1b;
+    color: #1d1d1f;
     font-size: 14px;
-    font-weight: 850;
+    font-weight: 700;
     line-height: 1.45;
   }
   .weekly-table-wrap {
@@ -1217,21 +1225,21 @@ const styles = `
     border-spacing: 0;
     min-width: 680px;
     overflow: hidden;
-    border-radius: 16px;
-    border: 1px solid #e9e1d4;
+    border-radius: 14px;
+    border: 1px solid #e3e3e6;
   }
   .weekly-detail-table th,
   .weekly-detail-table td {
     padding: 10px 11px;
-    border-bottom: 1px solid #eee6da;
+    border-bottom: 1px solid #ededf0;
     text-align: left;
     font-size: 13px;
     line-height: 1.45;
   }
   .weekly-detail-table th {
-    background: #211f1b;
-    color: #fff8df;
-    font-weight: 950;
+    background: #f5f5f7;
+    color: #1d1d1f;
+    font-weight: 800;
   }
   .weekly-detail-table tr:last-child td {
     border-bottom: 0;
@@ -1241,39 +1249,40 @@ const styles = `
     width: 100%;
     max-height: 720px;
     object-fit: contain;
-    border-radius: 18px;
-    background: #f4f1eb;
+    border-radius: 16px;
+    background: #f5f5f7;
   }
   .point-summary-card {
-    border-color: #eadbb6;
-    background: linear-gradient(180deg, #fffdf8, #fff8ea);
+    border-color: #a9cbf5;
+    background: #eaf2fe;
   }
   .point-summary-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .point-summary-list dd {
     font-size: 23px;
+    color: #0071e3;
   }
   .point-recent-title {
     margin-top: 14px;
-    color: #7b622a;
+    color: #0071e3;
     font-size: 13px;
-    font-weight: 950;
+    font-weight: 800;
   }
   .point-detail-list {
     margin: 8px 0 0;
     padding-left: 18px;
-    color: #3b332b;
+    color: #424245;
     line-height: 1.7;
     font-size: 14px;
-    font-weight: 780;
+    font-weight: 600;
   }
   .muted {
-    color: #81786b;
+    color: #86868b;
   }
   footer {
     margin-top: 18px;
-    color: #7d7468;
+    color: #86868b;
     font-size: 12px;
     line-height: 1.55;
     text-align: center;
