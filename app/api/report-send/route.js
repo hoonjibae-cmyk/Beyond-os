@@ -5,7 +5,8 @@ import { ensureReportShareLink } from '../../../lib/reportShare';
 import { validateKakaoTemplateVariables } from '../../../lib/reportTemplateValidation';
 import { diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
-import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -515,7 +516,7 @@ export async function POST(request) {
     const body = await request.json();
     const action = body.action || 'preview';
     const supabase = getSupabaseAdmin();
-    const defaultSchedule = await getDefaultScheduleSettings(supabase);
+    const scheduleConfig = await getDefaultScheduleConfig(supabase);
     const actor = getAuthorizedUser(request);
     const actorName = actor?.displayName || body.adminName || '관리자';
 
@@ -530,6 +531,8 @@ export async function POST(request) {
       .single();
 
     if (sessionError) throw sessionError;
+
+    const defaultSchedule = resolveScheduleForDate(scheduleConfig, session.session_date);
 
     const { data: report, error: reportError } = await supabase
       .from('daily_reports')

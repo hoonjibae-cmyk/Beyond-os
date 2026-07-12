@@ -98,7 +98,6 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const supabase = getSupabaseAdmin();
-    const defaultSchedule = await getDefaultScheduleSettings(supabase);
 
     if (!body.sessionId && !body.studentId) {
       return Response.json({ error: 'sessionId or studentId is required' }, { status: 400 });
@@ -114,6 +113,7 @@ export async function POST(request) {
 
     const session = await resolveSession(supabase, body);
     const targetDate = body.sessionDate || session.session_date;
+    const defaultSchedule = await getDefaultScheduleSettings(supabase, targetDate);
 
     const checkInAt = toIso(targetDate, body.checkInTime);
     const checkOutAt = body.checkOutTime ? toIso(targetDate, body.checkOutTime) : null;

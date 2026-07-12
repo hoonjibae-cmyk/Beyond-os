@@ -4,7 +4,8 @@ import { writeUserActionLog } from '../../../lib/actionLog';
 import { ensureReportShareLink } from '../../../lib/reportShare';
 import { validateKakaoTemplateVariables } from '../../../lib/reportTemplateValidation';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
-import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,11 +80,14 @@ function sanitizeParentIssueSummary(value = '') {
   return issues.length ? issues.join(', ') : '특이사항 없음';
 }
 
-function buildLiveWeeklySummary(savedSummary = {}, sessions = [], eventsBySession = {}, studyWindows = undefined) {
+function buildLiveWeeklySummary(savedSummary = {}, sessions = [], eventsBySession = {}, scheduleConfig = null) {
   if (!Array.isArray(sessions) || !sessions.length) return savedSummary || {};
 
   const attendanceDays = sessions.filter((session) => Boolean(session.check_in_at)).length;
-  const totalStudyMinutes = sessions.reduce((sum, session) => sum + calculateLivePureStudyMinutes(session, eventsBySession[session.id] || [], studyWindows), 0);
+  const totalStudyMinutes = sessions.reduce((sum, session) => {
+    const studyWindows = resolveScheduleForDate(scheduleConfig, session.session_date).studyWindows;
+    return sum + calculateLivePureStudyMinutes(session, eventsBySession[session.id] || [], studyWindows);
+  }, 0);
 
   return {
     ...(savedSummary || {}),
@@ -254,7 +258,7 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const supabase = getSupabaseAdmin();
-    const defaultSchedule = await getDefaultScheduleSettings(supabase);
+    const scheduleConfig = await getDefaultScheduleConfig(supabase);
     const actor = getAuthorizedUser(request);
     const actorName = actor?.displayName || body.adminName || '관리자';
     const action = ['preview', 'send'].includes(String(body.action || '').trim()) ? String(body.action || '').trim() : 'send';
@@ -307,7 +311,7 @@ export async function POST(request) {
           eventsBySession[event.session_id].push(event);
         }
       }
-      liveWeeklySummary = buildLiveWeeklySummary(report.summary_payload || {}, weeklySessions || [], eventsBySession, defaultSchedule.studyWindows);
+      liveWeeklySummary = buildLiveWeeklySummary(report.summary_payload || {}, weeklySessions || [], eventsBySession, scheduleConfig);
     } catch {
       liveWeeklySummary = report.summary_payload || {};
     }

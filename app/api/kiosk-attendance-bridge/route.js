@@ -883,7 +883,7 @@ export async function POST(request) {
       }, { status: 500 });
     }
 
-    const defaultSchedule = await getDefaultScheduleSettings(supabase);
+    const defaultSchedule = await getDefaultScheduleSettings(supabase, getKstDateString());
     const bridgeSettings = await getKioskBridgeSettings(supabase);
     const rawText = getRawText(body);
     const sourceDeviceId = safeText(body.sourceDeviceId || body.deviceId || request.headers.get('x-source-device-id') || request.headers.get('x-device-id') || 'android-bridge');

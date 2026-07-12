@@ -2,7 +2,8 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
-import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,7 @@ export async function GET(request) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const defaultSchedule = await getDefaultScheduleSettings(supabase);
+    const scheduleConfig = await getDefaultScheduleConfig(supabase);
     const { searchParams } = new URL(request.url);
     const today = getKstDateString();
     const start = searchParams.get('start') || today;
@@ -66,7 +67,7 @@ export async function GET(request) {
 
       const row = map[student.id];
       row.attendanceDays += session.check_in_at ? 1 : 0;
-      row.totalStudyMinutes += calculateScheduledPureStudyMinutes(session, { events: eventsBySession[session.id] || [], studyWindows: defaultSchedule.studyWindows });
+      row.totalStudyMinutes += calculateScheduledPureStudyMinutes(session, { events: eventsBySession[session.id] || [], studyWindows: resolveScheduleForDate(scheduleConfig, session.session_date).studyWindows });
       row.needsAttentionCount += session.seat_status === 'needs_attention' ? 1 : 0;
       row.absentCount += session.seat_status === 'absent' ? 1 : 0;
       row.awayCount += (eventsBySession[session.id] || []).filter((event) => event.event_type === 'away').length;

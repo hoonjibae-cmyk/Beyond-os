@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
-import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -409,8 +410,9 @@ function getWeeklyDetailRows(summary = {}) {
   }));
 }
 
-function buildWeeklyRowsFromSessions(sessions = [], eventsBySession = {}, studyWindows = undefined) {
+function buildWeeklyRowsFromSessions(sessions = [], eventsBySession = {}, scheduleConfig = null) {
   return (sessions || []).map((session) => {
+    const studyWindows = resolveScheduleForDate(scheduleConfig, session.session_date).studyWindows;
     const pureStudyMinutes = calculateLivePureStudyMinutes(session, eventsBySession[session.id] || [], studyWindows);
     const awayMinutes = calculateLiveAwayMinutes(session);
     const flags = [];
@@ -620,7 +622,7 @@ async function getStudentPointRows(supabase, studentId, endDate = null) {
 
 async function loadReport(token) {
   const supabase = getSupabaseAdmin();
-  const defaultSchedule = await getDefaultScheduleSettings(supabase);
+  const scheduleConfig = await getDefaultScheduleConfig(supabase);
   const nowIso = new Date().toISOString();
 
   const { data: link, error: linkError } = await supabase
@@ -684,6 +686,7 @@ async function loadReport(token) {
       }
     }
     const operatingRules = safePayload(report)?.dailyIssueRules || await getOperatingRules(supabase);
+    const defaultSchedule = resolveScheduleForDate(scheduleConfig, reportDate);
     return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, pointRows, dailyPointRows, schedule, operatingRules, defaultSchedule };
   }
 
@@ -724,7 +727,7 @@ async function loadReport(token) {
       }
     }
 
-    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, defaultSchedule };
+    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, scheduleConfig };
   }
 
   return { error: 'unknown-type' };
@@ -739,7 +742,7 @@ export default async function PublicReportPage({ params }) {
     return <ErrorPage title="리포트를 열 수 없습니다" message="링크가 만료되었거나 더 이상 사용 가능한 리포트가 아닙니다." />;
   }
 
-  const { reportType, report, session, student, link, planner, events = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null } = data;
+  const { reportType, report, session, student, link, planner, events = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
   const studyWindows = defaultSchedule?.studyWindows;
   const variables = getTemplateVariables(report);
   const isWeekly = reportType === 'weekly';
@@ -748,7 +751,7 @@ export default async function PublicReportPage({ params }) {
     ? `${report.start_date || '-'} ~ ${report.end_date || '-'}`
     : (session?.session_date || report.report_date || '-');
 
-  const liveWeeklyRows = isWeekly ? buildWeeklyRowsFromSessions(weeklySessions, weeklyEventsBySession, studyWindows) : [];
+  const liveWeeklyRows = isWeekly ? buildWeeklyRowsFromSessions(weeklySessions, weeklyEventsBySession, scheduleConfig) : [];
   const weeklySummary = isWeekly ? summarizeWeeklyRows(report.summary_payload || {}, liveWeeklyRows) : {};
   const weeklyRows = getWeeklySummaryRows(report, weeklySummary);
   const savedWeeklyDetailRows = getWeeklyDetailRows(weeklySummary);

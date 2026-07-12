@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-39-1-weekend-schedule-fallback-fix",
-  "version": "0.41.39-1",
+  "name": "beyond-os-v41-40-day-type-default-schedules",
+  "version": "0.41.40",
   "private": true,
   "scripts": {
     "dev": "next dev",

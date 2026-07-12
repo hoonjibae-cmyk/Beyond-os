@@ -2,7 +2,8 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
-import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -134,10 +135,11 @@ function summarizeStudyChecks(checks = []) {
   return { subjectCounts, statusCounts, topSubject, topStatus };
 }
 
-function getTimelineRows({ sessions = [], eventsBySession = {}, checksBySession = {}, reportsBySession = {}, plannersByDate = {}, acksByDate = {}, attendanceNotificationsByDate = {}, parentNotificationsByDate = {}, weeklyReports = [], defaultSchedule }) {
+function getTimelineRows({ sessions = [], eventsBySession = {}, checksBySession = {}, reportsBySession = {}, plannersByDate = {}, acksByDate = {}, attendanceNotificationsByDate = {}, parentNotificationsByDate = {}, weeklyReports = [], scheduleConfig }) {
   const rows = [];
 
   for (const session of sessions || []) {
+    const daySchedule = resolveScheduleForDate(scheduleConfig, session.session_date);
     const sessionEvents = eventsBySession[session.id] || [];
     const sessionChecks = checksBySession[session.id] || [];
     const report = reportsBySession[session.id] || null;
@@ -151,7 +153,7 @@ function getTimelineRows({ sessions = [], eventsBySession = {}, checksBySession 
     );
     const pureStudyMinutes = calculateScheduledPureStudyMinutes(session, {
       events: sessionEvents,
-      studyWindows: defaultSchedule?.studyWindows,
+      studyWindows: daySchedule?.studyWindows,
     });
     const studySummary = summarizeStudyChecks(sessionChecks);
 
@@ -229,12 +231,13 @@ function getTimelineRows({ sessions = [], eventsBySession = {}, checksBySession 
   return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
-function buildSummary({ sessions = [], events = [], checks = [], reports = [], planners = [], acknowledgements = [], attendanceNotifications = [], parentNotifications = [], weeklyReports = [], defaultSchedule }) {
+function buildSummary({ sessions = [], events = [], checks = [], reports = [], planners = [], acknowledgements = [], attendanceNotifications = [], parentNotifications = [], weeklyReports = [], scheduleConfig }) {
   const attendanceDays = sessions.filter((s) => s.check_in_at || s.seat_status !== 'absent').length;
   const absentDays = sessions.filter((s) => s.seat_status === 'absent').length;
   const totalStudyMinutes = sessions.reduce((sum, session) => {
     const sessionEvents = events.filter((event) => event.session_id === session.id);
-    return sum + calculateScheduledPureStudyMinutes(session, { events: sessionEvents, studyWindows: defaultSchedule?.studyWindows });
+    const daySchedule = resolveScheduleForDate(scheduleConfig, session.session_date);
+    return sum + calculateScheduledPureStudyMinutes(session, { events: sessionEvents, studyWindows: daySchedule?.studyWindows });
   }, 0);
   const awayCount = events.filter((event) => event.event_type === 'away').length;
   const returnCount = events.filter((event) => event.event_type === 'return').length;
@@ -302,7 +305,7 @@ export async function GET(request) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const defaultSchedule = await getDefaultScheduleSettings(supabase);
+    const scheduleConfig = await getDefaultScheduleConfig(supabase);
     const { searchParams } = new URL(request.url);
     const today = getKstDateString();
     const start = toDate(searchParams.get('start'), today);
@@ -454,7 +457,7 @@ export async function GET(request) {
       attendanceNotificationsByDate,
       parentNotificationsByDate,
       weeklyReports,
-      defaultSchedule,
+      scheduleConfig,
     });
 
     const summary = buildSummary({
@@ -467,7 +470,7 @@ export async function GET(request) {
       attendanceNotifications,
       parentNotifications,
       weeklyReports,
-      defaultSchedule,
+      scheduleConfig,
     });
     summary.studyVolumeGuide = classifyWeeklyStudyVolume(summary.totalStudyMinutes || 0, start, end);
 

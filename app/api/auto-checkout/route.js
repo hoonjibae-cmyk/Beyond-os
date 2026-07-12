@@ -26,8 +26,8 @@ function calculatePureStudyMinutes(session, checkoutIso, studyWindows) {
 
 async function runAutoCheckout() {
   const supabase = getSupabaseAdmin();
-  const defaultSchedule = await getDefaultScheduleSettings(supabase);
   const today = getKstDateString();
+  const defaultSchedule = await getDefaultScheduleSettings(supabase, today);
 
   const { data: sessions, error } = await supabase
     .from('daily_sessions')

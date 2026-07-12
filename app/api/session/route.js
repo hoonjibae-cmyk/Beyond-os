@@ -139,10 +139,10 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const supabase = getSupabaseAdmin();
-    const defaultSchedule = await getDefaultScheduleSettings(supabase);
+    const today = getKstDateString();
+    const defaultSchedule = await getDefaultScheduleSettings(supabase, today);
     const actor = getAuthorizedUser(request);
     const actorName = actor?.displayName || body.adminName || '관리자';
-    const today = getKstDateString();
 
     const seatNo = Number(body.seatNo);
     const student = body.student || {};

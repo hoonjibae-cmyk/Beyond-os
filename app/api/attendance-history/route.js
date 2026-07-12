@@ -2,7 +2,8 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
-import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,7 +88,7 @@ export async function GET(request) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const defaultSchedule = await getDefaultScheduleSettings(supabase);
+    const scheduleConfig = await getDefaultScheduleConfig(supabase);
     const { searchParams } = new URL(request.url);
     const today = getKstDateString();
     const start = toDate(searchParams.get('start'), today);
@@ -170,6 +171,7 @@ export async function GET(request) {
         : (awayMinutes > 0 ? `${awayMinutes}분` : '-');
       const report = reportsBySession[session.id] || {};
       const schedule = schedulesByDate[session.session_date] || {};
+      const defaultSchedule = resolveScheduleForDate(scheduleConfig, session.session_date || today);
 
       return {
         id: session.id,

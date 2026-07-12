@@ -65,7 +65,7 @@ async function applyHeldEvent({ supabase, hold, request, actorName }) {
   if (existingError) throw existingError;
 
   const next = buildNextSession(existingSession, hold.event_type, hold.event_at);
-  const defaultSchedule = await getDefaultScheduleSettings(supabase);
+  const defaultSchedule = await getDefaultScheduleSettings(supabase, sessionDate);
   const pureStudyMinutes = calculateScheduledPureStudyMinutes({
     check_in_at: next.checkInAt,
     check_out_at: next.checkOutAt,
@@ -330,7 +330,7 @@ async function rebuildSessionAfterUndo({ supabase, hold }) {
   if (eventsError) throw eventsError;
 
   const state = rebuildStateFromEvents(events || []);
-  const defaultSchedule = await getDefaultScheduleSettings(supabase);
+  const defaultSchedule = await getDefaultScheduleSettings(supabase, existingSession.session_date || getKstDateString());
   const nowIso = new Date().toISOString();
   const pureStudyMinutes = state.seatStatus === 'absent'
     ? 0

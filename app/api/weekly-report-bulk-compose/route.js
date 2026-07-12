@@ -2,7 +2,8 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
-import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -219,10 +220,11 @@ function buildReportText({ student = {}, startDate, endDate, summary = {}, inter
   return `[비욘드 주간 리포트]\n\n학생: ${student.name || '-'}\n기간: ${startDate} ~ ${endDate}\n\n이번 주 학습 요약\n- 등원일수: ${summary.attendanceDays || 0}일\n- 총 순공시간: ${formatMinutesKo(summary.totalStudyMinutes || 0)}\n- 일평균 순공시간: ${formatMinutesKo(summary.averageStudyMinutes || 0)}\n- 외출: ${summary.awayCount || 0}회 / 총 ${formatMinutesKo(summary.awayMinutes || 0)}\n- 주요 확인사항: ${summary.issueSummary || '특이사항 없음'}\n- 상벌점: ${summary.pointSummary?.label || '상벌점 기록 없음'}\n\n주간면담 내용\n${interviewText}\n\n주간 총평\n${comment}\n\n목동유쌤영어학원`;
 }
 
-function buildRowsFromSessions({ sessions = [], eventsBySession = {}, reportsBySession = {}, schedulesByDate = {}, defaultSchedule = {}, rules = DEFAULT_OPERATING_RULES }) {
+function buildRowsFromSessions({ sessions = [], eventsBySession = {}, reportsBySession = {}, schedulesByDate = {}, scheduleConfig = null, rules = DEFAULT_OPERATING_RULES }) {
   const rows = (sessions || []).map((session) => {
     const events = eventsBySession[session.id] || [];
     const schedule = schedulesByDate[session.session_date] || {};
+    const defaultSchedule = resolveScheduleForDate(scheduleConfig, session.session_date);
     const awayMinutes = Math.max(
       0,
       Number(session.away_total_minutes || 0) + (session.away_started_at ? diffMinutesIso(session.away_started_at, session.check_out_at || new Date().toISOString()) : 0)
@@ -321,7 +323,7 @@ async function fetchPointRows(supabase, studentId, startDate, endDate) {
   }
 }
 
-async function processStudent({ supabase, student, startDate, endDate, existingReport, defaultSchedule, rules, mode, actorName }) {
+async function processStudent({ supabase, student, startDate, endDate, existingReport, scheduleConfig, rules, mode, actorName }) {
   const shouldSkipExisting = mode === 'missing' && existingReport?.report_text;
   if (shouldSkipExisting) {
     return { ok: true, skipped: true, studentId: student.id, studentName: student.name, reason: '이미 저장된 위클리 리포트가 있습니다.' };
@@ -372,7 +374,7 @@ async function processStudent({ supabase, student, startDate, endDate, existingR
 
   const pointRows = await fetchPointRows(supabase, student.id, startDate, endDate);
   const pointSummary = summarizePointRows(pointRows);
-  const rows = buildRowsFromSessions({ sessions: sessions || [], eventsBySession, reportsBySession, schedulesByDate, defaultSchedule, rules });
+  const rows = buildRowsFromSessions({ sessions: sessions || [], eventsBySession, reportsBySession, schedulesByDate, scheduleConfig, rules });
   const summaryPayload = createSummaryPayload({ rows, pointSummary });
   const existingInterview = existingReport?.director_interview || '';
   const existingAiComment = existingReport?.ai_weekly_comment || '';
@@ -444,7 +446,7 @@ export async function POST(request) {
     const supabase = getSupabaseAdmin();
     const actor = getAuthorizedUser(request);
     const actorName = actor?.displayName || body.createdBy || '관리자';
-    const defaultSchedule = await getDefaultScheduleSettings(supabase);
+    const scheduleConfig = await getDefaultScheduleConfig(supabase);
     const rules = await getOperatingRules(supabase);
 
     const { data: students, error: studentError } = await supabase
@@ -474,7 +476,7 @@ export async function POST(request) {
           startDate,
           endDate,
           existingReport: existingByStudent.get(String(student.id)),
-          defaultSchedule,
+          scheduleConfig,
           rules,
           mode,
           actorName,

@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
-import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
+import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
 
 const STUDY_STATUS_OPTIONS = ['인강', '문제풀이', '암기', '독서', '수면', '비학습'];
 const SUBJECT_OPTIONS = ['수학', '영어', '국어', '사탐', '과탐', '기타'];
@@ -17,6 +17,7 @@ const REPEAT_OPTIONS = [
 ];
 
 const DEFAULT_SCHEDULE_SETTINGS = normalizeDefaultScheduleSettings(FALLBACK_DEFAULT_SCHEDULE_SETTINGS);
+const DEFAULT_SCHEDULE_CONFIG = normalizeDefaultScheduleConfig(FALLBACK_DEFAULT_SCHEDULE_SETTINGS);
 const DEFAULT_SCHEDULE_PERIODS = DEFAULT_SCHEDULE_SETTINGS.studyWindows;
 const DEFAULT_SCHEDULE_CHECK_IN = DEFAULT_SCHEDULE_SETTINGS.plannedCheckIn;
 const DEFAULT_SCHEDULE_CHECK_OUT = DEFAULT_SCHEDULE_SETTINGS.plannedCheckOut;
@@ -1355,14 +1356,9 @@ function getDayOfWeekFromDateString(dateString = getKstDateString()) {
   return new Date(`${dateString}T12:00:00+09:00`).getUTCDay();
 }
 
-// 자동(기본) 시간표 폴백은 운영일(월~토)에 적용합니다. 일요일은 제외.
-// 일요일은 개인 시간표가 '명시적으로' 저장된 경우에만 등원으로 처리하므로,
-// 평일/토요일 반복만 설정한 학생이 일요일에 등원해야 하는 것으로 잘못 표시되지 않습니다.
-// (추후 설정 탭의 요일 유형별 시간표에서 운영 요일을 직접 지정하도록 개편 예정)
-function isDefaultAttendanceDay(dateString = getKstDateString()) {
-  const dow = getDayOfWeekFromDateString(dateString);
-  return dow >= 1 && dow <= 6;
-}
+// 자동(기본) 시간표 폴백의 '운영일' 판정은 설정 탭의 요일 유형별 시간표
+// (평일/토요일/일요일/공휴일) 운영 토글에 따릅니다. 대시보드에서는 오늘 날짜로
+// resolve 된 defaultSchedule.operating 값을 그대로 사용합니다.
 
 function startOfWeek(dateString) {
   const d = new Date(`${dateString}T00:00:00`);
@@ -1826,7 +1822,11 @@ function buildEffectiveSchedulesForPresence({ schedules = [], students = [], ses
     if (student?.default_seat_no) addCandidate(student);
   }
 
-  const defaultSchedules = (isDefaultAttendanceDay(today) ? Object.values(candidateStudents) : [])
+  // 오늘의 요일 유형이 '운영'일 때만 자동(기본) 시간표 폴백을 적용합니다.
+  // defaultSchedule 은 대시보드에서 오늘 날짜로 resolve 된 값이라 operating 메타를 포함합니다.
+  // (레거시 평탄값에는 operating 이 없어 undefined → 운영으로 간주)
+  const isOperatingToday = defaultSchedule?.operating !== false;
+  const defaultSchedules = (isOperatingToday ? Object.values(candidateStudents) : [])
     .filter((student) => student?.id && !explicitStudentIds.has(String(student.id)))
     .map((student) => ({
       id: `default-${today}-${student.id}`,
@@ -2042,7 +2042,8 @@ export default function Page() {
   const [rulesDraft, setRulesDraft] = useState(DEFAULT_OPERATING_RULES);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [defaultSchedule, setDefaultSchedule] = useState(DEFAULT_SCHEDULE_SETTINGS);
-  const [defaultScheduleDraft, setDefaultScheduleDraft] = useState(DEFAULT_SCHEDULE_SETTINGS);
+  const [defaultScheduleConfig, setDefaultScheduleConfig] = useState(DEFAULT_SCHEDULE_CONFIG);
+  const [defaultScheduleConfigDraft, setDefaultScheduleConfigDraft] = useState(DEFAULT_SCHEDULE_CONFIG);
   const [defaultScheduleLoading, setDefaultScheduleLoading] = useState(false);
   const [sendConfig, setSendConfig] = useState(null);
   const mobileNavDragRef = useRef({ active: false, startX: 0, scrollLeft: 0, moved: false });
@@ -2431,30 +2432,33 @@ export default function Page() {
   }
 
 
+  function applyDefaultScheduleConfig(config) {
+    const normalizedConfig = normalizeDefaultScheduleConfig(config || DEFAULT_SCHEDULE_CONFIG);
+    setDefaultScheduleConfig(normalizedConfig);
+    setDefaultScheduleConfigDraft(normalizedConfig);
+    // 대시보드(오늘 화면)는 오늘 날짜의 요일 유형에 맞는 시간표를 사용합니다.
+    setDefaultSchedule(resolveScheduleForDate(normalizedConfig, getKstDateString()));
+    return normalizedConfig;
+  }
+
   async function loadDefaultSchedule() {
     try {
       const data = await apiFetch('/api/default-schedule');
-      const saved = normalizeDefaultScheduleSettings(data.defaultSchedule || DEFAULT_SCHEDULE_SETTINGS);
-      setDefaultSchedule(saved);
-      setDefaultScheduleDraft(saved);
+      applyDefaultScheduleConfig(data.defaultScheduleConfig || data.defaultSchedule || DEFAULT_SCHEDULE_CONFIG);
     } catch {
-      const fallback = normalizeDefaultScheduleSettings(DEFAULT_SCHEDULE_SETTINGS);
-      setDefaultSchedule(fallback);
-      setDefaultScheduleDraft(fallback);
+      applyDefaultScheduleConfig(DEFAULT_SCHEDULE_CONFIG);
     }
   }
 
-  async function saveDefaultSchedule(nextSchedule = defaultScheduleDraft) {
+  async function saveDefaultSchedule(nextConfig = defaultScheduleConfigDraft) {
     try {
       setDefaultScheduleLoading(true);
-      const normalized = normalizeDefaultScheduleSettings(nextSchedule);
+      const normalizedConfig = normalizeDefaultScheduleConfig(nextConfig);
       const data = await apiFetch('/api/default-schedule', {
         method: 'POST',
-        body: JSON.stringify({ defaultSchedule: normalized }),
+        body: JSON.stringify({ defaultScheduleConfig: normalizedConfig }),
       });
-      const saved = normalizeDefaultScheduleSettings(data.defaultSchedule || normalized);
-      setDefaultSchedule(saved);
-      setDefaultScheduleDraft(saved);
+      applyDefaultScheduleConfig(data.defaultScheduleConfig || normalizedConfig);
       setMessage(data.warning || '기본 시간표 저장 완료');
       // v41-34.1: 멘토링 차시 드롭다운/요일 템플릿도 설정 탭의 기본 시간표를 기준으로 쓰도록 동기화합니다.
       await apiFetch('/api/mentoring', { method: 'POST', body: JSON.stringify({ action: 'seedDefaults', scheduleDate: getKstDateString() }) }).catch(() => null);
@@ -4514,9 +4518,11 @@ export default function Page() {
     const end = schedule?.planned_check_out?.slice(0, 5) || scheduleDefaults.plannedCheckOut;
 
     if (!schedule) {
-      return isDefaultAttendanceDay()
-        ? getDefaultScheduleSummaryLines(start, end, [], defaultSchedule)
-        : ['오늘은 등원 예정이 없습니다. (주말 · 개인 시간표 미설정)'];
+      if (defaultSchedule?.operating !== false) {
+        return getDefaultScheduleSummaryLines(start, end, [], defaultSchedule);
+      }
+      const dayTypeLabel = DEFAULT_SCHEDULE_DAY_TYPE_LABELS[defaultSchedule?.dayType] || '휴무일';
+      return [`오늘은 등원 예정이 없습니다. (${dayTypeLabel} · 개인 시간표 미설정)`];
     }
 
     const breaks = (todayScheduleBreaks || [])
@@ -4940,8 +4946,9 @@ export default function Page() {
               saveOperatingRules={saveOperatingRules}
               rulesLoading={rulesLoading}
               defaultSchedule={defaultSchedule}
-              defaultScheduleDraft={defaultScheduleDraft}
-              setDefaultScheduleDraft={setDefaultScheduleDraft}
+              defaultScheduleConfig={defaultScheduleConfig}
+              defaultScheduleConfigDraft={defaultScheduleConfigDraft}
+              setDefaultScheduleConfigDraft={setDefaultScheduleConfigDraft}
               saveDefaultSchedule={saveDefaultSchedule}
               defaultScheduleLoading={defaultScheduleLoading}
               apiFetch={apiFetch}
@@ -13080,7 +13087,7 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
 
 function SettingsTab({
   settingsView, setSettingsView, students, seatsForDisplay, openStudentEditor, diagnostics, loading, runCheck, cleanup,
-  operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleDraft, setDefaultScheduleDraft, saveDefaultSchedule, defaultScheduleLoading, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
+  operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
 }) {
   useEffect(() => {
     if (settingsView === 'users' && !canUseUserManagement) setSettingsView('students');
@@ -13155,9 +13162,9 @@ function SettingsTab({
 
       {settingsView === 'defaultSchedule' ? (
         <DefaultScheduleSettingsTab
-          defaultSchedule={defaultSchedule}
-          defaultScheduleDraft={defaultScheduleDraft}
-          setDefaultScheduleDraft={setDefaultScheduleDraft}
+          defaultScheduleConfig={defaultScheduleConfig}
+          defaultScheduleConfigDraft={defaultScheduleConfigDraft}
+          setDefaultScheduleConfigDraft={setDefaultScheduleConfigDraft}
           saveDefaultSchedule={saveDefaultSchedule}
           defaultScheduleLoading={defaultScheduleLoading}
         />
@@ -15628,72 +15635,111 @@ function KioskBridgeSettingsTab({ apiFetch, setMessage }) {
 }
 
 
-function DefaultScheduleSettingsTab({ defaultSchedule, defaultScheduleDraft, setDefaultScheduleDraft, saveDefaultSchedule, defaultScheduleLoading }) {
-  const normalizedDraft = normalizeDefaultScheduleSettings(defaultScheduleDraft);
-  const draft = {
-    ...normalizedDraft,
-    ...(defaultScheduleDraft || {}),
-    studyWindows: Array.isArray(defaultScheduleDraft?.studyWindows) ? defaultScheduleDraft.studyWindows : normalizedDraft.studyWindows,
-  };
-  const current = normalizeDefaultScheduleSettings(defaultSchedule);
+function validateScheduleVariantDraft(variant = {}, dayLabel = '') {
+  const errors = [];
+  const prefix = dayLabel ? `[${dayLabel}] ` : '';
+  const inMinute = timeToMinutes(variant.plannedCheckIn);
+  const outMinute = timeToMinutes(variant.plannedCheckOut);
+  if (!isFiveMinuteTime24(variant.plannedCheckIn)) errors.push(`${prefix}기본 예정 등원은 5분 단위 HH:MM 형식이어야 합니다.`);
+  if (!isFiveMinuteTime24(variant.plannedCheckOut)) errors.push(`${prefix}기본 예정 하원은 5분 단위 HH:MM 형식이어야 합니다.`);
+  if (inMinute !== null && outMinute !== null && outMinute <= inMinute) errors.push(`${prefix}기본 예정 하원은 기본 예정 등원보다 늦어야 합니다.`);
+  (variant.studyWindows || []).forEach((item, index) => {
+    const start = timeToMinutes(item.start);
+    const end = timeToMinutes(item.end);
+    if (!String(item.label || '').trim()) errors.push(`${prefix}${index + 1}번째 구간: 이름을 입력하세요.`);
+    if (!isFiveMinuteTime24(item.start)) errors.push(`${prefix}${index + 1}번째 구간: 시작시간은 5분 단위 HH:MM 형식이어야 합니다.`);
+    if (!isFiveMinuteTime24(item.end)) errors.push(`${prefix}${index + 1}번째 구간: 종료시간은 5분 단위 HH:MM 형식이어야 합니다.`);
+    if (start !== null && end !== null && end <= start) errors.push(`${prefix}${index + 1}번째 구간: 종료시간은 시작시간보다 늦어야 합니다.`);
+  });
+  return errors;
+}
+
+function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading }) {
+  const [activeDayType, setActiveDayType] = useState('weekday');
+  const [holidayInput, setHolidayInput] = useState('');
+
+  const configDraft = defaultScheduleConfigDraft && defaultScheduleConfigDraft.variants
+    ? defaultScheduleConfigDraft
+    : normalizeDefaultScheduleConfig(defaultScheduleConfigDraft || DEFAULT_SCHEDULE_CONFIG);
+  const variants = configDraft.variants || DEFAULT_SCHEDULE_CONFIG.variants;
+  const holidays = Array.isArray(configDraft.holidays) ? configDraft.holidays : [];
+  const variant = variants[activeDayType] || variants.weekday;
+  const dayLabel = DEFAULT_SCHEDULE_DAY_TYPE_LABELS[activeDayType];
+  const todayDayType = getDayTypeForDate(configDraft, getKstDateString());
+
+  function updateVariant(nextVariant) {
+    setDefaultScheduleConfigDraft({
+      ...configDraft,
+      variants: { ...variants, [activeDayType]: nextVariant },
+    });
+  }
 
   function updateField(key, value) {
-    setDefaultScheduleDraft({ ...draft, [key]: value });
+    updateVariant({ ...variant, [key]: value });
   }
 
   function updateWindow(index, key, value) {
-    const windows = [...(draft.studyWindows || [])];
+    const windows = [...(variant.studyWindows || [])];
     windows[index] = { ...(windows[index] || {}), [key]: value };
     // 입력 중 24:00 같은 값을 보존하기 위해 정규화는 저장/불러오기에서 한 번 더 수행합니다.
-    setDefaultScheduleDraft({ ...draft, studyWindows: windows });
+    updateVariant({ ...variant, studyWindows: windows });
   }
 
   function addWindow() {
-    const last = draft.studyWindows?.[draft.studyWindows.length - 1];
+    const last = variant.studyWindows?.[variant.studyWindows.length - 1];
     const startMinute = Math.min(23 * 60, (timeToMinutes(last?.end) ?? 9 * 60));
     const endMinute = Math.min(24 * 60, startMinute + 50);
-    setDefaultScheduleDraft({
-      ...draft,
+    updateVariant({
+      ...variant,
       studyWindows: [
-        ...(draft.studyWindows || []),
-        { label: `${(draft.studyWindows || []).length + 1}차시`, start: minutesToTime(startMinute), end: minutesToTime(endMinute) },
+        ...(variant.studyWindows || []),
+        { label: `${(variant.studyWindows || []).length + 1}차시`, start: minutesToTime(startMinute), end: minutesToTime(endMinute) },
       ],
     });
   }
 
   function removeWindow(index) {
-    const windows = (draft.studyWindows || []).filter((_, rowIndex) => rowIndex !== index);
-    setDefaultScheduleDraft({ ...draft, studyWindows: windows.length ? windows : DEFAULT_SCHEDULE_SETTINGS.studyWindows });
+    const windows = (variant.studyWindows || []).filter((_, rowIndex) => rowIndex !== index);
+    updateVariant({ ...variant, studyWindows: windows.length ? windows : DEFAULT_SCHEDULE_SETTINGS.studyWindows });
+  }
+
+  function copyFromWeekday() {
+    const base = variants.weekday || DEFAULT_SCHEDULE_CONFIG.variants.weekday;
+    updateVariant({
+      ...variant,
+      scheduleLabel: base.scheduleLabel,
+      plannedCheckIn: base.plannedCheckIn,
+      plannedCheckOut: base.plannedCheckOut,
+      studyWindows: (base.studyWindows || []).map((item) => ({ ...item })),
+    });
   }
 
   function resetDraft() {
-    setDefaultScheduleDraft(normalizeDefaultScheduleSettings(DEFAULT_SCHEDULE_SETTINGS));
+    setDefaultScheduleConfigDraft(normalizeDefaultScheduleConfig(DEFAULT_SCHEDULE_CONFIG));
   }
 
   function loadCurrent() {
-    setDefaultScheduleDraft(current);
+    setDefaultScheduleConfigDraft(normalizeDefaultScheduleConfig(defaultScheduleConfig || DEFAULT_SCHEDULE_CONFIG));
   }
 
-  function validateDraft() {
-    const errors = [];
-    const inMinute = timeToMinutes(draft.plannedCheckIn);
-    const outMinute = timeToMinutes(draft.plannedCheckOut);
-    if (!isFiveMinuteTime24(draft.plannedCheckIn)) errors.push('기본 예정 등원은 5분 단위 HH:MM 형식이어야 합니다.');
-    if (!isFiveMinuteTime24(draft.plannedCheckOut)) errors.push('기본 예정 하원은 5분 단위 HH:MM 형식이어야 합니다.');
-    if (inMinute !== null && outMinute !== null && outMinute <= inMinute) errors.push('기본 예정 하원은 기본 예정 등원보다 늦어야 합니다.');
-    (draft.studyWindows || []).forEach((item, index) => {
-      const start = timeToMinutes(item.start);
-      const end = timeToMinutes(item.end);
-      if (!String(item.label || '').trim()) errors.push(`${index + 1}번째 구간: 이름을 입력하세요.`);
-      if (!isFiveMinuteTime24(item.start)) errors.push(`${index + 1}번째 구간: 시작시간은 5분 단위 HH:MM 형식이어야 합니다.`);
-      if (!isFiveMinuteTime24(item.end)) errors.push(`${index + 1}번째 구간: 종료시간은 5분 단위 HH:MM 형식이어야 합니다.`);
-      if (start !== null && end !== null && end <= start) errors.push(`${index + 1}번째 구간: 종료시간은 시작시간보다 늦어야 합니다.`);
-    });
-    return errors;
+  function addHoliday() {
+    const normalized = normalizeHolidayList([...holidays, holidayInput]);
+    if (normalized.length === holidays.length) {
+      setHolidayInput('');
+      return;
+    }
+    setDefaultScheduleConfigDraft({ ...configDraft, holidays: normalized });
+    setHolidayInput('');
   }
 
-  const validationErrors = validateDraft();
-  const totalStudyMinutes = (draft.studyWindows || []).reduce((sum, item) => {
+  function removeHoliday(date) {
+    setDefaultScheduleConfigDraft({ ...configDraft, holidays: holidays.filter((item) => item !== date) });
+  }
+
+  const activeErrors = validateScheduleVariantDraft(variant, '');
+  const allErrors = DEFAULT_SCHEDULE_DAY_TYPES.flatMap((dt) => validateScheduleVariantDraft(variants[dt] || {}, DEFAULT_SCHEDULE_DAY_TYPE_LABELS[dt]));
+  const holidayInputValid = !holidayInput || normalizeHolidayList([holidayInput]).length > 0;
+  const totalStudyMinutes = (variant.studyWindows || []).reduce((sum, item) => {
     const start = timeToMinutes(item.start);
     const end = timeToMinutes(item.end);
     return start !== null && end !== null && end > start ? sum + (end - start) : sum;
@@ -15703,30 +15749,57 @@ function DefaultScheduleSettingsTab({ defaultSchedule, defaultScheduleDraft, set
     <section className="content-card operating-rules-tab default-schedule-tab">
       <div className="section-head">
         <div>
-          <h2>설정 · 기본 시간표</h2>
-          <p>코드 수정 없이 기본 예정 등하원 시간과 순공 인정 구간을 운영 상황에 맞게 조정합니다.</p>
+          <h2>설정 · 기본 시간표 (요일 유형별)</h2>
+          <p>평일 · 토요일 · 일요일 · 공휴일 시간표를 각각 설정합니다. 학생별 예외 시간표가 없을 때 해당 요일 유형의 기본 시간표가 자동 적용됩니다.</p>
         </div>
         <div className="planner-head-actions">
           <button className="secondary section-action" onClick={loadCurrent} disabled={defaultScheduleLoading}>현재값 불러오기</button>
           <button className="secondary section-action" onClick={resetDraft} disabled={defaultScheduleLoading}>기본값</button>
-          <button className="primary section-action" onClick={() => saveDefaultSchedule(draft)} disabled={defaultScheduleLoading || validationErrors.length > 0}>{defaultScheduleLoading ? '저장 중...' : '기본 시간표 저장'}</button>
+          <button className="primary section-action" onClick={() => saveDefaultSchedule(configDraft)} disabled={defaultScheduleLoading || allErrors.length > 0}>{defaultScheduleLoading ? '저장 중...' : '기본 시간표 저장'}</button>
         </div>
+      </div>
+
+      <div className="planner-head-actions day-type-tabs" style={{ flexWrap: 'wrap', marginBottom: '16px' }}>
+        {DEFAULT_SCHEDULE_DAY_TYPES.map((dt) => (
+          <button
+            key={dt}
+            className={`section-action ${activeDayType === dt ? 'primary' : 'secondary'}`}
+            onClick={() => setActiveDayType(dt)}
+          >
+            {DEFAULT_SCHEDULE_DAY_TYPE_LABELS[dt]}
+            {variants[dt]?.enabled === false ? ' · 휴무' : ''}
+            {todayDayType === dt ? ' · 오늘' : ''}
+          </button>
+        ))}
       </div>
 
       <div className="rules-grid">
         <div className="field">
+          <label>{dayLabel} 운영</label>
+          <label className="toggle-inline" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              checked={variant.enabled !== false}
+              onChange={(e) => updateField('enabled', e.target.checked)}
+              style={{ width: '18px', height: '18px' }}
+            />
+            <span>{variant.enabled !== false ? '운영일 (기본 시간표 자동 적용)' : '휴무일 (개인 시간표가 있는 학생만 등원)'}</span>
+          </label>
+          <div className="hint">휴무로 두면 이 요일 유형에는 자동 기본 시간표가 적용되지 않습니다. 개인 시간표가 저장된 학생만 등원으로 처리됩니다.</div>
+        </div>
+        <div className="field">
           <label>시간표 이름</label>
-          <input value={draft.scheduleLabel} onChange={(e) => updateField('scheduleLabel', e.target.value)} placeholder="예: 방학 기본 시간표" />
-          <div className="hint">학생별 예외 시간표가 없을 때 표시되는 기본 시간표명입니다.</div>
+          <input value={variant.scheduleLabel || ''} onChange={(e) => updateField('scheduleLabel', e.target.value)} placeholder={`예: ${dayLabel} 기본 시간표`} />
+          <div className="hint">{dayLabel}에 학생별 예외 시간표가 없을 때 표시되는 기본 시간표명입니다.</div>
         </div>
         <div className="field">
           <label>기본 예정 등원</label>
-          <TimeSelect value={draft.plannedCheckIn} onChange={(value) => updateField('plannedCheckIn', value)} />
+          <TimeSelect value={variant.plannedCheckIn} onChange={(value) => updateField('plannedCheckIn', value)} />
           <div className="hint">지각 판정의 기본 기준입니다. 5분 단위로 입력하세요.</div>
         </div>
         <div className="field">
           <label>기본 예정 하원</label>
-          <TimeSelect value={draft.plannedCheckOut} onChange={(value) => updateField('plannedCheckOut', value)} allow24 />
+          <TimeSelect value={variant.plannedCheckOut} onChange={(value) => updateField('plannedCheckOut', value)} allow24 />
           <div className="hint">조퇴 판정의 기본 기준입니다. 24:00까지 입력할 수 있습니다.</div>
         </div>
         <div className="field">
@@ -15739,15 +15812,20 @@ function DefaultScheduleSettingsTab({ defaultSchedule, defaultScheduleDraft, set
       <div className="send-payload-preview default-schedule-editor">
         <div className="send-payload-head">
           <div>
-            <h3>학습 인정 구간</h3>
+            <h3>{dayLabel} 학습 인정 구간</h3>
             <p>순공시간 계산과 기본 시간표 화면에 쓰이는 구간입니다. 점심/저녁/쉬는시간은 구간을 비워두면 자동 제외됩니다.</p>
           </div>
-          <button className="secondary section-action" onClick={addWindow} disabled={defaultScheduleLoading}>구간 추가</button>
+          <div className="planner-head-actions">
+            {activeDayType !== 'weekday' ? (
+              <button className="secondary section-action" onClick={copyFromWeekday} disabled={defaultScheduleLoading}>평일 시간표 복사</button>
+            ) : null}
+            <button className="secondary section-action" onClick={addWindow} disabled={defaultScheduleLoading}>구간 추가</button>
+          </div>
         </div>
 
         <div className="schedule-window-list">
-          {(draft.studyWindows || []).map((item, index) => (
-            <div className="break-row schedule-window-row" key={`${index}-${item.label}-${item.start}-${item.end}`}>
+          {(variant.studyWindows || []).map((item, index) => (
+            <div className="break-row schedule-window-row" key={`${activeDayType}-${index}-${item.label}-${item.start}-${item.end}`}>
               <div className="time-grid">
                 <div className="field">
                   <label>구간명</label>
@@ -15771,15 +15849,54 @@ function DefaultScheduleSettingsTab({ defaultSchedule, defaultScheduleDraft, set
           ))}
         </div>
 
-        {validationErrors.length ? (
+        {activeErrors.length ? (
           <div className="template-validation-list failed">
-            <strong>저장 전 확인</strong>
-            <span>{validationErrors.join(' / ')}</span>
+            <strong>저장 전 확인 ({dayLabel})</strong>
+            <span>{activeErrors.join(' / ')}</span>
           </div>
         ) : (
-          <div className="all-clear">저장 가능한 기본 시간표입니다.</div>
+          <div className="all-clear">{dayLabel} 시간표는 저장 가능합니다.</div>
         )}
       </div>
+
+      <div className="send-payload-preview default-schedule-editor">
+        <div className="send-payload-head">
+          <div>
+            <h3>공휴일 지정</h3>
+            <p>여기에 등록한 날짜는 요일과 관계없이 공휴일 시간표가 적용됩니다. (YYYY-MM-DD)</p>
+          </div>
+        </div>
+        <div className="rules-grid" style={{ alignItems: 'end' }}>
+          <div className="field">
+            <label>공휴일 날짜 추가</label>
+            <input
+              type="date"
+              value={holidayInput}
+              onChange={(e) => setHolidayInput(e.target.value)}
+            />
+            {!holidayInputValid ? <div className="hint" style={{ color: '#d64545' }}>YYYY-MM-DD 형식으로 입력하세요.</div> : null}
+          </div>
+          <div className="field">
+            <label>&nbsp;</label>
+            <button className="secondary section-action" onClick={addHoliday} disabled={defaultScheduleLoading || !holidayInput || !holidayInputValid}>공휴일 추가</button>
+          </div>
+        </div>
+        <div className="holiday-chip-list" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+          {holidays.length ? holidays.map((date) => (
+            <span key={date} className="filter-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              {date}
+              <button className="danger" style={{ padding: '0 6px', lineHeight: 1.4 }} onClick={() => removeHoliday(date)} disabled={defaultScheduleLoading}>×</button>
+            </span>
+          )) : <span className="hint">등록된 공휴일이 없습니다.</span>}
+        </div>
+      </div>
+
+      {allErrors.length ? (
+        <div className="template-validation-list failed">
+          <strong>저장 전 확인 (전체 요일 유형)</strong>
+          <span>{allErrors.join(' / ')}</span>
+        </div>
+      ) : null}
     </section>
   );
 }
