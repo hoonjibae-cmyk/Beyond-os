@@ -11767,7 +11767,7 @@ function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRan
 function AttendanceTab({
   students, rows, loading, start, end, studentFilter, setStart, setEnd, setStudentFilter, loadHistory, setPreset,
   operatingRules, statusFilter, setStatusFilter, summaryCollapsed, setSummaryCollapsed, saveMentorComment, focusMentorCommentRequest,
-  mentoringContext, onReturnToMentoring, onNavigateMentoringStudent,
+  mentoringContext, onReturnToMentoring, onNavigateMentoringStudent, historySummary = null,
 }) {
   const rules = normalizeOperatingRules(operatingRules);
   const selectedStudent = (students || []).find((student) => String(student.id) === String(studentFilter));
@@ -11889,6 +11889,13 @@ function AttendanceTab({
               <div><span>외출</span><strong>{totalAway}회 · {formatMinutes(totalAwayMinutes)}</strong></div>
               <div><span>코멘트 기록</span><strong>{commentDays}일</strong></div>
               <div><span>관리주의일</span><strong>{attentionDays}일</strong></div>
+              {historySummary ? (
+                <>
+                  <div><span>순찰 기록</span><strong>{historySummary.studyCheckCount || 0}회</strong></div>
+                  <div><span>학부모 알림</span><strong>{historySummary.alertCount || 0}건</strong></div>
+                  <div><span>리포트 발송</span><strong>{historySummary.dailySentCount || 0}/{historySummary.dailyReportCount || 0}</strong></div>
+                </>
+              ) : null}
             </div>
           ) : null}
 
@@ -11995,6 +12002,7 @@ function AttendanceTab({
 function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
   const selectedStudentId = attendanceProps.studentFilter || historyProps.focusStudentId || '';
   const selectedStudent = (attendanceProps.students || historyProps.students || []).find((student) => String(student.id) === String(selectedStudentId));
+  const [historySummary, setHistorySummary] = useState(null);
 
   return (
     <section className="student-care-page student-care-unified-page">
@@ -12047,7 +12055,7 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
             <p>오늘 출결 상태와 멘토 코멘트를 먼저 확인하고 저장합니다. 멘토링 시간표에서 넘어온 경우 저장 후 시간표로 바로 돌아갈 수 있습니다.</p>
           </div>
         </div>
-        <AttendanceTab {...attendanceProps} />
+        <AttendanceTab {...attendanceProps} historySummary={historySummary} />
       </div>
 
       <div id="student-care-history-section" className="student-care-section-block student-care-history-section">
@@ -12064,6 +12072,7 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
           externalStudentId={selectedStudentId}
           externalStart={historyProps.externalStart || attendanceProps.start}
           externalEnd={historyProps.externalEnd || attendanceProps.end}
+          onSummaryChange={setHistorySummary}
         />
       </div>
     </section>
@@ -12071,7 +12080,7 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
 }
 
 
-function StudentHistoryTab({ students = [], apiFetch, currentUser, setMessage, setActiveTab, focusStudentId = '', embedded = false, externalStudentId = '', externalStart = '', externalEnd = '' }) {
+function StudentHistoryTab({ students = [], apiFetch, currentUser, setMessage, setActiveTab, focusStudentId = '', embedded = false, externalStudentId = '', externalStart = '', externalEnd = '', onSummaryChange }) {
   const today = getKstDateString();
   const defaultRange = { start: addDays(today, -6), end: today };
   const [studentId, setStudentId] = useState('');
@@ -12241,15 +12250,23 @@ function StudentHistoryTab({ students = [], apiFetch, currentUser, setMessage, s
   const summary = historyData?.summary || {};
   const rows = historyData?.rows || [];
 
+  // 임베드(학습 관리 탭)에서는 요약 정보를 상단 요약 카드로 끌어올립니다.
+  useEffect(() => {
+    if (!onSummaryChange) return;
+    onSummaryChange(historyData?.summary || null);
+  }, [onSummaryChange, historyData?.summary]);
+
   return (
     <section className={embedded ? 'student-history-page embedded-student-history' : 'student-history-page'}>
-      <div className={embedded ? 'content-card student-history-hero embedded' : 'content-card student-history-hero'}>
+      {!embedded ? (
+      <div className="content-card student-history-hero">
         <div>
-          <h2>{embedded ? '누적 관리 이력' : '학생 관리 이력'}</h2>
-          <p>{embedded ? '위의 학생·기간 기준으로 출결, 순공시간, 순찰 체크, 플래너, 관리주의, 알림, 리포트 이력을 함께 표시합니다.' : '학생 1명을 선택하면 조회기간의 출결, 순공시간, 순찰 체크, 플래너, 관리주의, 알림, 리포트 이력을 한 화면에 압축해서 확인합니다.'}</p>
+          <h2>학생 관리 이력</h2>
+          <p>학생 1명을 선택하면 조회기간의 출결, 순공시간, 순찰 체크, 플래너, 관리주의, 알림, 리포트 이력을 한 화면에 압축해서 확인합니다.</p>
         </div>
-        <div className="student-history-badge">{historyData ? `${historyData.start} ~ ${historyData.end}` : embedded ? '상단 조건 연동' : '상담 준비 · 누적 관리 확인용'}</div>
+        <div className="student-history-badge">{historyData ? `${historyData.start} ~ ${historyData.end}` : '상담 준비 · 누적 관리 확인용'}</div>
       </div>
+      ) : null}
 
       {!embedded ? (
       <div className="content-card student-history-filter-card">
@@ -12282,33 +12299,37 @@ function StudentHistoryTab({ students = [], apiFetch, currentUser, setMessage, s
         </div>
         {notice ? <div className="inline-notice">{notice}</div> : null}
       </div>
-      ) : notice ? <div className="inline-notice student-history-embedded-notice">{notice}</div> : null}
+      ) : null}
 
       {historyData ? (
         <>
-          <div className="student-history-profile-card content-card">
-            <div>
-              <span>선택 학생</span>
-              <strong>{selectedStudent?.name || historyData.student?.name || '학생'}</strong>
-              <em>{[historyData.student?.school, historyData.student?.grade].filter(Boolean).join(' · ') || '학교/학년 미입력'}</em>
-            </div>
-            <div>
-              <span>조회 기간</span>
-              <strong>{historyData.start} ~ {historyData.end}</strong>
-              <em>표시는 상담용 압축 뷰입니다.</em>
-            </div>
-          </div>
+          {!embedded ? (
+            <>
+              <div className="student-history-profile-card content-card">
+                <div>
+                  <span>선택 학생</span>
+                  <strong>{selectedStudent?.name || historyData.student?.name || '학생'}</strong>
+                  <em>{[historyData.student?.school, historyData.student?.grade].filter(Boolean).join(' · ') || '학교/학년 미입력'}</em>
+                </div>
+                <div>
+                  <span>조회 기간</span>
+                  <strong>{historyData.start} ~ {historyData.end}</strong>
+                  <em>표시는 상담용 압축 뷰입니다.</em>
+                </div>
+              </div>
 
-          <div className="student-history-summary-grid">
-            <div><span>등원일수</span><strong>{summary.attendanceDays || 0}일</strong></div>
-            <div><span>총 순공시간</span><strong>{summary.totalStudyLabel || '0분'}</strong></div>
-            <div><span>일평균 순공</span><strong>{summary.averageStudyLabel || '0분'}</strong></div>
-            <div><span>외출</span><strong>{summary.awayCount || 0}회</strong></div>
-            <div><span>순찰 기록</span><strong>{summary.studyCheckCount || 0}회</strong></div>
-            <div><span>관리주의</span><strong>{summary.focusCount || 0}건</strong></div>
-            <div><span>학부모 알림</span><strong>{summary.alertCount || 0}건</strong></div>
-            <div><span>리포트 발송</span><strong>{summary.dailySentCount || 0}/{summary.dailyReportCount || 0}</strong></div>
-          </div>
+              <div className="student-history-summary-grid">
+                <div><span>등원일수</span><strong>{summary.attendanceDays || 0}일</strong></div>
+                <div><span>총 순공시간</span><strong>{summary.totalStudyLabel || '0분'}</strong></div>
+                <div><span>일평균 순공</span><strong>{summary.averageStudyLabel || '0분'}</strong></div>
+                <div><span>외출</span><strong>{summary.awayCount || 0}회</strong></div>
+                <div><span>순찰 기록</span><strong>{summary.studyCheckCount || 0}회</strong></div>
+                <div><span>관리주의</span><strong>{summary.focusCount || 0}건</strong></div>
+                <div><span>학부모 알림</span><strong>{summary.alertCount || 0}건</strong></div>
+                <div><span>리포트 발송</span><strong>{summary.dailySentCount || 0}/{summary.dailyReportCount || 0}</strong></div>
+              </div>
+            </>
+          ) : null}
 
           <div className="student-history-layout">
             <div className="content-card student-history-main-table-card">

@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-55-learning-mgmt-tab-consolidation",
-  "version": "0.41.55",
+  "name": "beyond-os-v41-56-learning-mgmt-summary-merge",
+  "version": "0.41.56",
   "private": true,
   "scripts": {
     "dev": "next dev",

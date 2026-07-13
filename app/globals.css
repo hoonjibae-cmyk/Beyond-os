@@ -18606,8 +18606,13 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .student-history-detail-grid > div{ background:#fff; border:1px solid #e3e3e6; border-radius:12px; padding:10px 12px; }
 .student-history-detail-grid b{ display:block; color:#6e6e73; font-size:11px; font-weight:700; margin-bottom:4px; }
 .student-history-detail-grid span{ color:#1d1d1f; font-size:13px; line-height:1.5; }
-/* 요약/리스크 칩 애플 톤 */
+/* 요약/리스크 칩 애플 톤 + 가독성(진한 값 글씨) */
 .attendance-insight-summary > div, .student-history-summary-grid > div{ background:#f5f5f7 !important; border:1px solid #ececef !important; border-radius:12px !important; }
+.attendance-insight-summary > div > span, .student-history-summary-grid > div > span,
+.attendance-insight-summary .student-profile-card span{ color:#6e6e73 !important; }
+.attendance-insight-summary > div > strong, .student-history-summary-grid > div > strong,
+.attendance-insight-summary .student-profile-card strong{ color:#1d1d1f !important; }
+.attendance-insight-summary .student-profile-card em{ color:#6e6e73 !important; }
 .attendance-risk-chip-row .risk-chip{ background:#ececef; color:#1d1d1f; border-radius:999px; }
 .attendance-risk-chip-row .risk-chip.warn{ background:#fff3e0; color:#b26a00; }
 .attendance-risk-chip-row .risk-chip.danger{ background:#fdecec; color:#c0392b; }
