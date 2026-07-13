@@ -36,7 +36,7 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_MODEL || 'gpt-5.6-luna';
+    const model = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
 
     if (!apiKey) {
       return Response.json({

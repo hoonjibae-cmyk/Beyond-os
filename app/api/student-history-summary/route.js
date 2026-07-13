@@ -80,7 +80,7 @@ async function callOpenAiForSummary({ source, summaryType = 'internal_weekly' })
     throw new Error('OPENAI_API_KEY 환경변수가 설정되어 있지 않습니다.');
   }
 
-  const model = process.env.GPT_SUMMARY_MODEL || process.env.STUDENT_SUMMARY_MODEL || process.env.OPENAI_MODEL || 'gpt-5.6-luna';
+  const model = process.env.GPT_SUMMARY_MODEL || process.env.STUDENT_SUMMARY_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini';
   const enrichedSource = withStudyVolumeGuide(source || {});
   const studyVolumeGuide = enrichedSource.studyVolumeGuide;
   const isParent = summaryType === 'parent_counseling';

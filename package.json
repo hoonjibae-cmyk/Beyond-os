@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-62-1-ai-diagnostics",
-  "version": "0.41.621",
+  "name": "beyond-os-v41-62-2-ai-model-5.4mini",
+  "version": "0.41.622",
   "private": true,
   "scripts": {
     "dev": "next dev",

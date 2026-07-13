@@ -500,7 +500,7 @@ export async function GET(request) {
       counselingSource: buildCounselingSource({ student, start, end, summary, rows }),
       aiConfig: {
         openAiConfigured: Boolean(process.env.OPENAI_API_KEY),
-        model: process.env.GPT_SUMMARY_MODEL || process.env.STUDENT_SUMMARY_MODEL || process.env.OPENAI_MODEL || 'gpt-5.6-luna',
+        model: process.env.GPT_SUMMARY_MODEL || process.env.STUDENT_SUMMARY_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini',
       },
       warnings,
     });
