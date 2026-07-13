@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-49-report-apple-style",
-  "version": "0.41.49",
+  "name": "beyond-os-v41-50-break-time-away-alert-fix",
+  "version": "0.41.50",
   "private": true,
   "scripts": {
     "dev": "next dev",

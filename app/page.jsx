@@ -1746,7 +1746,16 @@ function getCurrentScheduleBreak(scheduleBreaks = [], nowMinutes = currentKstMin
   }) || null;
 }
 
-function createPresenceMismatchAlert({ schedule, session, scheduleBreaks = [], seat = {}, nowMinutes = currentKstMinutes() }) {
+function isWithinStudyWindow(nowMinutes, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS) {
+  const windows = normalizeDefaultScheduleSettings(defaultSchedule).studyWindows || [];
+  return windows.some((w) => {
+    const s = timeToMinutes(w.start);
+    const e = timeToMinutes(w.end);
+    return s !== null && e !== null && nowMinutes >= s && nowMinutes < e;
+  });
+}
+
+function createPresenceMismatchAlert({ schedule, session, scheduleBreaks = [], seat = {}, nowMinutes = currentKstMinutes(), defaultSchedule = DEFAULT_SCHEDULE_SETTINGS }) {
   const student = schedule?.students;
   const studentName = student?.name || '학생';
   const checkIn = timeToMinutes(schedule?.planned_check_in);
@@ -1759,6 +1768,11 @@ function createPresenceMismatchAlert({ schedule, session, scheduleBreaks = [], s
 
   const status = session?.seat_status || 'not_arrived';
   if (status === 'occupied' || status === 'absent') return null;
+
+  // v41-50: 외출(away) 상태는 '실제 차시(학습 인정 구간)' 시간에만 확인 알림을 띄웁니다.
+  // 차시와 차시 사이의 쉬는 시간에 키오스크로 외출을 찍고 나간 경우는(정상 상황)
+  // '출결상태 확인 필요' 알림 대상에서 제외합니다. (외출 예정·복귀 확인 알림은 별도 유지)
+  if (status === 'away' && !isWithinStudyWindow(nowMinutes, defaultSchedule)) return null;
 
   const seatNo = seat.seat_no || student?.default_seat_no;
   const plannedRange = `${schedule.planned_check_in?.slice(0, 5) || '-'}~${schedule.planned_check_out?.slice(0, 5) || '-'}`;
@@ -1833,6 +1847,7 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
       scheduleBreaks: scheduleBreakList,
       seat,
       nowMinutes: now,
+      defaultSchedule,
     });
     if (presenceMismatch) alerts.push(presenceMismatch);
 
