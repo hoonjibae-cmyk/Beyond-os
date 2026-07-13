@@ -18573,4 +18573,8 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .panel-section:hover .panel-section-chevron{ background:transparent !important; }
 /* 4) 오늘 출결 요약 안내 노트 애플 스타일(연한 파랑 인포) */
 .attendance-summary-note{ background:#eef4fe !important; border:1px solid #d6e6fc !important; color:#1d1d1f !important; }
+/* 5) 학습 체크 입력 '빠른 선택' 안내 노트도 동일한 애플 인포로 통일 */
+.quick-inline-box{ background:#eef4fe !important; border:1px solid #d6e6fc !important; }
+.quick-inline-box strong{ color:#1d1d1f !important; }
+.quick-inline-box span{ color:#5b6470 !important; }
 /* APPLE THEME END */

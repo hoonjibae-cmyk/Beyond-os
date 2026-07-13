@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-52-dashboard-panels-apple-polish",
-  "version": "0.41.52",
+  "name": "beyond-os-v41-53-info-note-apple-unify",
+  "version": "0.41.53",
   "private": true,
   "scripts": {
     "dev": "next dev",
