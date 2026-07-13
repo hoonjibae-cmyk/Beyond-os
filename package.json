@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-53-info-note-apple-unify",
-  "version": "0.41.53",
+  "name": "beyond-os-v41-54-mobile-hold-align-fix",
+  "version": "0.41.54",
   "private": true,
   "scripts": {
     "dev": "next dev",

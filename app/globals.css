@@ -18565,6 +18565,11 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .kiosk-hold-panel.is-collapsed{ padding:12px 16px !important; }
 .kiosk-hold-panel.is-collapsed .kiosk-hold-head{ margin-bottom:0 !important; align-items:center !important; }
 .kiosk-hold-collapse-toggle{ align-self:center; }
+/* 모바일: 접힌 HOLD 헤더가 세로 정렬(가운데)로 보이던 문제 → 한 줄(제목 좌 · 토글 우)로 고정 */
+@media (max-width: 900px){
+  .kiosk-hold-panel.is-collapsed .kiosk-hold-head{ flex-direction:row !important; align-items:center !important; justify-content:space-between !important; }
+  .kiosk-hold-panel.is-collapsed .kiosk-hold-head-actions{ width:auto !important; justify-content:flex-end !important; }
+}
 /* 3) 접기/펼치기 토글 애플 스타일(연회색 알약 + 진한 글씨) */
 .panel-section-toggle, .kiosk-hold-collapse-toggle{ background:#ececef !important; color:#1d1d1f !important; border:1px solid #dcdce0 !important; }
 .panel-section-chevron{ background:transparent !important; }
