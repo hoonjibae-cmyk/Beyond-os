@@ -18823,3 +18823,134 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .rl-bar i{ width:var(--bar); }
   .podium-bar span{ transform:none; }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-63: 리포트/위클리 메뉴 애플 톤 통일
+   웜골드/Tailwind/과채도 색 → 화이트+헤어라인 표면 · 블루 단일 액센트 ·
+   무채도 애플 상태색(초록/노랑/보라/빨강). (되돌리려면 이 블록만 삭제)
+   ───────────────────────────────────────────────────────────── */
+/* 1) 구조 표면: 웜 크림/탄 카드 → 화이트 + 헤어라인 보더 */
+.mini-stat, .report-filter-panel, .report-auto-generate-note, .report-student-card.no_session,
+.director-daily-panel, .director-report-row, .director-check-summary,
+.closeout-score-card, .closeout-check-card, .closeout-issue-chip, .report-activity-stat,
+.send-config-banner, .send-settings-card, .send-mode-grid div, .send-live-safety-card,
+.webhook-test-result-card, .webhook-safety-checklist, .vercel-webhook-sample-card,
+.provider-adapter-card, .direct-kakao-env-guide, .alimtalk-template-management-card,
+.webhook-checklist-grid div, .provider-status-grid div, .alimtalk-checklist-grid div,
+.template-variable-map article, .recipient-test-mode-card, .recipient-policy-grid div,
+.recipient-policy-projection-grid > div, .delivery-recipient-summary > div, .delivery-recipient-row,
+.weekly-summary-grid > div, .weekly-panel, .weekly-report-output, .weekly-progress-grid > div,
+.weekly-student-card, .weekly-status-bar, .weekly-send-state, .weekly-bulk-result-grid > div,
+.weekly-interview-ai-row, .weekly-auto-compose-console{
+  background:var(--ap-surface) !important; border-color:var(--ap-sep) !important; box-shadow:var(--ap-shadow-sm) !important;
+}
+/* 서브 표면(연회색) */
+.clean-panel, .send-payload-preview, .closeout-action-row, .director-summary-grid div,
+.director-detail-grid div, .weekly-auto-compose-guide, .closeout-issue-chip b{
+  background:var(--ap-surface-2) !important; border-color:var(--ap-sep) !important;
+}
+
+/* 2) 텍스트: 웜/슬레이트 → 애플 텍스트 토큰 */
+.report-activity-stat strong, .director-report-head h3, .director-summary-grid strong,
+.director-student-title b, .director-detail-grid strong, .closeout-check-card > strong,
+.weekly-summary-grid strong, .weekly-summary-list b, .weekly-progress-grid strong,
+.weekly-board-head strong, .weekly-student-card strong, .weekly-send-state strong,
+.weekly-bulk-result-grid strong, .weekly-bulk-error-list b, .send-settings-card strong,
+.send-mode-grid strong, .webhook-test-summary strong, .provider-status-grid strong,
+.alimtalk-checklist-grid strong, .template-variable-map h4, .recipient-policy-grid strong,
+.recipient-policy-projection-grid strong, .delivery-recipient-summary strong,
+.closeout-link-row strong, .report-link-status-row strong,
+.weekly-panel textarea, .weekly-report-text{
+  color:var(--ap-text) !important;
+}
+.mini-stat span, .report-auto-generate-note, .director-report-head p, .director-summary-grid span,
+.director-student-title span, .director-detail-grid span, .weekly-summary-grid span,
+.weekly-panel p, .weekly-report-output p, .weekly-progress-grid span, .weekly-board-head span,
+.weekly-student-card span, .weekly-status-bar > span, .weekly-send-state span,
+.weekly-bulk-result-grid span, .weekly-interview-ai-row span, .send-config-banner span,
+.send-config-banner small, .send-settings-card span, .send-mode-grid span, .send-payload-head p,
+.webhook-test-summary span, .webhook-checklist-grid span, .provider-status-grid span,
+.alimtalk-checklist-grid span, .recipient-policy-grid span, .recipient-policy-projection-grid span,
+.delivery-empty-note, .delivery-retry-actions span, .closeout-check-card ol,
+.closeout-score-card span, .closeout-score-card small{
+  color:var(--ap-text-2) !important;
+}
+.weekly-summary-grid em, .report-link-status-row > span, .closeout-link-row span,
+.delivery-recipient-summary span, .delivery-recipient-row span, .delivery-recipient-row small{
+  color:var(--ap-text-3) !important;
+}
+
+/* 3) 상태색 — 초록(성공) : 잎 요소(pill/hint) */
+.status-pill.done, .all-clear, .report-activity-row .status-pill.done, .weekly-send-state.done,
+.send-config-banner.connected em, .success-hint{
+  background:var(--ap-ok-fill) !important; border-color:transparent !important; color:var(--ap-ok-text) !important;
+}
+/* 초록 : 카드(자식 텍스트는 유지) */
+.mini-stat.green, .summary-card.ready, .report-activity-stat.done, .weekly-student-card.done,
+.send-config-banner.connected, .send-settings-card.connected, .recipient-test-mode-card.safe,
+.delivery-recipient-row.done, .report-link-status-row.done{
+  background:var(--ap-ok-fill) !important; border-color:rgba(52,199,89,.35) !important;
+}
+.report-activity-stat.done, .closeout-score-card.ready strong{ color:var(--ap-ok-text) !important; }
+
+/* 4) 상태색 — 노랑(주의) */
+.status-pill.pending, .status-pill.neutral, .issue-chip, .issue-chip.warning,
+.report-student-card.no_session .status-pill.pending,
+.weekly-send-state.pending, .weekly-send-state.neutral, .send-config-banner.pending em,
+.warning-hint, .provider-safe-note, .send-config-banner.safety-test em, .send-config-banner.safety-allowlist em,
+.weekly-report-builder > .send-config-banner.safety-test em, .weekly-report-builder > .send-config-banner.safety-allowlist em,
+.closeout-issue-chip.warning, .template-validation-list.warning{
+  background:var(--ap-away-fill) !important; border-color:transparent !important; color:var(--ap-away-text) !important;
+}
+.mini-stat.gold, .summary-card.warning, .report-activity-stat.pending, .report-activity-stat.partial,
+.weekly-student-card.neutral, .send-config-banner.pending, .send-config-banner.safety-test,
+.send-config-banner.safety-allowlist, .send-settings-card.pending, .provider-adapter-card.safe,
+.recipient-test-mode-card.active, .delivery-recipient-row.pending, .report-link-status-row.pending{
+  background:var(--ap-away-fill) !important; border-color:rgba(255,204,0,.5) !important;
+}
+.report-activity-stat.pending, .closeout-score-card.caution strong{ color:var(--ap-away-text) !important; }
+
+/* 5) 상태색 — 빨강(오류/차단) */
+.issue-chip.blocker, .status-pill.failed, .report-activity-row .status-pill.failed,
+.report-student-card.no_session .issue-chip.blocker,
+.weekly-send-state.failed, .provider-live-warning, .send-config-banner.safety-live em,
+.weekly-report-builder > .send-config-banner.safety-live em, .closeout-issue-chip.danger,
+.template-validation-list.failed, .weekly-bulk-error-list > strong{
+  background:var(--ap-attn-fill) !important; border-color:transparent !important; color:var(--ap-attn-text) !important;
+}
+.mini-stat.red, .summary-card.failed, .report-activity-stat.failed,
+.send-config-banner.safety-live, .send-settings-card.failed, .provider-adapter-card.live,
+.delivery-recipient-row.failed, .report-link-status-row.failed, .weekly-bulk-error-list{
+  background:var(--ap-attn-fill) !important; border-color:rgba(255,59,48,.35) !important;
+}
+.report-activity-stat.failed, .weekly-send-state.failed,
+.closeout-score-card.blocked strong, .closeout-score-card.failed strong{ color:var(--ap-attn-text) !important; }
+
+/* 6) 정보 파랑(Tailwind/인디고 → 애플 블루 단일 액센트) */
+.report-link-status-row.neutral, .closeout-score-card.link-score, .share-link-confirm-box,
+.report-activity-stat.test, .report-activity-row .status-pill.test{
+  background:var(--ap-accent-tint) !important; border-color:rgba(0,113,227,.28) !important; color:var(--ap-accent-press) !important;
+}
+.text-button{ color:var(--ap-accent) !important; }
+
+/* 7) 비의미 골드 CTA → 블루 액센트 */
+.weekly-head-actions .weekly-period-search-button, .weekly-head-actions .primary.section-action{
+  background:var(--ap-accent) !important; border-color:transparent !important; color:#fff !important; box-shadow:var(--ap-shadow-sm) !important;
+}
+.weekly-head-actions .weekly-period-search-button:hover, .weekly-head-actions .primary.section-action:hover{
+  background:var(--ap-accent-press) !important;
+}
+
+/* 8) 다크 히어로/번호 배지/코드블록 정리 */
+.closeout-score-card.primary-score{ background:var(--ap-text) !important; border-color:transparent !important; }
+.closeout-score-card.primary-score span, .closeout-score-card.primary-score small,
+.closeout-score-card.primary-score strong{ color:#fff !important; }
+.webhook-checklist-grid strong{ background:var(--ap-accent) !important; color:#fff !important; }
+.send-payload-preview pre, .webhook-test-result-card pre, .webhook-env-guide code,
+.direct-kakao-env-guide code, .template-validation-result-card pre, .recipient-policy-guide code{
+  background:#1d1d1f !important; color:#f5f5f7 !important; border:1px solid var(--ap-sep) !important;
+}
+
+/* 9) 구조용 진한 초록(비상태) → 중립/블루 */
+.weekly-detail-table th{ background:var(--ap-surface-3) !important; color:var(--ap-text) !important; }
+.weekly-student-card.selected{ border-color:var(--ap-accent) !important; outline-color:rgba(0,113,227,.25) !important; }
