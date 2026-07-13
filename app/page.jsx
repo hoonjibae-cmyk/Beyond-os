@@ -11900,7 +11900,8 @@ function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRan
 }
 
 // 게시용(TV) 랭킹보드 화면 정의: 로테이션 순서대로 8개.
-function buildBroadcastBoards({ yesterday, week, month }) {
+// singlePage=true(세로 TV)면 4위 이하를 한 화면에 전원 표시, 아니면 2페이지로 분할.
+function buildBroadcastBoards({ yesterday, week, month }, { singlePage = false } = {}) {
   const displayName = (row) => (row.rankingOptIn && row.nickname ? row.nickname : 'XXX');
   const rankTop = (rows, { sortBy, dir = 'desc', filter, value }) => {
     const ranked = (rows || [])
@@ -11917,7 +11918,8 @@ function buildBroadcastBoards({ yesterday, week, month }) {
     const maxVal = dir === 'asc'
       ? Math.max(...ranked.map((r) => r.raw), 1)
       : Math.max(ranked[0]?.raw || 1, 1);
-    const list = ranked.slice(0, 10).map((r, i) => ({
+    // 상위 10명만이 아니라 전원(최대 26명)을 순위와 함께 반환합니다.
+    const list = ranked.map((r, i) => ({
       ...r,
       rank: i + 1,
       pct: dir === 'asc'
@@ -11929,6 +11931,31 @@ function buildBroadcastBoards({ yesterday, week, month }) {
 
   const attended = (row) => row.attendanceDays > 0;
   const studied = (row) => row.totalStudyMinutes > 0;
+
+  // 랭킹 1종 → 포디엄(1~3위) + 나머지(4위~)를 페이지로 나눈 여러 프레임으로 확장.
+  // 4위 이하가 12명 이하면 1페이지, 그보다 많으면 2페이지로 균등 분할합니다.
+  const paginateBoard = (b) => {
+    const podium = (b.rows || []).slice(0, 3);
+    const rest = (b.rows || []).slice(3);
+    const base = { badge: b.badge, accent: b.accent, title: b.title, emoji: b.emoji, unitLabel: b.unitLabel, period: b.period, total: b.total, podium };
+    if (rest.length === 0) return [{ ...base, key: `${b.key}-1`, listRows: [], page: 1, pages: 1, rangeLabel: '' }];
+    const pages = singlePage ? 1 : (rest.length <= 12 ? 1 : 2);
+    const size = Math.ceil(rest.length / pages);
+    const frames = [];
+    for (let p = 0; p < pages; p += 1) {
+      const slice = rest.slice(p * size, (p + 1) * size);
+      if (!slice.length) continue;
+      frames.push({
+        ...base,
+        key: `${b.key}-${p + 1}`,
+        listRows: slice,
+        page: p + 1,
+        pages,
+        rangeLabel: `${slice[0].rank}~${slice[slice.length - 1].rank}위`,
+      });
+    }
+    return frames;
+  };
 
   return [
     {
@@ -11979,7 +12006,7 @@ function buildBroadcastBoards({ yesterday, week, month }) {
       period: month.label,
       ...rankTop(month.rows, { sortBy: (r) => r.awayMinutes, dir: 'asc', filter: attended, value: (r) => (r.awayMinutes > 0 ? `외출 ${formatMinutes(r.awayMinutes)}` : '외출 0분') }),
     },
-  ];
+  ].flatMap(paginateBoard);
 }
 
 const BROADCAST_ROTATE_MS = 15000;
@@ -11991,7 +12018,20 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [layout, setLayout] = useState('auto'); // auto | single(세로·전원) | split(가로·2분할)
+  const [isPortrait, setIsPortrait] = useState(false);
   const stageRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const mq = window.matchMedia('(orientation: portrait)');
+    const apply = () => setIsPortrait(mq.matches);
+    apply();
+    mq.addEventListener?.('change', apply);
+    return () => mq.removeEventListener?.('change', apply);
+  }, []);
+
+  const singlePage = layout === 'single' || (layout === 'auto' && isPortrait);
 
   async function loadAll() {
     if (!apiFetch) return;
@@ -12026,7 +12066,12 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const boards = useMemo(() => (data ? buildBroadcastBoards(data) : []), [data]);
+  const boards = useMemo(() => (data ? buildBroadcastBoards(data, { singlePage }) : []), [data, singlePage]);
+
+  // 레이아웃 변경으로 프레임 수가 바뀌면 인덱스를 범위 안으로 보정합니다.
+  useEffect(() => {
+    setIndex((i) => (boards.length ? i % boards.length : 0));
+  }, [boards.length]);
 
   useEffect(() => {
     if (!playing || boards.length === 0) return undefined;
@@ -12050,7 +12095,7 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
   const board = boards[index] || null;
 
   return (
-    <div className={`broadcast-stage accent-${board?.accent || 'sky'} ${isFullscreen ? 'is-fullscreen' : ''}`} ref={stageRef}>
+    <div className={`broadcast-stage accent-${board?.accent || 'sky'} ${isFullscreen ? 'is-fullscreen' : ''} ${singlePage ? 'single-page' : ''} ${isPortrait ? 'is-portrait' : ''}`} ref={stageRef}>
       <div className="broadcast-controls">
         <div className="broadcast-dots">
           {boards.map((b, i) => (
@@ -12062,6 +12107,9 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
           <button type="button" onClick={() => setPlaying((p) => !p)}>{playing ? '⏸ 정지' : '▶ 재생'}</button>
           <button type="button" onClick={() => setIndex((i) => (i + 1) % Math.max(boards.length, 1))} aria-label="다음">›</button>
           <button type="button" onClick={loadAll} disabled={loading}>{loading ? '갱신중' : '↻ 갱신'}</button>
+          <button type="button" onClick={() => setLayout((v) => (v === 'auto' ? 'single' : v === 'single' ? 'split' : 'auto'))} title="세로 TV는 전원 한 화면, 가로는 2분할">
+            {layout === 'auto' ? `자동(${singlePage ? '세로·전원' : '가로·2분할'})` : layout === 'single' ? '세로·전원' : '가로·2분할'}
+          </button>
           <button type="button" className="broadcast-fs" onClick={toggleFullscreen}>{isFullscreen ? '⤢ 창모드' : '⛶ 전체화면'}</button>
         </div>
       </div>
@@ -12073,16 +12121,21 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
           <div className="broadcast-header">
             <span className="broadcast-badge">{board.badge}</span>
             <h3><span className="broadcast-emoji">{board.emoji}</span>{board.title}</h3>
-            <div className="broadcast-meta"><span className="broadcast-unit">{board.unitLabel}</span><span className="broadcast-period">📆 {board.period}</span>{board.total > 10 ? <span className="broadcast-count">전체 {board.total}명 · TOP 10</span> : (board.total ? <span className="broadcast-count">전체 {board.total}명</span> : null)}</div>
+            <div className="broadcast-meta">
+              <span className="broadcast-unit">{board.unitLabel}</span>
+              <span className="broadcast-period">📆 {board.period}</span>
+              {board.total ? <span className="broadcast-count">전체 {board.total}명</span> : null}
+              {board.pages > 1 ? <span className="broadcast-page">{board.rangeLabel} · {board.page}/{board.pages}</span> : null}
+            </div>
           </div>
 
-          {board.rows.length === 0 ? (
+          {board.podium.length === 0 && board.listRows.length === 0 ? (
             <div className="broadcast-empty">아직 집계된 기록이 없어요. 곧 채워질 거예요! ✨</div>
           ) : (
             <>
               <div className="broadcast-podium">
                 {[1, 0, 2].map((slot) => {
-                  const r = board.rows[slot];
+                  const r = board.podium[slot];
                   if (!r) return <div key={slot} className="podium-slot empty" />;
                   const medal = ['🥇', '🥈', '🥉'][r.rank - 1];
                   return (
@@ -12096,9 +12149,9 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
                 })}
               </div>
 
-              {board.rows.length > 3 ? (
-                <ol className="broadcast-list">
-                  {board.rows.slice(3).map((r) => (
+              {board.listRows.length > 0 ? (
+                <ol className={`broadcast-list ${board.listRows.length > 8 ? 'is-dense' : ''}`}>
+                  {board.listRows.map((r) => (
                     <li key={r.studentId} className={r.masked ? 'masked' : ''} style={{ '--bar': `${r.pct}%` }}>
                       <span className="rl-rank">{r.rank}</span>
                       <span className="rl-name">{r.name}</span>
