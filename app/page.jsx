@@ -10785,7 +10785,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
         fallback: Boolean(data.fallback),
         model: data.model || '',
       });
-      setInterviewAiMessage(data.fallback ? '규칙 기반 면담 초안이 생성되었습니다. 원문과 비교 후 적용 여부를 선택하세요.' : `AI가 다듬은 문장이 생성되었습니다${data.model ? ` · ${data.model}` : ''}. 원문과 비교 후 적용 여부를 선택하세요.`);
+      setInterviewAiMessage(data.fallback ? `규칙 기반 면담 초안이 생성되었습니다.${data.message ? ` (사유: ${data.message})` : ''} 원문과 비교 후 적용 여부를 선택하세요.` : `AI가 다듬은 문장이 생성되었습니다${data.model ? ` · ${data.model}` : ''}. 원문과 비교 후 적용 여부를 선택하세요.`);
       setMessage(data.fallback ? '규칙 기반 면담 초안을 생성했습니다.' : 'AI 면담 내용 다듬기 초안 생성 완료');
     } catch (error) {
       setInterviewAiMessage(error.message || 'AI 면담 내용 다듬기 중 오류가 발생했습니다.');
@@ -10850,7 +10850,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
       });
       setAiWeeklyComment(data.draft || '');
       setFinalWeeklyComment(data.draft || '');
-      setAiSourceMessage(data.fallback ? 'AI 호출 실패 또는 미연동으로 규칙 기반 초안이 생성되었습니다.' : `AI 초안 생성 완료${data.model ? ` · ${data.model}` : ''}`);
+      setAiSourceMessage(data.fallback ? `AI 호출 실패 또는 미연동으로 규칙 기반 초안이 생성되었습니다.${data.message ? ` (사유: ${data.message})` : ''}` : `AI 초안 생성 완료${data.model ? ` · ${data.model}` : ''}`);
       markDirty();
       setMessage(data.fallback ? '규칙 기반 초안을 생성했습니다.' : 'AI 주간 총평 초안 생성 완료');
     } catch (error) {

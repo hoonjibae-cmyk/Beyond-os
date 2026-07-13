@@ -133,23 +133,23 @@ async function callOpenAiForSummary({ source, summaryType = 'internal_weekly' })
     compactJson(enrichedSource),
   ].join('\n');
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+  const callOpenAi = (withTemperature) => fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.25,
-    }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ model, messages, ...(withTemperature ? { temperature: 0.25 } : {}) }),
   });
 
-  const data = await response.json().catch(() => ({}));
+  let response = await callOpenAi(true);
+  let data = await response.json().catch(() => ({}));
+  // 일부 최신 모델(gpt-5 계열 등)은 사용자 지정 temperature를 거부하므로 temperature 없이 1회 재시도합니다.
+  if (!response.ok && /temperature/i.test(data?.error?.message || '')) {
+    response = await callOpenAi(false);
+    data = await response.json().catch(() => ({}));
+  }
   if (!response.ok) {
     throw new Error(data?.error?.message || `OpenAI 요약 생성 실패 (${response.status})`);
   }

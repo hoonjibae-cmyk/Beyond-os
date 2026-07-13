@@ -84,25 +84,28 @@ export async function POST(request) {
       `사용자 면담 초안: ${rawInterview || '미입력'}`,
     ].join('\n');
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const messages = [
+      { role: 'system', content: '학부모용 주간 리포트의 주간면담 내용만 작성한다. 입력 메모를 정돈하되 사실을 새로 만들지 않는다.' },
+      { role: 'user', content: prompt },
+    ];
+    const callOpenAi = (withTemperature) => fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: '학부모용 주간 리포트의 주간면담 내용만 작성한다. 입력 메모를 정돈하되 사실을 새로 만들지 않는다.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-      }),
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, ...(withTemperature ? { temperature: 0.3 } : {}) }),
     });
 
-    const text = await response.text();
+    let response = await callOpenAi(true);
+    let text = await response.text();
     let json = null;
     try { json = JSON.parse(text); } catch {}
+
+    // 일부 최신 모델(gpt-5 계열 등)은 사용자 지정 temperature를 거부하므로 temperature 없이 1회 재시도합니다.
+    if (!response.ok && /temperature/i.test(json?.error?.message || text || '')) {
+      response = await callOpenAi(false);
+      text = await response.text();
+      json = null;
+      try { json = JSON.parse(text); } catch {}
+    }
 
     if (!response.ok) {
       return Response.json({

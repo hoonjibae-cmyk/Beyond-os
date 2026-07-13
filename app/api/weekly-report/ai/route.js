@@ -87,28 +87,31 @@ export async function POST(request) {
       `원장님 주간면담 내용: ${directorInterview || '미입력'}`,
     ].join('\n');
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+    const messages = [
+      {
+        role: 'system',
+        content: '학부모용 주간 학습 리포트의 주간 총평만 작성한다. 정중하고 구체적이며, 숫자 나열보다 학습 관리 방향을 명확히 정리한다.',
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: '학부모용 주간 학습 리포트의 주간 총평만 작성한다. 정중하고 구체적이며, 숫자 나열보다 학습 관리 방향을 명확히 정리한다.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.35,
-      }),
+      { role: 'user', content: prompt },
+    ];
+    const callOpenAi = (withTemperature) => fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, ...(withTemperature ? { temperature: 0.35 } : {}) }),
     });
 
-    const text = await response.text();
+    let response = await callOpenAi(true);
+    let text = await response.text();
     let json = null;
     try { json = JSON.parse(text); } catch {}
+
+    // 일부 최신 모델(gpt-5 계열 등)은 사용자 지정 temperature를 거부(기본값만 허용)하므로 temperature 없이 1회 재시도합니다.
+    if (!response.ok && /temperature/i.test(json?.error?.message || text || '')) {
+      response = await callOpenAi(false);
+      text = await response.text();
+      json = null;
+      try { json = JSON.parse(text); } catch {}
+    }
 
     if (!response.ok) {
       return Response.json({
