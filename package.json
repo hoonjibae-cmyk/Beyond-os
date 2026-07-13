@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-57-learning-mgmt-survey-upload",
-  "version": "0.41.57",
+  "name": "beyond-os-v41-58-security-cron-lock-permission-gate",
+  "version": "0.41.58",
   "private": true,
   "scripts": {
     "dev": "next dev",

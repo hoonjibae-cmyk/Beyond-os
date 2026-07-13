@@ -2,8 +2,29 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { diffMinutes, getKstDateString } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
+import { getAuthorizedUser } from '../../../lib/auth';
 
 export const dynamic = 'force-dynamic';
+
+// 자동 하원은 전체 미하원 세션을 변경하므로 호출을 잠급니다.
+//  - Vercel Cron: Authorization: Bearer <CRON_SECRET>
+//  - 브리지/수동: x-kiosk-secret == KIOSK_BRIDGE_SECRET
+//  - 대시보드(로그인 관리자): 세션 토큰
+//  - 로컬/프리뷰(시크릿 미설정): 폴백 허용
+function isCheckoutAuthorized(request) {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  const kioskSecret = String(process.env.KIOSK_BRIDGE_SECRET || '').trim();
+  const authorization = String(request.headers.get('authorization') || '').trim();
+  const bearerToken = authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7).trim() : '';
+  const incomingKioskSecret = String(request.headers.get('x-kiosk-secret') || '').trim();
+
+  if (cronSecret && bearerToken === cronSecret) return true;
+  if (kioskSecret && incomingKioskSecret === kioskSecret) return true;
+  const user = getAuthorizedUser(request);
+  if (user && user.authType !== 'dev_open') return true;
+  if (!cronSecret && !kioskSecret) return true;
+  return false;
+}
 
 function addDays(dateString, amount) {
   const d = new Date(`${dateString}T00:00:00+09:00`);
@@ -79,7 +100,10 @@ async function runAutoCheckout() {
   return updated;
 }
 
-export async function GET() {
+export async function GET(request) {
+  if (!isCheckoutAuthorized(request)) {
+    return Response.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  }
   try {
     const updated = await runAutoCheckout();
     return Response.json({
@@ -93,6 +117,6 @@ export async function GET() {
   }
 }
 
-export async function POST() {
-  return GET();
+export async function POST(request) {
+  return GET(request);
 }

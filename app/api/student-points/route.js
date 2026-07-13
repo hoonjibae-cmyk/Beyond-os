@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
+import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 
 export const dynamic = 'force-dynamic';
@@ -77,7 +77,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  if (!isAuthorized(request)) return unauthorizedResponse();
+  const denied = requireTabPermission(request, 'points');
+  if (denied) return denied;
 
   try {
     const body = await request.json();

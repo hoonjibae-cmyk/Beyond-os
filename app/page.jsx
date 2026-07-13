@@ -2463,7 +2463,14 @@ export default function Page() {
       if (!silent) setMessage('불러오는 중...');
       if (!lastSyncAt && syncStatus !== 'synced') setSyncStatus('idle');
 
-      if (runAutoCheckout) await fetch('/api/auto-checkout').catch(() => null);
+      if (runAutoCheckout) {
+        await fetch('/api/auto-checkout', {
+          headers: {
+            ...(adminPassword ? { 'x-admin-password': adminPassword } : {}),
+            ...(appSessionToken ? { 'x-app-session-token': appSessionToken } : {}),
+          },
+        }).catch(() => null);
+      }
       const data = await apiFetch('/api/dashboard');
       const nextSignature = createDashboardSignature(data);
       const previousSignature = dashboardSignatureRef.current;

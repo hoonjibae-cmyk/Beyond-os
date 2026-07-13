@@ -1,4 +1,4 @@
-import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
+import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { writeUserActionLog } from '../../../lib/actionLog';
 
@@ -160,7 +160,8 @@ function makePayload(reportType, actorName) {
 }
 
 export async function POST(request) {
-  if (!isAuthorized(request)) return unauthorizedResponse();
+  const denied = requireTabPermission(request, 'settings');
+  if (denied) return denied;
 
   try {
     const body = await request.json().catch(() => ({}));

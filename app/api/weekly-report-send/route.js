@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
+import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { ensureReportShareLink } from '../../../lib/reportShare';
 import { validateKakaoTemplateVariables } from '../../../lib/reportTemplateValidation';
@@ -253,7 +253,8 @@ async function callWebhook(payload) {
 }
 
 export async function POST(request) {
-  if (!isAuthorized(request)) return unauthorizedResponse();
+  const denied = requireTabPermission(request, 'weeklyReports');
+  if (denied) return denied;
 
   try {
     const body = await request.json();

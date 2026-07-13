@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
+import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
@@ -428,7 +428,8 @@ async function processStudent({ supabase, student, startDate, endDate, existingR
 }
 
 export async function POST(request) {
-  if (!isAuthorized(request)) return unauthorizedResponse();
+  const denied = requireTabPermission(request, 'weeklyReports');
+  if (denied) return denied;
 
   try {
     const body = await request.json();

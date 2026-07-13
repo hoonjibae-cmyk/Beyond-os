@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
+import { isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import {
   DEFAULT_SCHEDULE_SETTING_KEY,
   DEFAULT_SCHEDULE_DAY_TYPES,
@@ -109,7 +109,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  if (!isAuthorized(request)) return unauthorizedResponse();
+  const denied = requireTabPermission(request, 'settings');
+  if (denied) return denied;
 
   try {
     const body = await request.json();
