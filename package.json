@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-60-wide-dashboard-layout",
-  "version": "0.41.60",
+  "name": "beyond-os-v41-61-ranking-broadcast-tv",
+  "version": "0.41.61",
   "private": true,
   "scripts": {
     "dev": "next dev",

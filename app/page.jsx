@@ -4572,6 +4572,8 @@ export default function Page() {
         studentPhone: student.student_phone || '',
         status: student.status || 'active',
         seatNo: student.default_seat_no || '',
+        nickname: student.nickname || '',
+        rankingOptIn: Boolean(student.ranking_opt_in),
         guardians: normalizeGuardiansForEditor(student),
       });
       return;
@@ -4586,6 +4588,8 @@ export default function Page() {
       studentPhone: '',
       status: 'active',
       seatNo: '',
+      nickname: '',
+      rankingOptIn: false,
       guardians: normalizeGuardiansForEditor({}),
     });
   }
@@ -5042,7 +5046,7 @@ export default function Page() {
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'ranking' ? (
-          <RankingTab ranking={ranking} rankingStart={rankingStart} rankingEnd={rankingEnd} setRankingStart={setRankingStart} setRankingEnd={setRankingEnd} loadRanking={loadRanking} setRankingPreset={setRankingPreset} />
+          <RankingTab ranking={ranking} rankingStart={rankingStart} rankingEnd={rankingEnd} setRankingStart={setRankingStart} setRankingEnd={setRankingEnd} loadRanking={loadRanking} setRankingPreset={setRankingPreset} apiFetch={apiFetch} setMessage={setMessage} />
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'points' ? (
@@ -8530,6 +8534,27 @@ function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, save
                 <input readOnly value={editor.seatNo ? `${String(editor.seatNo).padStart(2, '0')}번 좌석` : '미배정'} />
               </div>
             </div>
+            <div className="ranking-consent-block">
+              <div className="ranking-consent-head">
+                <strong>게시용 랭킹보드 표기</strong>
+                <span>스터디카페 TV 게시용 랭킹보드에 노출되는 방식입니다. (관리용 랭킹보드는 항상 실명으로 표시)</span>
+              </div>
+              <div className="time-grid">
+                <div className="field">
+                  <label>닉네임</label>
+                  <input value={editor.nickname || ''} onChange={(e) => setEditor({ ...editor, nickname: e.target.value })} placeholder="예: 순공요정" maxLength={16} />
+                  <div className="hint">게시용 랭킹보드에 실명 대신 표시됩니다.</div>
+                </div>
+                <div className="field">
+                  <label>게시 동의</label>
+                  <label className="ranking-consent-switch">
+                    <input type="checkbox" checked={Boolean(editor.rankingOptIn)} onChange={(e) => setEditor({ ...editor, rankingOptIn: e.target.checked })} />
+                    <span>{editor.rankingOptIn ? '닉네임으로 게시 동의' : '미동의 — XXX로 표기'}</span>
+                  </label>
+                  <div className="hint">동의 + 닉네임 입력 시 닉네임으로, 아니면 XXX로 표기됩니다.</div>
+                </div>
+              </div>
+            </div>
             {editor.status === 'inactive' ? (
               <div className="student-inactive-editor-note">
                 <strong>비활성 학생</strong>
@@ -11822,38 +11847,274 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
   );
 }
 
-function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRankingEnd, loadRanking, setRankingPreset }) {
+function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRankingEnd, loadRanking, setRankingPreset, apiFetch, setMessage }) {
+  const [mode, setMode] = useState('admin'); // 'admin' | 'broadcast'
+
   return (
-    <section className="content-card">
-      <h2>순공시간 랭킹보드</h2>
-      <p>원하는 기간을 설정해 총 순공시간, 출석일수, 일평균 순공시간을 비교합니다.</p>
-      <div className="btn-row">
-        <button className="secondary" onClick={() => setRankingPreset('today')}>오늘</button>
-        <button className="secondary" onClick={() => setRankingPreset('week')}>이번 주</button>
-        <button className="secondary" onClick={() => setRankingPreset('month')}>이번 달</button>
+    <section className="content-card ranking-tab-shell">
+      <div className="ranking-mode-switch">
+        <div>
+          <h2>순공시간 랭킹보드</h2>
+          <p>{mode === 'admin' ? '관리용: 실명·상세 지표로 학생을 비교합니다.' : '게시용: 스터디카페 TV에 틀어두는 경쟁심 자극용 랭킹보드입니다.'}</p>
+        </div>
+        <div className="ranking-mode-tabs">
+          <button type="button" className={mode === 'admin' ? 'active' : ''} onClick={() => setMode('admin')}>관리용</button>
+          <button type="button" className={mode === 'broadcast' ? 'active' : ''} onClick={() => setMode('broadcast')}>게시용 (TV)</button>
+        </div>
       </div>
-      <div className="time-grid">
-        <div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={rankingStart} onChange={(e) => setRankingStart(e.target.value)} /></div>
-        <div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={rankingEnd} onChange={(e) => setRankingEnd(e.target.value)} /></div>
-      </div>
-      <div className="btn-row"><button className="primary" onClick={() => loadRanking()}>랭킹 조회</button></div>
-      <table className="data-table">
-        <thead><tr><th>순위</th><th>학생</th><th>출석일수</th><th>총 순공시간</th><th>일평균</th><th>외출</th><th>관리필요</th></tr></thead>
-        <tbody>
-          {ranking.map((row, index) => (
-            <tr key={row.studentId}>
-              <td>{index + 1}</td>
-              <td>{row.name} / {[row.school, row.grade].filter(Boolean).join(' ')}</td>
-              <td>{row.attendanceDays}일</td>
-              <td>{formatMinutes(row.totalStudyMinutes)}</td>
-              <td>{formatMinutes(row.averageStudyMinutes)}</td>
-              <td>{row.awayCount}회</td>
-              <td>{row.needsAttentionCount}회</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+
+      {mode === 'admin' ? (
+        <>
+          <div className="btn-row">
+            <button className="secondary" onClick={() => setRankingPreset('today')}>오늘</button>
+            <button className="secondary" onClick={() => setRankingPreset('week')}>이번 주</button>
+            <button className="secondary" onClick={() => setRankingPreset('month')}>이번 달</button>
+          </div>
+          <div className="time-grid">
+            <div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={rankingStart} onChange={(e) => setRankingStart(e.target.value)} /></div>
+            <div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={rankingEnd} onChange={(e) => setRankingEnd(e.target.value)} /></div>
+          </div>
+          <div className="btn-row"><button className="primary" onClick={() => loadRanking()}>랭킹 조회</button></div>
+          <table className="data-table">
+            <thead><tr><th>순위</th><th>학생</th><th>출석일수</th><th>총 순공시간</th><th>일평균</th><th>외출</th><th>관리필요</th></tr></thead>
+            <tbody>
+              {ranking.map((row, index) => (
+                <tr key={row.studentId}>
+                  <td>{index + 1}</td>
+                  <td>{row.name} / {[row.school, row.grade].filter(Boolean).join(' ')}</td>
+                  <td>{row.attendanceDays}일</td>
+                  <td>{formatMinutes(row.totalStudyMinutes)}</td>
+                  <td>{formatMinutes(row.averageStudyMinutes)}</td>
+                  <td>{row.awayCount}회</td>
+                  <td>{row.needsAttentionCount}회</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : (
+        <BroadcastRankingBoard apiFetch={apiFetch} setMessage={setMessage} />
+      )}
     </section>
+  );
+}
+
+// 게시용(TV) 랭킹보드 화면 정의: 로테이션 순서대로 8개.
+function buildBroadcastBoards({ yesterday, week, month }) {
+  const displayName = (row) => (row.rankingOptIn && row.nickname ? row.nickname : 'XXX');
+  const top = (rows, { sortBy, dir = 'desc', filter, value, unit }) => {
+    const ranked = (rows || [])
+      .filter(filter)
+      .map((row) => ({
+        studentId: row.studentId,
+        name: displayName(row),
+        masked: !(row.rankingOptIn && row.nickname),
+        raw: sortBy(row),
+        valueText: value(row),
+      }))
+      .sort((a, b) => (dir === 'asc' ? a.raw - b.raw : b.raw - a.raw));
+    // 막대 비율: 값이 클수록(또는 집중력은 작을수록) 길게
+    const maxVal = dir === 'asc'
+      ? Math.max(...ranked.map((r) => r.raw), 1)
+      : Math.max(ranked[0]?.raw || 1, 1);
+    return ranked.slice(0, 10).map((r, i) => ({
+      ...r,
+      rank: i + 1,
+      pct: dir === 'asc'
+        ? Math.round(Math.max(6, (1 - r.raw / (maxVal || 1)) * 94 + 6))
+        : Math.round(Math.max(6, (r.raw / (maxVal || 1)) * 100)),
+    }));
+  };
+
+  const attended = (row) => row.attendanceDays > 0;
+  const studied = (row) => row.totalStudyMinutes > 0;
+
+  return [
+    {
+      key: 'study-yesterday', badge: '어제', accent: 'flame',
+      title: '어제의 순공왕', emoji: '🔥', unitLabel: '순수 공부시간',
+      period: yesterday.label,
+      rows: top(yesterday.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
+    },
+    {
+      key: 'study-week', badge: '최근 7일', accent: 'volt',
+      title: '이번 주 순공 레전드', emoji: '⚡', unitLabel: '주간 총 순공시간',
+      period: week.label,
+      rows: top(week.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
+    },
+    {
+      key: 'study-month', badge: '최근 30일', accent: 'gold',
+      title: '이달의 순공 마스터', emoji: '👑', unitLabel: '월간 총 순공시간',
+      period: month.label,
+      rows: top(month.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
+    },
+    {
+      key: 'attend-month', badge: '최근 30일', accent: 'sky',
+      title: '한 달 개근 히어로', emoji: '📅', unitLabel: '출석일수',
+      period: month.label,
+      rows: top(month.rows, { sortBy: (r) => r.attendanceDays, filter: attended, value: (r) => `${r.attendanceDays}일` }),
+    },
+    {
+      key: 'avg-week', badge: '최근 7일', accent: 'mint',
+      title: '주간 하루평균 집중러', emoji: '🎯', unitLabel: '하루 평균 순공시간',
+      period: week.label,
+      rows: top(week.rows, { sortBy: (r) => r.averageStudyMinutes, filter: (r) => r.attendanceDays > 0 && r.averageStudyMinutes > 0, value: (r) => `${formatMinutes(r.averageStudyMinutes)}/일` }),
+    },
+    {
+      key: 'avg-month', badge: '최근 30일', accent: 'grape',
+      title: '월간 꾸준왕', emoji: '📈', unitLabel: '하루 평균 순공시간',
+      period: month.label,
+      rows: top(month.rows, { sortBy: (r) => r.averageStudyMinutes, filter: (r) => r.attendanceDays > 0 && r.averageStudyMinutes > 0, value: (r) => `${formatMinutes(r.averageStudyMinutes)}/일` }),
+    },
+    {
+      key: 'focus-week', badge: '최근 7일', accent: 'cyan',
+      title: '주간 자리지킴이', emoji: '🧘', unitLabel: '외출 누적 (적을수록 상위)',
+      period: week.label,
+      rows: top(week.rows, { sortBy: (r) => r.awayMinutes, dir: 'asc', filter: attended, value: (r) => (r.awayMinutes > 0 ? `외출 ${formatMinutes(r.awayMinutes)}` : '외출 0분') }),
+    },
+    {
+      key: 'focus-month', badge: '최근 30일', accent: 'rose',
+      title: '월간 몰입 챔피언', emoji: '🛡️', unitLabel: '외출 누적 (적을수록 상위)',
+      period: month.label,
+      rows: top(month.rows, { sortBy: (r) => r.awayMinutes, dir: 'asc', filter: attended, value: (r) => (r.awayMinutes > 0 ? `외출 ${formatMinutes(r.awayMinutes)}` : '외출 0분') }),
+    },
+  ];
+}
+
+const BROADCAST_ROTATE_MS = 15000;
+const BROADCAST_RELOAD_MS = 5 * 60 * 1000;
+
+function BroadcastRankingBoard({ apiFetch, setMessage }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [index, setIndex] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const stageRef = useRef(null);
+
+  async function loadAll() {
+    if (!apiFetch) return;
+    setLoading(true);
+    try {
+      const today = getKstDateString();
+      const yday = addDays(today, -1);
+      const week0 = addDays(today, -6);
+      const month0 = addDays(today, -29);
+      const fmt = (d) => d.replace(/-/g, '.').slice(5); // MM.DD
+      const [yesterday, week, month] = await Promise.all([
+        apiFetch(`/api/ranking?start=${yday}&end=${yday}`),
+        apiFetch(`/api/ranking?start=${week0}&end=${today}`),
+        apiFetch(`/api/ranking?start=${month0}&end=${today}`),
+      ]);
+      setData({
+        yesterday: { rows: yesterday.ranking || [], label: `${fmt(yday)} (어제)` },
+        week: { rows: week.ranking || [], label: `${fmt(week0)} ~ ${fmt(today)}` },
+        month: { rows: month.ranking || [], label: `${fmt(month0)} ~ ${fmt(today)}` },
+      });
+    } catch (error) {
+      setMessage?.(error.message || '게시용 랭킹 데이터를 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAll();
+    const reload = setInterval(loadAll, BROADCAST_RELOAD_MS);
+    return () => clearInterval(reload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const boards = useMemo(() => (data ? buildBroadcastBoards(data) : []), [data]);
+
+  useEffect(() => {
+    if (!playing || boards.length === 0) return undefined;
+    const timer = setInterval(() => setIndex((i) => (i + 1) % boards.length), BROADCAST_ROTATE_MS);
+    return () => clearInterval(timer);
+  }, [playing, boards.length]);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  function toggleFullscreen() {
+    const el = stageRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else el.requestFullscreen?.();
+  }
+
+  const board = boards[index] || null;
+
+  return (
+    <div className={`broadcast-stage accent-${board?.accent || 'sky'} ${isFullscreen ? 'is-fullscreen' : ''}`} ref={stageRef}>
+      <div className="broadcast-controls">
+        <div className="broadcast-dots">
+          {boards.map((b, i) => (
+            <button key={b.key} type="button" className={i === index ? 'active' : ''} aria-label={b.title} onClick={() => setIndex(i)} />
+          ))}
+        </div>
+        <div className="broadcast-buttons">
+          <button type="button" onClick={() => setIndex((i) => (i - 1 + boards.length) % Math.max(boards.length, 1))} aria-label="이전">‹</button>
+          <button type="button" onClick={() => setPlaying((p) => !p)}>{playing ? '⏸ 정지' : '▶ 재생'}</button>
+          <button type="button" onClick={() => setIndex((i) => (i + 1) % Math.max(boards.length, 1))} aria-label="다음">›</button>
+          <button type="button" onClick={loadAll} disabled={loading}>{loading ? '갱신중' : '↻ 갱신'}</button>
+          <button type="button" className="broadcast-fs" onClick={toggleFullscreen}>{isFullscreen ? '⤢ 창모드' : '⛶ 전체화면'}</button>
+        </div>
+      </div>
+
+      {!board ? (
+        <div className="broadcast-empty">{loading ? '랭킹을 불러오는 중...' : '표시할 랭킹 데이터가 없습니다.'}</div>
+      ) : (
+        <div className={`broadcast-screen accent-${board.accent}`} key={board.key}>
+          <div className="broadcast-header">
+            <span className="broadcast-badge">{board.badge}</span>
+            <h3><span className="broadcast-emoji">{board.emoji}</span>{board.title}</h3>
+            <div className="broadcast-meta"><span className="broadcast-unit">{board.unitLabel}</span><span className="broadcast-period">📆 {board.period}</span></div>
+          </div>
+
+          {board.rows.length === 0 ? (
+            <div className="broadcast-empty">아직 집계된 기록이 없어요. 곧 채워질 거예요! ✨</div>
+          ) : (
+            <>
+              <div className="broadcast-podium">
+                {[1, 0, 2].map((slot) => {
+                  const r = board.rows[slot];
+                  if (!r) return <div key={slot} className="podium-slot empty" />;
+                  const medal = ['🥇', '🥈', '🥉'][r.rank - 1];
+                  return (
+                    <div key={slot} className={`podium-slot place-${r.rank} ${r.masked ? 'masked' : ''}`}>
+                      <div className="podium-medal">{medal}</div>
+                      <div className="podium-name">{r.name}</div>
+                      <div className="podium-value">{r.valueText}</div>
+                      <div className="podium-bar"><span style={{ height: `${r.pct}%` }} /></div>
+                      <div className="podium-rank">{r.rank}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {board.rows.length > 3 ? (
+                <ol className="broadcast-list">
+                  {board.rows.slice(3).map((r) => (
+                    <li key={r.studentId} className={r.masked ? 'masked' : ''} style={{ '--bar': `${r.pct}%` }}>
+                      <span className="rl-rank">{r.rank}</span>
+                      <span className="rl-name">{r.name}</span>
+                      <span className="rl-bar"><i /></span>
+                      <span className="rl-value">{r.valueText}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+            </>
+          )}
+
+          <div className="broadcast-progress"><i key={`${board.key}-${playing}`} className={playing ? 'running' : ''} style={{ animationDuration: `${BROADCAST_ROTATE_MS}ms` }} /></div>
+        </div>
+      )}
+    </div>
   );
 }
 

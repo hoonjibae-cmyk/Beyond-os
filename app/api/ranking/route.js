@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
-import { getKstDateString } from '../../../lib/date';
+import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
@@ -57,9 +57,12 @@ export async function GET(request) {
           name: student.name,
           school: student.school,
           grade: student.grade,
+          nickname: student.nickname || null,
+          rankingOptIn: Boolean(student.ranking_opt_in),
           attendanceDays: 0,
           totalStudyMinutes: 0,
           awayCount: 0,
+          awayMinutes: 0,
           needsAttentionCount: 0,
           absentCount: 0,
         };
@@ -71,6 +74,9 @@ export async function GET(request) {
       row.needsAttentionCount += session.seat_status === 'needs_attention' ? 1 : 0;
       row.absentCount += session.seat_status === 'absent' ? 1 : 0;
       row.awayCount += (eventsBySession[session.id] || []).filter((event) => event.event_type === 'away').length;
+      // 집중력 랭킹용 외출 누적 시간(분): 저장된 누적 + 미복귀(열린) 외출 구간
+      row.awayMinutes += Number(session.away_total_minutes || 0)
+        + (session.away_started_at && !session.check_out_at ? diffMinutes(session.away_started_at, new Date().toISOString()) : 0);
     }
 
     const ranking = Object.values(map)

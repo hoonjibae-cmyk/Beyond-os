@@ -178,6 +178,8 @@ export async function POST(request) {
       student_phone: body.studentPhone || null,
       default_seat_no: seatNo,
       status: requestedStatus,
+      nickname: String(body.nickname || '').trim() || null,
+      ranking_opt_in: Boolean(body.rankingOptIn),
     };
 
     let savedStudent;
