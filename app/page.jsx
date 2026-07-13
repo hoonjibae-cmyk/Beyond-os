@@ -11902,7 +11902,7 @@ function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRan
 // 게시용(TV) 랭킹보드 화면 정의: 로테이션 순서대로 8개.
 function buildBroadcastBoards({ yesterday, week, month }) {
   const displayName = (row) => (row.rankingOptIn && row.nickname ? row.nickname : 'XXX');
-  const top = (rows, { sortBy, dir = 'desc', filter, value, unit }) => {
+  const rankTop = (rows, { sortBy, dir = 'desc', filter, value }) => {
     const ranked = (rows || [])
       .filter(filter)
       .map((row) => ({
@@ -11917,13 +11917,14 @@ function buildBroadcastBoards({ yesterday, week, month }) {
     const maxVal = dir === 'asc'
       ? Math.max(...ranked.map((r) => r.raw), 1)
       : Math.max(ranked[0]?.raw || 1, 1);
-    return ranked.slice(0, 10).map((r, i) => ({
+    const list = ranked.slice(0, 10).map((r, i) => ({
       ...r,
       rank: i + 1,
       pct: dir === 'asc'
         ? Math.round(Math.max(6, (1 - r.raw / (maxVal || 1)) * 94 + 6))
         : Math.round(Math.max(6, (r.raw / (maxVal || 1)) * 100)),
     }));
+    return { rows: list, total: ranked.length };
   };
 
   const attended = (row) => row.attendanceDays > 0;
@@ -11934,49 +11935,49 @@ function buildBroadcastBoards({ yesterday, week, month }) {
       key: 'study-yesterday', badge: '어제', accent: 'flame',
       title: '어제의 순공왕', emoji: '🔥', unitLabel: '순수 공부시간',
       period: yesterday.label,
-      rows: top(yesterday.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
+      ...rankTop(yesterday.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
     },
     {
       key: 'study-week', badge: '최근 7일', accent: 'volt',
       title: '이번 주 순공 레전드', emoji: '⚡', unitLabel: '주간 총 순공시간',
       period: week.label,
-      rows: top(week.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
+      ...rankTop(week.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
     },
     {
       key: 'study-month', badge: '최근 30일', accent: 'gold',
       title: '이달의 순공 마스터', emoji: '👑', unitLabel: '월간 총 순공시간',
       period: month.label,
-      rows: top(month.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
+      ...rankTop(month.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
     },
     {
       key: 'attend-month', badge: '최근 30일', accent: 'sky',
       title: '한 달 개근 히어로', emoji: '📅', unitLabel: '출석일수',
       period: month.label,
-      rows: top(month.rows, { sortBy: (r) => r.attendanceDays, filter: attended, value: (r) => `${r.attendanceDays}일` }),
+      ...rankTop(month.rows, { sortBy: (r) => r.attendanceDays, filter: attended, value: (r) => `${r.attendanceDays}일` }),
     },
     {
       key: 'avg-week', badge: '최근 7일', accent: 'mint',
       title: '주간 하루평균 집중러', emoji: '🎯', unitLabel: '하루 평균 순공시간',
       period: week.label,
-      rows: top(week.rows, { sortBy: (r) => r.averageStudyMinutes, filter: (r) => r.attendanceDays > 0 && r.averageStudyMinutes > 0, value: (r) => `${formatMinutes(r.averageStudyMinutes)}/일` }),
+      ...rankTop(week.rows, { sortBy: (r) => r.averageStudyMinutes, filter: (r) => r.attendanceDays > 0 && r.averageStudyMinutes > 0, value: (r) => `${formatMinutes(r.averageStudyMinutes)}/일` }),
     },
     {
       key: 'avg-month', badge: '최근 30일', accent: 'grape',
       title: '월간 꾸준왕', emoji: '📈', unitLabel: '하루 평균 순공시간',
       period: month.label,
-      rows: top(month.rows, { sortBy: (r) => r.averageStudyMinutes, filter: (r) => r.attendanceDays > 0 && r.averageStudyMinutes > 0, value: (r) => `${formatMinutes(r.averageStudyMinutes)}/일` }),
+      ...rankTop(month.rows, { sortBy: (r) => r.averageStudyMinutes, filter: (r) => r.attendanceDays > 0 && r.averageStudyMinutes > 0, value: (r) => `${formatMinutes(r.averageStudyMinutes)}/일` }),
     },
     {
       key: 'focus-week', badge: '최근 7일', accent: 'cyan',
       title: '주간 자리지킴이', emoji: '🧘', unitLabel: '외출 누적 (적을수록 상위)',
       period: week.label,
-      rows: top(week.rows, { sortBy: (r) => r.awayMinutes, dir: 'asc', filter: attended, value: (r) => (r.awayMinutes > 0 ? `외출 ${formatMinutes(r.awayMinutes)}` : '외출 0분') }),
+      ...rankTop(week.rows, { sortBy: (r) => r.awayMinutes, dir: 'asc', filter: attended, value: (r) => (r.awayMinutes > 0 ? `외출 ${formatMinutes(r.awayMinutes)}` : '외출 0분') }),
     },
     {
       key: 'focus-month', badge: '최근 30일', accent: 'rose',
       title: '월간 몰입 챔피언', emoji: '🛡️', unitLabel: '외출 누적 (적을수록 상위)',
       period: month.label,
-      rows: top(month.rows, { sortBy: (r) => r.awayMinutes, dir: 'asc', filter: attended, value: (r) => (r.awayMinutes > 0 ? `외출 ${formatMinutes(r.awayMinutes)}` : '외출 0분') }),
+      ...rankTop(month.rows, { sortBy: (r) => r.awayMinutes, dir: 'asc', filter: attended, value: (r) => (r.awayMinutes > 0 ? `외출 ${formatMinutes(r.awayMinutes)}` : '외출 0분') }),
     },
   ];
 }
@@ -12072,7 +12073,7 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
           <div className="broadcast-header">
             <span className="broadcast-badge">{board.badge}</span>
             <h3><span className="broadcast-emoji">{board.emoji}</span>{board.title}</h3>
-            <div className="broadcast-meta"><span className="broadcast-unit">{board.unitLabel}</span><span className="broadcast-period">📆 {board.period}</span></div>
+            <div className="broadcast-meta"><span className="broadcast-unit">{board.unitLabel}</span><span className="broadcast-period">📆 {board.period}</span>{board.total > 10 ? <span className="broadcast-count">전체 {board.total}명 · TOP 10</span> : (board.total ? <span className="broadcast-count">전체 {board.total}명</span> : null)}</div>
           </div>
 
           {board.rows.length === 0 ? (
@@ -12090,7 +12091,6 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
                       <div className="podium-name">{r.name}</div>
                       <div className="podium-value">{r.valueText}</div>
                       <div className="podium-bar"><span style={{ height: `${r.pct}%` }} /></div>
-                      <div className="podium-rank">{r.rank}</div>
                     </div>
                   );
                 })}
@@ -12114,6 +12114,7 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
           <div className="broadcast-progress"><i key={`${board.key}-${playing}`} className={playing ? 'running' : ''} style={{ animationDuration: `${BROADCAST_ROTATE_MS}ms` }} /></div>
         </div>
       )}
+      <div className="broadcast-watermark"><span className="bw-mark">Beyond</span> 학습관리센터</div>
     </div>
   );
 }

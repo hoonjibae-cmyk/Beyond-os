@@ -18719,7 +18719,9 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 
 .broadcast-header{ text-align:center; margin-bottom:18px; }
 .broadcast-badge{ display:inline-block; font-size:12px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color:#04122b; background:var(--accent2); padding:5px 14px; border-radius:999px; box-shadow:0 0 20px color-mix(in srgb, var(--accent) 60%, transparent); }
-.broadcast-header h3{ margin:12px 0 6px; font-size:clamp(28px, 4.2vw, 52px); font-weight:900; letter-spacing:-.02em; text-shadow:0 2px 30px color-mix(in srgb, var(--accent) 55%, transparent); }
+/* APPLE 테마의 h1,h2,h3 어두운 색 규칙을 이기기 위해 색/크기를 명시적으로 지정 */
+.broadcast-header h3{ margin:12px 0 6px !important; font-size:clamp(30px, 4.4vw, 54px) !important; font-weight:900; letter-spacing:-.02em; color:#f7f9ff !important; text-shadow:0 2px 6px rgba(0,0,0,.55), 0 0 26px color-mix(in srgb, var(--accent) 45%, transparent); }
+.broadcast-count{ color:#04122b; background:var(--accent2); padding:4px 12px; border-radius:999px; font-weight:800; }
 .broadcast-emoji{ margin-right:12px; filter:drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 70%, transparent)); }
 .broadcast-meta{ display:flex; gap:14px; align-items:center; justify-content:center; flex-wrap:wrap; color:#aeb8e0; font-size:clamp(13px,1.5vw,17px); font-weight:600; }
 .broadcast-period{ color:#f4f6ff; background:rgba(255,255,255,.08); padding:4px 12px; border-radius:999px; }
@@ -18781,9 +18783,15 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .accent-rose{ --accent:#ff5fa2; --accent2:#ffa6cd; }
 .broadcast-screen[class*="accent-"]{ /* 액센트가 stage 글로우로도 전달되도록 */ }
 
+/* 브랜드 워터마크 (화면 구석) */
+.broadcast-watermark{ position:absolute; right:18px; bottom:14px; z-index:3; font-size:clamp(12px,1.3vw,16px); font-weight:700; letter-spacing:.02em; color:rgba(255,255,255,.5); pointer-events:none; text-shadow:0 1px 4px rgba(0,0,0,.5); }
+.broadcast-watermark .bw-mark{ color:var(--accent2); font-weight:900; }
+.is-fullscreen .broadcast-watermark{ right:3vw; bottom:2.4vh; }
+
 @media (max-width:760px){
   .broadcast-list li{ grid-template-columns:34px minmax(70px,1.2fr) 2fr auto; gap:8px; }
   .broadcast-podium{ gap:8px; }
+  .broadcast-watermark{ right:12px; bottom:10px; }
 }
 @media (prefers-reduced-motion: reduce){
   .broadcast-screen, .podium-medal, .podium-bar span, .broadcast-list li, .rl-bar i, .broadcast-progress i.running{ animation:none !important; }
