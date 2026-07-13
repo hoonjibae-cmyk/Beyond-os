@@ -18954,3 +18954,134 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* 9) 구조용 진한 초록(비상태) → 중립/블루 */
 .weekly-detail-table th{ background:var(--ap-surface-3) !important; color:var(--ap-text) !important; }
 .weekly-student-card.selected{ border-color:var(--ap-accent) !important; outline-color:rgba(0,113,227,.25) !important; }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-64: 나머지 탭 애플 톤 통일 (시간표·플래너·상벌점·멘토링·관리주의·설정·키오스크)
+   웜탄/골드 + Tailwind 파랑/슬레이트 → 화이트+헤어라인 · 블루 단일 액센트 · 무채도 상태색
+   ───────────────────────────────────────────────────────────── */
+/* A) 구조 표면 → 화이트 + 헤어라인 보더 */
+.calendar-day, .schedule-popup, .activity-popup, .student-activity-row, .activity-preview,
+.timeline-wrap, .activity-timeline-wrap, .week-timeline-shell,
+.planner-status-summary > div,
+.points-summary-grid > div, .points-row,
+.mentoring-slot-card, .mentoring-assignment-row,
+.integrity-summary-grid > div, .integrity-item, .cleanup-item, .system-check-item,
+.student-editor-modal, .seat-picker-map,
+.user-management-card, .guardian-row,
+.send-settings-card, .send-mode-grid div,
+.kiosk-bridge-status-grid > div, .kiosk-test-result, .kiosk-diagnostic-row, .kiosk-log-card,
+.kiosk-log-table-wrap, .kiosk-alias-item{
+  background:var(--ap-surface) !important; border-color:var(--ap-sep) !important;
+}
+/* B) 서브 표면 → 연회색 */
+.break-row, .timeline-title, .timeline-hour-labels, .week-time-axis, .week-timeline-head,
+.schedule-target-bar, .popup-preview, .activity-popup-card,
+.planner-upload-card, .planner-status-card, .planner-attachment-box,
+.mentoring-mentor-card, .mentoring-policy-card, .mentoring-assign-panel, .mentoring-slot-editor,
+.mentoring-responsibility-panel, .mentoring-responsibility-picker, .mentoring-mode-bar, .mentoring-repeat-box.date-only,
+.integrity-card, .student-editor-card, .send-payload-preview,
+.kiosk-bridge-guide-card, .kiosk-log-summary-grid > div, .kiosk-log-detail-row td{
+  background:var(--ap-surface-2) !important; border-color:var(--ap-sep) !important;
+}
+/* B2) 더 옅은 표면 → surface-3 */
+.schedule-chip, .activity-preview, .selected-file-name,
+.mentoring-responsibility-chip, .mentoring-mode-toggle, .kiosk-json-preview{
+  background:var(--ap-surface-3) !important; border-color:var(--ap-sep) !important;
+}
+/* C) 인풋/셀렉트 보더·글씨 통일 */
+.activity-popup input, .activity-popup select, .activity-popup textarea,
+.schedule-popup input, .schedule-popup select, .schedule-popup textarea,
+.schedule-target-bar select, .popup-head button, .repeat-box, .mini-activity,
+.mentor-edit-row input, .mentoring-slot-editor input, .mentoring-slot-editor select,
+.mentoring-assign-panel input, .mentoring-assign-panel select, .mentoring-day-tabs button,
+.mentoring-responsibility-control select, .unassign-seat, .seat-picker-seat,
+.account-close-button, .kiosk-sample-grid button, .kiosk-log-filter-row button{
+  border-color:var(--ap-sep-strong) !important; color:var(--ap-text) !important;
+}
+/* D) 텍스트: ink / muted / faint */
+.director-report-head h3, .points-summary-grid strong, .points-form-head strong, .points-row strong, .points-row p,
+.mentoring-mentor-card strong, .mentoring-assignment-row b, .mentoring-day-tabs button,
+.mentoring-student-chip strong, .mentoring-responsibility-head h3, .mentoring-responsibility-chip strong,
+.mentoring-date-strip button strong, .mentoring-date-control input, .mentoring-panel-note b,
+.integrity-item strong, .system-check-item strong, .settings-tabs button,
+.guardian-row-head strong, .guardian-checks label, .kiosk-steps, .kiosk-sample-grid button span,
+.kiosk-bridge-status-grid strong, .kiosk-test-result strong, .kiosk-diagnostic-row strong,
+.kiosk-log-summary-grid strong, .kiosk-alias-item strong, .kiosk-panel-alert-item span{
+  color:var(--ap-text) !important;
+}
+.timeline-legend, .timeline-title span, .week-timeline-head span, .week-time-axis,
+.popup-head p, .popup-preview span, .activity-preview span, .schedule-target-bar span,
+.planner-status-summary span, .alert-center-head span, .planner-attachment-box span, .muted-small,
+.points-summary-grid span, .points-form-head span, .points-row span,
+.mentoring-mentor-card span, .mentoring-assignment-row span, .mentoring-assign-panel label span,
+.mentoring-panel-note, .mentoring-student-chip span, .mentoring-responsibility-head p,
+.mentoring-responsibility-chip span, .mentoring-responsibility-actions span, .mentoring-date-strip button span,
+.mentoring-date-control label span, .mentoring-mode-toggle button,
+.integrity-item span, .integrity-hint, .system-check-item span, .guardian-section-head p,
+.send-settings-card span, .send-mode-grid span, .send-payload-head p,
+.kiosk-bridge-status-grid span, .kiosk-bridge-status-grid em, .kiosk-log-summary-grid span,
+.kiosk-log-section-label, .kiosk-log-filter-row button, .kiosk-alias-item span,
+.kiosk-panel-alert-item em, .kiosk-log-action-panel p, .attendance-source-badge.manual{
+  color:var(--ap-text-2) !important;
+}
+.empty-table-cell, .panel-guardian-empty{ color:var(--ap-text-3) !important; }
+
+/* E) 골드/Tailwind 비의미 액센트 → 블루 단일 액센트 */
+.calendar-day.today{ border-color:var(--ap-accent) !important; box-shadow:0 0 0 3px rgba(0,113,227,.16) !important; }
+.week-timeline-day.today .week-timeline-head, .mentoring-date-strip button.today,
+.mentoring-mode-toggle button.active, .mentoring-date-status.template, .mentoring-date-locked-note,
+.today-record-title, .kiosk-log-summary-grid.today > div, .mentoring-list-note, .mentoring-date-strip > em{
+  background:var(--ap-accent-tint) !important; border-color:rgba(0,113,227,.28) !important; color:var(--ap-accent-press) !important;
+}
+.mentoring-chip, .mentoring-student-chip.selected, .mentoring-responsibility-control span,
+.mentoring-mode-toggle button.active, .kiosk-sample-grid button:hover strong, .kiosk-sample-grid button strong{
+  color:var(--ap-accent) !important;
+}
+.mentoring-seat-badge, .mentoring-day-tabs button.active, .settings-tabs button.active,
+.unassign-seat.selected, .guardian-relation-badge.primary,
+.mentoring-mentor-card.active-config, .mentoring-student-chip.selected,
+.kiosk-log-filter-row button.active{
+  background:var(--ap-accent) !important; border-color:var(--ap-accent) !important; color:#fff !important;
+}
+.mentoring-student-chip.selected span, .mentoring-student-chip.selected strong{ color:#fff !important; }
+.mentoring-slot-card.drag-over, .mentoring-drag-handle, .mentoring-day-tabs button em,
+.seat-picker-seat.selected, .kiosk-log-action-panel{
+  background:var(--ap-accent-tint) !important; border-color:var(--ap-accent) !important; color:var(--ap-accent-press) !important;
+}
+.timeline-event:focus{ outline-color:rgba(0,113,227,.35) !important; }
+
+/* F) 상태색 — 무채도 애플 4색 */
+/* 성공(초록) */
+.confirmed, .points-row.reward em, .mentoring-date-status.override, .system-check-item.ok,
+.send-settings-card.connected, .attendance-source-badge.kiosk, .kiosk-test-result.done,
+.kiosk-diagnostic-row.ok, .status-pill.done, .activity-block.self-study, .activity-chip.self-study, .mini-activity.self-study{
+  background:var(--ap-ok-fill) !important; border-color:rgba(52,199,89,.4) !important; color:var(--ap-ok-text) !important;
+}
+.points-summary-grid > div.reward{ background:var(--ap-ok-fill) !important; border-color:rgba(52,199,89,.4) !important; }
+/* 주의(노랑) */
+.not-confirmed, .points-row em, .selected-schedule-banner, .timeline-click-hint, .student-fixed-name,
+.system-check-item.warn, .integrity-item.medium, .send-settings-card.pending, .recipient-test-mode-card.active,
+.mentoring-slot-card.low, .mentoring-assignment-row.schedule-conflict, .mentoring-assignment-warning,
+.time-select.has-legacy-time, .kiosk-panel-alert-item, .activity-block.break-activity, .activity-chip.break-activity, .mini-activity.break-activity,
+.warning-hint, .seat-picker-seat.selected{
+  background:var(--ap-away-fill) !important; border-color:rgba(255,204,0,.5) !important; color:var(--ap-away-text) !important;
+}
+/* 오류/차단(빨강) */
+.points-row.penalty em, .integrity-item.high, .mentoring-slot-card.over, .mentoring-assignment-row button, .danger-lite,
+.mentoring-conflict-inline, .kiosk-diagnostic-row.failed, .kiosk-test-result.failed, .kiosk-error-summary,
+.status-pill.pending, .history-memo-box.pending, .priority-attention-badge{
+  background:var(--ap-attn-fill) !important; border-color:rgba(255,59,48,.4) !important; color:var(--ap-attn-text) !important;
+}
+.points-summary-grid > div.penalty{ background:var(--ap-attn-fill) !important; border-color:rgba(255,59,48,.4) !important; }
+/* 이력 보라 */
+.history-record-title{ background:var(--ap-absent-fill) !important; border-color:rgba(175,82,222,.35) !important; color:var(--ap-absent-text) !important; }
+
+/* G) 다크 코드블록 골드/슬레이트 글씨 → 중립 */
+.kiosk-json-preview pre, .kiosk-test-result pre, .kiosk-log-raw-block pre, .kiosk-log-detail-grid code{
+  background:#1d1d1f !important; color:#f5f5f7 !important; border-color:var(--ap-sep) !important;
+}
+
+/* H) 관리주의 잔여 누수 + 상태 pill */
+.history-memo-box{ background:var(--ap-surface-2) !important; border-color:var(--ap-sep) !important; }
+.attention-history-card .status-pill.done{ background:var(--ap-ok-fill) !important; color:var(--ap-ok-text) !important; }
+.attention-history-card .status-pill.pending{ background:var(--ap-attn-fill) !important; color:var(--ap-attn-text) !important; }

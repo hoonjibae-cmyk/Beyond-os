@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-63-report-apple-tone",
-  "version": "0.41.63",
+  "name": "beyond-os-v41-64-all-tabs-apple-tone",
+  "version": "0.41.64",
   "private": true,
   "scripts": {
     "dev": "next dev",
