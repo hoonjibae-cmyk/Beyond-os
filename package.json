@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-54-mobile-hold-align-fix",
-  "version": "0.41.54",
+  "name": "beyond-os-v41-55-learning-mgmt-tab-consolidation",
+  "version": "0.41.55",
   "private": true,
   "scripts": {
     "dev": "next dev",

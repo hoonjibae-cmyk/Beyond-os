@@ -188,6 +188,8 @@ function getTimelineRows({ sessions = [], eventsBySession = {}, checksBySession 
       topStudyStatus: studySummary.topStatus,
       periodSummary: periodSummary || '-',
       observation: safeText(report?.mentor_comment || session.attendance_memo || '', 220),
+      mentorComment: safeText(report?.mentor_comment || '', 240),
+      attendanceMemo: safeText(session.attendance_memo || '', 200),
       plannerMemo: safeText(planner?.memo || '', 180),
       plannerStatus: planner ? '제출' : '미제출',
       focusIssues: acks.map((ack) => ack.alert_title || ack.alert_type || '관리주의').join(' / ') || '-',

@@ -18582,4 +18582,33 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .quick-inline-box{ background:#eef4fe !important; border:1px solid #d6e6fc !important; }
 .quick-inline-box strong{ color:#1d1d1f !important; }
 .quick-inline-box span{ color:#5b6470 !important; }
+/* ─── v41-55: 학습 관리 탭 애플 정돈 (표 통합 + 카드/배지) ─── */
+.student-care-page .content-card,
+.student-care-section-block > .content-card,
+.attendance-history-tab{ border:1px solid #e3e3e6 !important; border-radius:16px !important; box-shadow:0 1px 3px rgba(0,0,0,.05) !important; background:#fff !important; }
+.student-care-section-title{ display:flex; gap:12px; align-items:baseline; margin:18px 0 10px; }
+.student-care-section-title > span{ background:#1d1d1f; color:#fff; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; align-self:center; }
+.student-care-section-title h3{ margin:0; font-size:18px; letter-spacing:-.02em; }
+.student-care-section-title p{ margin:2px 0 0; color:#6e6e73; font-size:13px; }
+/* 날짜별 통합 관리표 */
+.student-history-table{ width:100%; border-collapse:separate; border-spacing:0; }
+.student-history-table thead th{ background:#f5f5f7 !important; color:#1d1d1f !important; font-weight:700 !important; font-size:12px; padding:10px 11px; border-bottom:1px solid #e3e3e6; text-align:left; white-space:nowrap; }
+.student-history-table tbody td{ padding:10px 11px; border-bottom:1px solid #ededf0; font-size:13px; vertical-align:top; }
+.student-history-table tbody tr{ cursor:pointer; }
+.student-history-table tbody tr:hover{ background:#fafafd; }
+.student-history-table tr.has-focus{ background:#fdf3f3; }
+.unified-care-table .mentor-comment-col{ max-width:280px; white-space:normal; line-height:1.5; color:#1d1d1f; }
+.care-status-badge{ display:inline-block; padding:3px 9px; border-radius:999px; background:#ececef; color:#1d1d1f; font-size:12px; font-weight:700; white-space:nowrap; }
+.care-status-badge.away{ background:#eef4fe; color:#0071e3; }
+.care-status-badge.danger{ background:#fdecec; color:#c0392b; }
+.student-history-detail-row td{ background:#fafafd; }
+.student-history-detail-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:10px; padding:6px 2px; }
+.student-history-detail-grid > div{ background:#fff; border:1px solid #e3e3e6; border-radius:12px; padding:10px 12px; }
+.student-history-detail-grid b{ display:block; color:#6e6e73; font-size:11px; font-weight:700; margin-bottom:4px; }
+.student-history-detail-grid span{ color:#1d1d1f; font-size:13px; line-height:1.5; }
+/* 요약/리스크 칩 애플 톤 */
+.attendance-insight-summary > div, .student-history-summary-grid > div{ background:#f5f5f7 !important; border:1px solid #ececef !important; border-radius:12px !important; }
+.attendance-risk-chip-row .risk-chip{ background:#ececef; color:#1d1d1f; border-radius:999px; }
+.attendance-risk-chip-row .risk-chip.warn{ background:#fff3e0; color:#b26a00; }
+.attendance-risk-chip-row .risk-chip.danger{ background:#fdecec; color:#c0392b; }
 /* APPLE THEME END */

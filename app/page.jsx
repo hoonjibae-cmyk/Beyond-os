@@ -108,7 +108,7 @@ const TABS = [
   ['dailyReports', '데일리 리포트'],
   ['weeklyReports', '위클리 리포트'],
   ['ranking', '순공시간 랭킹보드'],
-  ['studentHistory', '출결·관리 이력'],
+  ['studentHistory', '학습 관리'],
   ['points', '상벌점 관리'],
   ['mentoring', '멘토링 시간표'],
   ['attention', '관리주의 이력'],
@@ -122,7 +122,7 @@ const USER_PERMISSION_TABS = [
   ['dailyReports', '데일리 리포트'],
   ['weeklyReports', '위클리 리포트'],
   ['ranking', '순공시간 랭킹보드'],
-  ['studentHistory', '출결·관리 이력'],
+  ['studentHistory', '학습 관리'],
   ['points', '상벌점 관리'],
   ['mentoring', '멘토링 시간표'],
   ['attention', '관리주의 이력'],
@@ -11772,22 +11772,11 @@ function AttendanceTab({
   const rules = normalizeOperatingRules(operatingRules);
   const selectedStudent = (students || []).find((student) => String(student.id) === String(studentFilter));
   const flaggedRows = (rows || []).map((row) => ({ ...row, flags: getAttendanceFlags(row, rules) }));
-  const [commentFilter, setCommentFilter] = useState('all');
   const [commentDrafts, setCommentDrafts] = useState({});
   const [savingCommentId, setSavingCommentId] = useState(null);
   const [mentoringReturnReady, setMentoringReturnReady] = useState(false);
   const mentorCommentTextareaRef = useRef(null);
   const today = getKstDateString();
-
-  const statusFilteredRows = statusFilter === 'all'
-    ? flaggedRows
-    : flaggedRows.filter((row) => row.flags.some((flag) => flag.label === statusFilter));
-
-  const visibleRows = statusFilteredRows.filter((row) => {
-    if (commentFilter === 'with_comment') return Boolean(String(row.mentorComment || '').trim());
-    if (commentFilter === 'without_comment') return !String(row.mentorComment || '').trim();
-    return true;
-  });
 
   const totalStudy = (rows || []).reduce((sum, row) => sum + Number(row.pureStudyMinutes || 0), 0);
   const totalAway = (rows || []).reduce((sum, row) => sum + Number(row.awayCount || 0), 0);
@@ -11802,7 +11791,6 @@ function AttendanceTab({
   const excessiveAwayDays = countAttendanceFlag(rows, '외출과다', rules);
   const lowStudyDays = countAttendanceFlag(rows, '순공부족', rules);
   const attentionDays = (rows || []).filter((row) => getAttendanceFlags(row, rules).some((flag) => ['관리주의', '미등원', '외출과다'].includes(flag.label))).length;
-  const statusOptions = ['all', '정상', '지각', '조퇴', '외출과다', '순공부족', '관리주의', '미등원'];
   const todayRow = flaggedRows.find((row) => row.date === today);
   const fromMentoringFlow = mentoringContext?.source === 'mentoring' && String(mentoringContext?.studentId || '') === String(studentFilter || selectedStudent?.id || '');
   const mentoringSequence = Array.isArray(mentoringContext?.studentSequence) ? mentoringContext.studentSequence : [];
@@ -11867,60 +11855,12 @@ function AttendanceTab({
     setMentoringReturnReady(false);
   }, [mentoringContext?.slotId, mentoringContext?.studentId, focusMentorCommentRequest?.nonce]);
 
-  function handleStudentChange(event) {
-    const value = event.target.value;
-    setStudentFilter(value);
-    setStatusFilter('all');
-    setCommentFilter('all');
-    if (!value) return;
-    loadHistory(start, end, value);
-  }
-
-  const summaryNotice = selectedStudent
-    ? `${selectedStudent.name} 학생의 ${start} ~ ${end} 출결 현황입니다.`
-    : '학생을 선택하면 출결 현황이 표시됩니다.';
-
   return (
     <section className="content-card attendance-history-tab attendance-table-mode">
-      <div className="section-head">
-        <div>
-          <h2>출결 현황 · 멘토 코멘트</h2>
-          <p>{summaryNotice}</p>
-        </div>
-        <div className="planner-head-actions attendance-preset-actions">
-          <button className="secondary section-action" onClick={() => setPreset('today')}>오늘</button>
-          <button className="secondary section-action" onClick={() => setPreset('week')}>이번 주</button>
-          <button className="secondary section-action" onClick={() => setPreset('month')}>이번 달</button>
-        </div>
-      </div>
-
-      <div className="attendance-filter-panel clean-panel table-filter-panel">
-        <div className="field">
-          <label>학생 선택</label>
-          <select value={studentFilter} onChange={handleStudentChange}>
-            <option value="">학생을 선택하세요</option>
-            {(students || []).map((student) => (
-              <option key={student.id} value={student.id}>
-                {student.name} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>시작일</label>
-          <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={start} onChange={(e) => { setStart(e.target.value); if (studentFilter) loadHistory(e.target.value, end, studentFilter); }} />
-        </div>
-        <div className="field">
-          <label>종료일</label>
-          <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={end} onChange={(e) => { setEnd(e.target.value); if (studentFilter) loadHistory(start, e.target.value, studentFilter); }} />
-        </div>
-        <button className="primary section-action" onClick={() => loadHistory()} disabled={loading || !studentFilter}>{loading ? '조회 중...' : '출결 조회'}</button>
-      </div>
-
       {!selectedStudent ? (
         <div className="attendance-blank-hint clean-panel">
           <strong>학생을 먼저 선택하세요.</strong>
-          <span>출결·관리 이력 메뉴는 학생별 장기 출결 참여도와 학습상태를 보는 화면입니다. 학생을 선택하기 전에는 기록을 표시하지 않습니다.</span>
+          <span>학습 관리 메뉴는 학생별 장기 출결 참여도와 학습상태를 보는 화면입니다. 위 학생 선택에서 학생과 기간을 지정하세요.</span>
         </div>
       ) : null}
 
@@ -11930,23 +11870,7 @@ function AttendanceTab({
             <button className="secondary section-action" onClick={() => setSummaryCollapsed(!summaryCollapsed)}>
               {summaryCollapsed ? '요약 펼치기' : '요약 접기'}
             </button>
-            <div className="field compact-status-filter">
-              <label>상태 필터</label>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                {statusOptions.map((option) => (
-                  <option key={option} value={option}>{option === 'all' ? '전체 상태' : option}</option>
-                ))}
-              </select>
-            </div>
-            <div className="field compact-status-filter">
-              <label>코멘트 필터</label>
-              <select value={commentFilter} onChange={(event) => setCommentFilter(event.target.value)}>
-                <option value="all">전체 기록</option>
-                <option value="with_comment">코멘트 있는 날</option>
-                <option value="without_comment">코멘트 없는 날</option>
-              </select>
-            </div>
-            <span className="attendance-visible-count">표시 {visibleRows.length}건 / 전체 {rows?.length || 0}건</span>
+            <span className="attendance-visible-count">전체 {rows?.length || 0}건 · 날짜별 상세는 아래 통합 관리표에서 확인</span>
           </div>
 
           {!summaryCollapsed ? (
@@ -11976,7 +11900,7 @@ function AttendanceTab({
               <span className={lowStudyDays ? 'risk-chip warn' : 'risk-chip'}>순공부족 {lowStudyDays}일</span>
               <span className={attentionDays ? 'risk-chip danger' : 'risk-chip'}>관리주의 {attentionDays}일</span>
             </div>
-            <button className="secondary section-action" disabled={!visibleRows?.length} onClick={() => downloadAttendanceCsv({ rows: visibleRows, student: selectedStudent, start, end, rules })}>
+            <button className="secondary section-action" disabled={!flaggedRows?.length} onClick={() => downloadAttendanceCsv({ rows: flaggedRows, student: selectedStudent, start, end, rules })}>
               CSV 다운로드
             </button>
           </div>
@@ -12054,64 +11978,10 @@ function AttendanceTab({
             </div>
           </details>
 
-          <div className="mentor-comment-history-guide">
-            <strong>학습멘토 코멘트 기록</strong>
-            <span>과거 코멘트는 참고용으로만 표시됩니다. 수정은 오늘 코멘트 입력 영역에서만 가능합니다.</span>
-          </div>
-
-          <div className="attendance-table-wrap">
-            <table className="attendance-flat-table attendance-insight-table">
-              <thead>
-                <tr>
-                  <th>날짜</th>
-                  <th>등원시간</th>
-                  <th>하원시간</th>
-                  <th>외출 현황</th>
-                  <th>순공시간</th>
-                  <th>상태</th>
-                  <th>학습멘토 코멘트</th>
-                  <th>특이사항</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.map((row) => (
-                  <tr key={row.id} className={row.flags.some((flag) => flag.type === 'danger') ? 'row-danger' : row.flags.some((flag) => flag.type === 'warn') ? 'row-warn' : ''}>
-                    <td className="date-cell">{formatAttendanceDate(row.date)}</td>
-                    <td>{formatAttendanceCell(row.checkInTime)}</td>
-                    <td>{row.checkOutTime || (row.checkInAt ? '아직 학습중' : '-')}</td>
-                    <td className="long-cell">{formatAttendanceAway(row)}</td>
-                    <td>{formatMinutes(row.pureStudyMinutes)}</td>
-                    <td className="status-cell">
-                      <div className="attendance-flag-list">
-                        {row.flags.map((flag) => (
-                          <span key={`${row.id}-${flag.label}`} className={`attendance-flag ${flag.type}`}>{flag.label}</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="comment-cell mentor-comment-readonly-cell">
-                      {row.date === today ? <span className="today-comment-chip">오늘 · 상단에서 수정</span> : null}
-                      <div className={row.mentorComment ? 'mentor-comment-readonly filled' : 'mentor-comment-readonly empty'}>
-                        {row.mentorComment || '저장된 코멘트 없음'}
-                      </div>
-                    </td>
-                    <td className="comment-cell">{formatAttendanceCell(row.attendanceMemo || row.scheduleNote || row.eventSummary)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
           {(!rows || rows.length === 0) ? (
             <div className="empty-student-list attendance-empty-result">
               <strong>선택한 기간의 출결 기록이 없습니다.</strong>
               <span>검색기간을 변경하거나 학생 시간표/출결 데이터가 저장되어 있는지 확인하세요.</span>
-            </div>
-          ) : null}
-
-          {rows?.length > 0 && visibleRows.length === 0 ? (
-            <div className="empty-student-list attendance-empty-result">
-              <strong>선택한 필터에 해당하는 기록이 없습니다.</strong>
-              <span>상태 필터나 코멘트 필터를 전체로 변경해 보세요.</span>
             </div>
           ) : null}
         </>
@@ -12128,15 +11998,6 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
 
   return (
     <section className="student-care-page student-care-unified-page">
-      <div className="content-card student-care-hero">
-        <div>
-          <p>출결 현황, 오늘 학습멘토 코멘트, 누적 학생 관리 이력을 한 화면에서 이어서 확인합니다.</p>
-        </div>
-        <div className="student-care-selected-pill">
-          {selectedStudent ? `${selectedStudent.name} 선택 중` : '학생 선택 대기'}
-        </div>
-      </div>
-
       <div className="content-card student-care-picker">
         <div className="student-care-picker-head">
           <strong>학생 선택</strong>
@@ -12175,17 +12036,6 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
             <button type="button" className="secondary" onClick={() => attendanceProps.setPreset?.('month')}>이번 달</button>
             <button type="button" className="primary" onClick={() => attendanceProps.loadHistory?.()} disabled={attendanceProps.loading || !attendanceProps.studentFilter}>{attendanceProps.loading ? '조회 중...' : '조회'}</button>
           </div>
-        </div>
-      </div>
-
-      <div className="content-card student-care-unified-guide">
-        <div>
-          <strong>통합 관리 화면</strong>
-          <span>화면은 위쪽의 오늘 출결·멘토 코멘트 영역과 아래쪽의 누적 관리 이력 영역으로 나뉩니다. 학생과 조회 기간은 한 번만 선택하면 두 영역에 함께 적용됩니다.</span>
-        </div>
-        <div className="student-care-anchor-actions">
-          <a href="#student-care-attendance-section">오늘 기록</a>
-          <a href="#student-care-history-section">누적 기록</a>
         </div>
       </div>
 
@@ -12464,21 +12314,21 @@ function StudentHistoryTab({ students = [], apiFetch, currentUser, setMessage, s
             <div className="content-card student-history-main-table-card">
               <div className="student-history-section-head">
                 <div>
-                  <h3>날짜별 압축 관리표</h3>
-                  <p>엑셀 관리시트처럼 하루 단위 기록을 압축해서 표시합니다. 행을 누르면 상세 이력이 펼쳐집니다.</p>
+                  <h3>날짜별 통합 관리표</h3>
+                  <p>출결·순공·상태·멘토 코멘트·학습체크·플래너·리포트를 하루 단위로 한 표에 모았습니다. 행을 누르면 상세가 펼쳐집니다.</p>
                 </div>
               </div>
               <div className="student-history-table-wrap">
-                <table className="student-history-table">
+                <table className="student-history-table unified-care-table">
                   <thead>
                     <tr>
                       <th>날짜</th>
-                      <th>출결 요약</th>
+                      <th>등원</th>
+                      <th>하원</th>
                       <th>순공</th>
-                      <th>학습 체크</th>
-                      <th>관리자 관찰</th>
-                      <th>학습체크 상세</th>
-                      <th>플래너</th>
+                      <th>상태</th>
+                      <th>학습체크</th>
+                      <th>멘토 코멘트</th>
                       <th>관리주의/알림</th>
                       <th>리포트</th>
                     </tr>
@@ -12487,16 +12337,22 @@ function StudentHistoryTab({ students = [], apiFetch, currentUser, setMessage, s
                     {rows.map((row) => {
                       const key = row.sessionId || row.reportId || row.date;
                       const open = openRowKey === key;
+                      const isWeekly = row.kind === 'weekly';
+                      const statusLabel = isWeekly ? '위클리'
+                        : row.status === 'absent' ? '결석'
+                        : row.status === 'away' ? '외출'
+                        : row.status === 'out' ? '퇴실'
+                        : row.checkInTime ? '입실' : '미등원';
                       return (
                         <Fragment key={key}>
                           <tr className={row.focusCount ? 'has-focus' : ''} onClick={() => setOpenRowKey(open ? '' : key)}>
-                            <td className="student-history-date-cell">{row.kind === 'weekly' ? '위클리' : formatAttendanceDate(row.date)}</td>
-                            <td>{row.attendanceSummary || '-'}</td>
+                            <td className="student-history-date-cell">{isWeekly ? '위클리' : formatAttendanceDate(row.date)}</td>
+                            <td>{isWeekly ? '-' : (row.checkInTime || '-')}</td>
+                            <td>{isWeekly ? '-' : (row.checkOutTime || (row.checkInTime ? '학습중' : '-'))}</td>
                             <td>{row.pureStudyLabel || '-'}</td>
+                            <td><span className={`care-status-badge ${statusLabel === '결석' || statusLabel === '미등원' ? 'danger' : statusLabel === '외출' ? 'away' : ''}`}>{statusLabel}</span></td>
                             <td>{row.studyCheckCount ? `${row.studyCheckCount}회 · ${row.topSubject}/${row.topStudyStatus}` : '-'}</td>
-                            <td className="student-history-long-cell">{row.observation || '-'}</td>
-                            <td className="student-history-long-cell">{row.periodSummary || '-'}</td>
-                            <td className="student-history-long-cell">{row.plannerStatus === '제출' ? (row.plannerMemo || '제출') : row.plannerStatus || '-'}</td>
+                            <td className="student-history-long-cell mentor-comment-col">{row.mentorComment || '-'}</td>
                             <td>{row.focusCount ? `관리주의 ${row.focusCount}건` : row.alertCount ? `알림 ${row.alertCount}건` : '-'}</td>
                             <td>{row.reportStatus || '-'}</td>
                           </tr>
@@ -12506,8 +12362,9 @@ function StudentHistoryTab({ students = [], apiFetch, currentUser, setMessage, s
                                 <div className="student-history-detail-grid">
                                   <div><b>출결 이벤트</b><span>{row.eventSummary || '-'}</span></div>
                                   <div><b>순찰/학습상태</b><span>{row.periodSummary || '-'}</span></div>
-                                  <div><b>관리자 코멘트</b><span>{row.observation || '-'}</span></div>
-                                  <div><b>플래너 검토</b><span>{row.plannerMemo || '-'}</span></div>
+                                  <div><b>멘토 코멘트</b><span>{row.mentorComment || '-'}</span></div>
+                                  <div><b>특이사항</b><span>{row.attendanceMemo || '-'}</span></div>
+                                  <div><b>플래너 검토</b><span>{row.plannerStatus === '제출' ? (row.plannerMemo || '제출') : (row.plannerStatus || '-')}</span></div>
                                   <div><b>관리주의</b><span>{row.focusIssues || '-'}</span></div>
                                   <div><b>알림/리포트</b><span>알림 {row.alertCount || 0}건 · {row.reportStatus || '-'}</span></div>
                                 </div>
