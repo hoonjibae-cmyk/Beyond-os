@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-58-security-cron-lock-permission-gate",
-  "version": "0.41.58",
+  "name": "beyond-os-v41-59-brand-crown-app-icon",
+  "version": "0.41.59",
   "private": true,
   "scripts": {
     "dev": "next dev",

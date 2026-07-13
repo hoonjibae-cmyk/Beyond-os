@@ -6,20 +6,26 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#211f1b",
-  "theme_color": "#211f1b",
+  "background_color": "#121214",
+  "theme_color": "#1d1d1f",
   "icons": [
     {
       "src": "/icons/beyond-os-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/beyond-os-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/beyond-os-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "categories": [
