@@ -19085,3 +19085,24 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .history-memo-box{ background:var(--ap-surface-2) !important; border-color:var(--ap-sep) !important; }
 .attention-history-card .status-pill.done{ background:var(--ap-ok-fill) !important; color:var(--ap-ok-text) !important; }
 .attention-history-card .status-pill.pending{ background:var(--ap-attn-fill) !important; color:var(--ap-attn-text) !important; }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-65: 모바일 상단 헤더를 전 탭 동일하게 통일
+   대시보드(.app)와 다른 탭(.app.report-mode)의 브랜드/헤더가 다르게 축소되던 문제 수정.
+   (max-width:760 에서 두 모드 모두 로고 + The Place 26 / Beyond OS + 탭으로 동일)
+   ───────────────────────────────────────────────────────────── */
+@media (max-width:760px){
+  .app .sidebar, .app.report-mode .sidebar{ padding:10px 14px !important; }
+  .app .sidebar-brand.with-logo, .app.report-mode .sidebar-brand.with-logo{
+    display:flex !important; flex-direction:row !important; align-items:center !important;
+    gap:10px !important; padding:2px 2px 10px !important; grid-template-columns:none !important; }
+  .app .sidebar-brand.with-logo img, .app.report-mode .sidebar-brand.with-logo img{
+    width:auto !important; height:34px !important; max-width:none !important; margin:0 !important; filter:none !important; opacity:1 !important; }
+  .app .sidebar-brand.with-logo .brand-copy, .app.report-mode .sidebar-brand.with-logo .brand-copy{
+    display:flex !important; flex-direction:column !important; gap:1px !important; }
+  .app .sidebar-brand.with-logo .brand-copy strong, .app.report-mode .sidebar-brand.with-logo .brand-copy strong{
+    font-size:14px !important; line-height:1.15 !important; color:var(--ap-text) !important; }
+  .app .sidebar-brand.with-logo .brand-copy span, .app.report-mode .sidebar-brand.with-logo .brand-copy span{
+    font-size:11px !important; color:var(--ap-text-3) !important; font-weight:600 !important; }
+  .app .nav button, .app.report-mode .nav button{ font-size:12.5px !important; padding:8px 13px !important; text-align:left !important; }
+}

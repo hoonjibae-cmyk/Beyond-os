@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-64-all-tabs-apple-tone",
-  "version": "0.41.64",
+  "name": "beyond-os-v41-65-mobile-header-unify",
+  "version": "0.41.65",
   "private": true,
   "scripts": {
     "dev": "next dev",
