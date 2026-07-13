@@ -18616,4 +18616,49 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .attendance-risk-chip-row .risk-chip{ background:#ececef; color:#1d1d1f; border-radius:999px; }
 .attendance-risk-chip-row .risk-chip.warn{ background:#fff3e0; color:#b26a00; }
 .attendance-risk-chip-row .risk-chip.danger{ background:#fdecec; color:#c0392b; }
+
+/* ─── v41-57: 사전 설문(학생/학부모) 업로드·표시 ─── */
+.survey-panel{ display:flex; flex-direction:column; gap:14px; }
+.survey-upload-card{ padding:0 !important; overflow:hidden; }
+.survey-upload-summary{ list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; font-weight:700; color:#1d1d1f; }
+.survey-upload-summary::-webkit-details-marker{ display:none; }
+.survey-upload-summary::after{ content:'▾'; color:#86868b; font-size:12px; margin-left:auto; transition:transform .15s ease; }
+.survey-upload-card[open] .survey-upload-summary::after{ transform:rotate(180deg); }
+.survey-upload-summary > span{ font-size:14px; }
+.survey-upload-summary > em{ font-style:normal; font-weight:600; font-size:12px; color:#6e6e73; }
+.survey-upload-body{ padding:0 16px 16px; border-top:1px solid #ededf0; }
+.survey-upload-hint{ margin:12px 0 12px; color:#6e6e73; font-size:12.5px; line-height:1.55; }
+.survey-upload-actions{ display:grid; grid-template-columns:repeat(auto-fit, minmax(240px,1fr)); gap:12px; }
+.survey-upload-field{ display:flex; flex-direction:column; gap:6px; background:#f5f5f7; border:1px solid #ececef; border-radius:12px; padding:12px 14px; }
+.survey-upload-field > span{ font-size:12px; font-weight:700; color:#1d1d1f; }
+.survey-upload-field input[type=file]{ font-size:12px; color:#6e6e73; }
+.survey-upload-field input[type=file]::file-selector-button{ margin-right:10px; border:0; border-radius:999px; padding:7px 14px; background:#0071e3; color:#fff; font-weight:700; font-size:12px; cursor:pointer; }
+.survey-upload-field input[type=file]:disabled::file-selector-button{ background:#c8c8cc; cursor:default; }
+.survey-upload-status{ margin:10px 0 0; color:#0071e3; font-size:12.5px; font-weight:600; }
+.survey-select-note{ margin:0; padding:16px 18px; background:#f5f5f7; border:1px solid #ececef; border-radius:14px; color:#6e6e73; font-size:13px; line-height:1.55; }
+.survey-card-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); gap:14px; align-items:start; }
+.survey-card{ background:#fff; border:1px solid #e3e3e6; border-radius:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); overflow:hidden; }
+.survey-card-head{ padding:14px 16px 12px; border-bottom:1px solid #ededf0; background:#fafafd; }
+.survey-card.is-parent .survey-card-head{ background:#eef4fe; }
+.survey-card-title{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.survey-type-badge{ font-size:11px; font-weight:800; padding:4px 11px; border-radius:999px; }
+.survey-type-badge.student{ background:#1d1d1f; color:#fff; }
+.survey-type-badge.parent{ background:#0071e3; color:#fff; }
+.survey-unmatched-badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:#fff3e0; color:#b26a00; }
+.survey-card-meta{ display:flex; flex-wrap:wrap; gap:6px 16px; margin:10px 0 0; }
+.survey-card-meta > div{ display:flex; align-items:baseline; gap:6px; }
+.survey-card-meta dt{ margin:0; font-size:11px; font-weight:700; color:#86868b; }
+.survey-card-meta dd{ margin:0; font-size:12.5px; font-weight:600; color:#1d1d1f; }
+.survey-card-body{ padding:6px 16px 14px; }
+.survey-section{ margin-top:12px; }
+.survey-section > h5{ margin:0 0 8px; font-size:12px; font-weight:800; color:#0071e3; letter-spacing:-.01em; }
+.survey-qa{ margin:0; display:flex; flex-direction:column; gap:8px; }
+.survey-qa-row{ display:flex; flex-direction:column; gap:3px; padding:9px 12px; background:#f5f5f7; border-radius:10px; }
+.survey-qa-row dt{ margin:0; font-size:12px; font-weight:700; color:#3a3a3c; line-height:1.45; }
+.survey-qa-row dd{ margin:0; font-size:13px; color:#1d1d1f; line-height:1.55; white-space:pre-wrap; }
+.survey-empty-note{ margin:0; padding:14px 16px; color:#86868b; font-size:12.5px; }
+@media (max-width:900px){
+  .survey-card-grid{ grid-template-columns:1fr; }
+  .survey-upload-actions{ grid-template-columns:1fr; }
+}
 /* APPLE THEME END */

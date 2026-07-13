@@ -210,6 +210,7 @@ const ACTION_LOG_LABELS = {
   'schedule.save': '학생 시간표 저장',
   'schedule.delete': '학생 시간표 삭제',
   'schedule.bulk_generate': '학생 시간표 일괄 생성',
+  'survey.bulk_upload': '사전 설문 엑셀 업로드',
   'daily_report.share_link': '데일리 공개 리포트 링크 생성',
   'weekly_report.share_link': '위클리 공개 리포트 링크 생성',
   'report_share_link.revoke': '공개 리포트 링크 비활성화',
@@ -2012,6 +2013,8 @@ export default function Page() {
   const [attendanceEnd, setAttendanceEnd] = useState(defaultRange.end);
   const [attendanceStudentFilter, setAttendanceStudentFilter] = useState('');
   const [attendanceRows, setAttendanceRows] = useState([]);
+  const [surveys, setSurveys] = useState([]);
+  const [surveyUploading, setSurveyUploading] = useState(false);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceStatusFilter, setAttendanceStatusFilter] = useState('all');
   const [attendanceSummaryCollapsed, setAttendanceSummaryCollapsed] = useState(false);
@@ -2311,6 +2314,11 @@ export default function Page() {
       setAttendanceRows([]);
     }
   }, [isLoggedIn, activeTab, attendanceStudentFilter]);
+
+  useEffect(() => {
+    if (isLoggedIn && activeTab === 'studentHistory') loadSurveys();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, activeTab]);
 
   function markLocalMutation(reason = 'local', url = '') {
     const now = Date.now();
@@ -4043,6 +4051,77 @@ export default function Page() {
     }
   }
 
+  async function loadSurveys() {
+    try {
+      const data = await apiFetch('/api/student-surveys');
+      setSurveys(data.surveys || []);
+      if (data.warning) setMessage(data.warning);
+    } catch {
+      setSurveys([]);
+    }
+  }
+
+  // 구글폼 응답 엑셀(.xlsx)을 브라우저에서 파싱해 서버로 업로드합니다.
+  async function uploadSurveyFile(file, surveyType) {
+    if (!file) return;
+    try {
+      setSurveyUploading(true);
+      setMessage(`${surveyType === 'parent' ? '학부모' : '학생'} 설문 엑셀 파싱 중...`);
+      const XLSX = await import('xlsx');
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const headers = (matrix[0] || []).map((h) => String(h || '').trim());
+      const rows = [];
+      for (let i = 1; i < matrix.length; i += 1) {
+        const cells = matrix[i] || [];
+        if (!cells.some((c) => String(c ?? '').trim() !== '')) continue;
+        let studentName = '';
+        let schoolGrade = '';
+        let respondentName = '';
+        let submittedAt = null;
+        const answers = [];
+        headers.forEach((header, idx) => {
+          if (!header) return;
+          const raw = cells[idx];
+          const value = raw instanceof Date ? raw.toISOString() : String(raw ?? '').trim();
+          if (/타임스탬프/.test(header)) {
+            if (raw instanceof Date) submittedAt = raw.toISOString();
+            else { const d = new Date(value); submittedAt = Number.isNaN(d.getTime()) ? null : d.toISOString(); }
+            return;
+          }
+          if (/학생\s*이름/.test(header)) studentName = value;
+          else if (/학교\s*\/?\s*학년/.test(header)) schoolGrade = value;
+          else if (/보호자\s*성함/.test(header)) respondentName = value;
+          const sectionMatch = header.match(/^\[([^\]]+)\]\s*(.*)$/);
+          answers.push({
+            section: sectionMatch ? sectionMatch[1].trim() : '',
+            question: sectionMatch ? sectionMatch[2].trim() : header,
+            answer: value,
+          });
+        });
+        if (!studentName) continue;
+        rows.push({ studentName, schoolGrade, respondentName, submittedAt, answers });
+      }
+      if (!rows.length) {
+        setMessage('엑셀에서 학생 이름이 있는 응답 행을 찾지 못했습니다. 양식을 확인하세요.');
+        return;
+      }
+      const result = await apiFetch('/api/student-surveys', {
+        method: 'POST',
+        body: JSON.stringify({ surveyType, rows }),
+      });
+      await loadSurveys();
+      const unmatchedText = result.unmatched ? ` · 미매칭 ${result.unmatched}명(${(result.unmatchedNames || []).slice(0, 5).join(', ')}${result.unmatchedNames?.length > 5 ? '…' : ''})` : '';
+      setMessage(`${surveyType === 'parent' ? '학부모' : '학생'} 설문 업로드 완료: ${result.total}건 · 매칭 ${result.matched}명${unmatchedText}`);
+    } catch (error) {
+      setMessage(`설문 업로드 실패: ${error.message || error}`);
+    } finally {
+      setSurveyUploading(false);
+    }
+  }
+
   async function saveAttendanceMentorComment(sessionId, mentorComment) {
     if (!sessionId) return false;
 
@@ -5009,6 +5088,13 @@ export default function Page() {
               focusStudentId: attendanceStudentFilter || studentHistoryFocusStudentId,
               externalStart: attendanceStart,
               externalEnd: attendanceEnd,
+            }}
+            surveyProps={{
+              surveys,
+              uploading: surveyUploading,
+              uploadSurveyFile,
+              loadSurveys,
+              canUpload: canUseUserManagement,
             }}
           />
         ) : null}
@@ -11999,7 +12085,7 @@ function AttendanceTab({
 
 
 
-function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
+function StudentCareTab({ attendanceProps = {}, historyProps = {}, surveyProps = {} }) {
   const selectedStudentId = attendanceProps.studentFilter || historyProps.focusStudentId || '';
   const selectedStudent = (attendanceProps.students || historyProps.students || []).find((student) => String(student.id) === String(selectedStudentId));
   const [historySummary, setHistorySummary] = useState(null);
@@ -12075,7 +12161,155 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
           onSummaryChange={setHistorySummary}
         />
       </div>
+
+      <div id="student-care-survey-section" className="student-care-section-block student-care-survey-section">
+        <div className="student-care-section-title survey-record-title">
+          <span>사전 설문</span>
+          <div>
+            <h3>학생·학부모 사전 설문</h3>
+            <p>구글폼 응답 엑셀(.xlsx)을 업로드하면 학생 이름으로 자동 매칭되어, 위에서 선택한 학생의 설문이 아래에 표시됩니다.</p>
+          </div>
+        </div>
+        <SurveyPanel surveyProps={surveyProps} selectedStudent={selectedStudent} selectedStudentId={selectedStudentId} />
+      </div>
     </section>
+  );
+}
+
+function formatSurveyDate(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function SurveyCard({ survey }) {
+  const answers = Array.isArray(survey.answers) ? survey.answers : [];
+  // 섹션(설문지 대괄호 그룹) 순서를 보존하며 묶습니다.
+  const sections = [];
+  const sectionIndex = new Map();
+  answers.forEach((item) => {
+    const answer = String(item?.answer ?? '').trim();
+    if (!answer) return;
+    const question = String(item?.question ?? '').trim();
+    // 이름/학교·학년/보호자 성함 등 헤더 메타는 카드 상단에 이미 표시하므로 제외
+    if (/^(학생\s*이름|학교\s*\/?\s*학년|보호자\s*성함|타임스탬프)/.test(question)) return;
+    const section = String(item?.section ?? '').trim() || '기타';
+    if (!sectionIndex.has(section)) {
+      sectionIndex.set(section, sections.length);
+      sections.push({ section, items: [] });
+    }
+    sections[sectionIndex.get(section)].items.push({ question, answer });
+  });
+
+  const isParent = survey.survey_type === 'parent';
+
+  return (
+    <article className={`survey-card ${isParent ? 'is-parent' : 'is-student'}`}>
+      <header className="survey-card-head">
+        <div className="survey-card-title">
+          <span className={`survey-type-badge ${isParent ? 'parent' : 'student'}`}>{isParent ? '학부모 설문' : '학생 설문'}</span>
+          {!survey.matched ? <span className="survey-unmatched-badge">이름 미매칭</span> : null}
+        </div>
+        <dl className="survey-card-meta">
+          {isParent && survey.respondent_name ? <div><dt>보호자</dt><dd>{survey.respondent_name}</dd></div> : null}
+          {survey.school_grade ? <div><dt>학교/학년</dt><dd>{survey.school_grade}</dd></div> : null}
+          {survey.submitted_at ? <div><dt>제출</dt><dd>{formatSurveyDate(survey.submitted_at)}</dd></div> : null}
+        </dl>
+      </header>
+      {sections.length ? (
+        <div className="survey-card-body">
+          {sections.map((group) => (
+            <section key={group.section} className="survey-section">
+              <h5>{group.section}</h5>
+              <dl className="survey-qa">
+                {group.items.map((qa, idx) => (
+                  <div key={`${group.section}-${idx}`} className="survey-qa-row">
+                    <dt>{qa.question}</dt>
+                    <dd>{qa.answer}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <p className="survey-empty-note">응답 내용이 비어 있습니다.</p>
+      )}
+    </article>
+  );
+}
+
+function SurveyPanel({ surveyProps = {}, selectedStudent = null, selectedStudentId = '' }) {
+  const { surveys = [], uploading = false, uploadSurveyFile, canUpload = false } = surveyProps;
+  const studentFileRef = useRef(null);
+  const parentFileRef = useRef(null);
+
+  const totalStudent = useMemo(() => surveys.filter((s) => s.survey_type === 'student').length, [surveys]);
+  const totalParent = useMemo(() => surveys.filter((s) => s.survey_type === 'parent').length, [surveys]);
+
+  const studentName = selectedStudent?.name || '';
+  const normalizedName = String(studentName || '').replace(/\s+/g, '');
+  const studentSurveys = useMemo(() => {
+    if (!selectedStudentId && !normalizedName) return [];
+    return surveys.filter((s) => {
+      if (selectedStudentId && String(s.student_id) === String(selectedStudentId)) return true;
+      if (!s.student_id && normalizedName && String(s.student_name || '').replace(/\s+/g, '') === normalizedName) return true;
+      return false;
+    });
+  }, [surveys, selectedStudentId, normalizedName]);
+
+  const studentSurvey = studentSurveys.find((s) => s.survey_type === 'student') || null;
+  const parentSurvey = studentSurveys.find((s) => s.survey_type === 'parent') || null;
+
+  async function handleFile(ref, surveyType) {
+    const input = ref.current;
+    const file = input?.files?.[0];
+    if (!file) return;
+    await uploadSurveyFile?.(file, surveyType);
+    if (input) input.value = '';
+  }
+
+  return (
+    <div className="survey-panel">
+      {canUpload ? (
+        <details className="content-card survey-upload-card">
+          <summary className="survey-upload-summary">
+            <span>설문 엑셀 업로드</span>
+            <em>학생 설문 {totalStudent}건 · 학부모 설문 {totalParent}건 저장됨</em>
+          </summary>
+          <div className="survey-upload-body">
+            <p className="survey-upload-hint">구글폼 응답 스프레드시트를 엑셀(.xlsx)로 내려받아 업로드하세요. 같은 학생·같은 유형이면 최신 응답으로 갱신됩니다.</p>
+            <div className="survey-upload-actions">
+              <label className="survey-upload-field">
+                <span>학생 제출 설문</span>
+                <input ref={studentFileRef} type="file" accept=".xlsx,.xls" disabled={uploading} onChange={() => handleFile(studentFileRef, 'student')} />
+              </label>
+              <label className="survey-upload-field">
+                <span>학부모 제출 설문</span>
+                <input ref={parentFileRef} type="file" accept=".xlsx,.xls" disabled={uploading} onChange={() => handleFile(parentFileRef, 'parent')} />
+              </label>
+            </div>
+            {uploading ? <p className="survey-upload-status">업로드 중...</p> : null}
+          </div>
+        </details>
+      ) : null}
+
+      {!selectedStudentId ? (
+        <p className="survey-select-note">상단에서 학생을 선택하면 해당 학생의 사전 설문(학생·학부모)이 여기에 표시됩니다.</p>
+      ) : studentSurveys.length ? (
+        <div className="survey-card-grid">
+          {studentSurvey ? <SurveyCard survey={studentSurvey} /> : null}
+          {parentSurvey ? <SurveyCard survey={parentSurvey} /> : null}
+          {studentSurveys.filter((s) => s !== studentSurvey && s !== parentSurvey).map((s) => <SurveyCard key={s.id} survey={s} />)}
+        </div>
+      ) : (
+        <p className="survey-select-note">
+          {studentName ? `'${studentName}' 학생의 업로드된 설문이 아직 없습니다.` : '선택한 학생의 업로드된 설문이 아직 없습니다.'}
+          {canUpload ? ' 위 업로드 영역에서 엑셀을 올려주세요.' : ''}
+        </p>
+      )}
+    </div>
   );
 }
 
