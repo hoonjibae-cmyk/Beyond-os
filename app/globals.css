@@ -43,7 +43,10 @@ button { cursor: pointer; }
 
 .app {
   display: grid;
-  grid-template-columns: 220px minmax(720px, 1fr) 420px;
+  /* 대화면 정리: 가운데 작업영역을 상한선까지만 넓히고 전체를 중앙 정렬합니다.
+     (minmax의 min을 0으로 두어 1261~1360px 구간의 가로 넘침/우측 패널 잘림도 방지) */
+  grid-template-columns: 220px minmax(0, 1200px) 420px;
+  justify-content: center;
   min-height: 100vh;
 }
 .sidebar {
