@@ -1841,6 +1841,10 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
     const studentName = student?.name || '학생';
     const scheduleBreakList = breaksBySchedule[schedule.id] || [];
 
+    // v41-51: 관리자가 이미 결석 처리한 학생은 오늘의 시간표 알림센터/관리 포커스에서
+    // 모든 알림(미입실·출결상태·외출 예정·복귀 확인)을 자동으로 내립니다.
+    if (session?.seat_status === 'absent') continue;
+
     const presenceMismatch = createPresenceMismatchAlert({
       schedule,
       session,

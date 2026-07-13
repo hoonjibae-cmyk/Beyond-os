@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-50-break-time-away-alert-fix",
-  "version": "0.41.50",
+  "name": "beyond-os-v41-51-absent-auto-dismiss-alerts",
+  "version": "0.41.51",
   "private": true,
   "scripts": {
     "dev": "next dev",
