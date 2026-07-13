@@ -6043,6 +6043,11 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
   const [selectedKioskHoldIds, setSelectedKioskHoldIds] = useState([]);
   const [kioskHoldHistory, setKioskHoldHistory] = useState([]);
   const [kioskHoldView, setKioskHoldView] = useState('pending');
+  // v41-52: 판정 대기 신호가 없으면 쉬는 시간 HOLD 패널을 상시 접어둡니다. (있으면 자동 펼침)
+  const [kioskHoldOpen, setKioskHoldOpen] = useState(false);
+  useEffect(() => {
+    setKioskHoldOpen((kioskHolds || []).length > 0);
+  }, [kioskHolds.length]);
 
   useEffect(() => {
     try {
@@ -6624,23 +6629,31 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
   return (
     <>
       {(kioskHolds.length || kioskHoldHistory.length) ? (
-        <section className="kiosk-hold-panel kiosk-hold-panel-v41362">
+        <section className={`kiosk-hold-panel kiosk-hold-panel-v41362 ${kioskHoldOpen ? 'is-open' : 'is-collapsed'}`}>
           <div className="kiosk-hold-head">
             <div>
               <h3>쉬는 시간 키오스크 HOLD <b>{kioskHolds.length}</b></h3>
-              <p>같은 학생의 외출·복귀 신호는 한 줄로 묶고, 쉬는 시간 구간별로 정리합니다. 미완결 신호는 먼저 표시됩니다.</p>
+              {kioskHoldOpen ? <p>같은 학생의 외출·복귀 신호는 한 줄로 묶고, 쉬는 시간 구간별로 정리합니다. 미완결 신호는 먼저 표시됩니다.</p> : null}
             </div>
             <div className="kiosk-hold-head-actions">
-              <div className="kiosk-hold-view-tabs">
-                <button type="button" className={kioskHoldView === 'pending' ? 'active' : ''} onClick={() => setKioskHoldView('pending')}>판정 대기 {kioskHolds.length}</button>
-                <button type="button" className={kioskHoldView === 'history' ? 'active' : ''} onClick={() => setKioskHoldView('history')}>처리 이력 {kioskHoldHistoryGroups.length}</button>
-              </div>
-              <button type="button" className="secondary" onClick={() => loadKioskHolds()} disabled={kioskHoldLoading}>{kioskHoldLoading ? '새로고침 중' : '새로고침'}</button>
-              {kioskHoldView === 'pending' ? <button type="button" className="danger" onClick={discardSelectedKioskHolds} disabled={!selectedKioskHoldIds.length || kioskHoldLoading}>선택 {selectedKioskHoldIds.length}건 쉬는 시간 처리</button> : null}
+              {kioskHoldOpen ? (
+                <>
+                  <div className="kiosk-hold-view-tabs">
+                    <button type="button" className={kioskHoldView === 'pending' ? 'active' : ''} onClick={() => setKioskHoldView('pending')}>판정 대기 {kioskHolds.length}</button>
+                    <button type="button" className={kioskHoldView === 'history' ? 'active' : ''} onClick={() => setKioskHoldView('history')}>처리 이력 {kioskHoldHistoryGroups.length}</button>
+                  </div>
+                  <button type="button" className="secondary" onClick={() => loadKioskHolds()} disabled={kioskHoldLoading}>{kioskHoldLoading ? '새로고침 중' : '새로고침'}</button>
+                  {kioskHoldView === 'pending' ? <button type="button" className="danger" onClick={discardSelectedKioskHolds} disabled={!selectedKioskHoldIds.length || kioskHoldLoading}>선택 {selectedKioskHoldIds.length}건 쉬는 시간 처리</button> : null}
+                </>
+              ) : null}
+              <button type="button" className="panel-section-toggle kiosk-hold-collapse-toggle" onClick={() => setKioskHoldOpen((v) => !v)} aria-expanded={kioskHoldOpen}>
+                <span className="panel-section-toggle-text">{kioskHoldOpen ? '접기' : '펼치기'}</span>
+                <span className="panel-section-chevron"></span>
+              </button>
             </div>
           </div>
 
-          {kioskHoldView === 'pending' ? (
+          {kioskHoldOpen ? (kioskHoldView === 'pending' ? (
             kioskHoldBreakGroups.length ? (
               <div className="kiosk-hold-period-list">
                 {kioskHoldBreakGroups.map((period) => {
@@ -6716,7 +6729,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
                 <div className="hint">처리 후 10분 동안 되돌릴 수 있습니다. 실제 출결 반영을 되돌려도 이미 발송된 학부모 알림은 취소되지 않습니다.</div>
               </div>
             ) : <div className="kiosk-hold-empty">아직 HOLD 처리 이력이 없습니다.</div>
-          )}
+          )) : null}
         </section>
       ) : null}
       <div className={`patrol-shell ${quickMode ? 'is-patrol' : ''}`}>

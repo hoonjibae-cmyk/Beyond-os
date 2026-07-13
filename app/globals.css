@@ -18553,4 +18553,24 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* 범례 점 */
 .event-dot.match{ background:#c7c7cc; }
 .event-dot.deviation{ background:#5b9bf3; }
+/* ─── v41-52: 대시보드 알림센터/HOLD 폭·크기 정리 + 애플 토글/요약노트 ─── */
+/* 1) 알림센터 폭을 좌석맵과 동일하게(1120px) */
+.alert-center{ max-width:1120px !important; }
+/* 2) 쉬는 시간 HOLD: 알림센터와 같은 톤/글씨, 높이 축소, 접기 지원 */
+.kiosk-hold-panel{ max-width:1120px !important; padding:14px 16px !important; border:1px solid #ead08c !important; background:#fff7dc !important; box-shadow:none !important; }
+.kiosk-hold-head h3{ font-size:18px !important; }
+.kiosk-hold-head h3 b{ min-width:24px !important; height:24px !important; font-size:12px !important; }
+.kiosk-hold-head p{ font-size:12px !important; }
+.kiosk-hold-panel-v41362{ gap:10px !important; }
+.kiosk-hold-panel.is-collapsed{ padding:12px 16px !important; }
+.kiosk-hold-panel.is-collapsed .kiosk-hold-head{ margin-bottom:0 !important; align-items:center !important; }
+.kiosk-hold-collapse-toggle{ align-self:center; }
+/* 3) 접기/펼치기 토글 애플 스타일(연회색 알약 + 진한 글씨) */
+.panel-section-toggle, .kiosk-hold-collapse-toggle{ background:#ececef !important; color:#1d1d1f !important; border:1px solid #dcdce0 !important; }
+.panel-section-chevron{ background:transparent !important; }
+.panel-section:hover .panel-section-toggle,
+.panel-section:hover .panel-section-summary .panel-section-toggle{ background:#e2e2e6 !important; color:#1d1d1f !important; border-color:#cfcfd4 !important; }
+.panel-section:hover .panel-section-chevron{ background:transparent !important; }
+/* 4) 오늘 출결 요약 안내 노트 애플 스타일(연한 파랑 인포) */
+.attendance-summary-note{ background:#eef4fe !important; border:1px solid #d6e6fc !important; color:#1d1d1f !important; }
 /* APPLE THEME END */
