@@ -13406,7 +13406,8 @@ textarea {
 /* v41-12: 순찰 퀵체크 / 학습상태 입력 속도 개선 */
 .quick-patrol-console {
   max-width: 1120px;
-  margin: 0 auto 16px;
+  /* 다른 대시보드 카드(좌석맵·요약·실시간·알림센터)와 동일하게 좌측 정렬 (중앙 정렬 시 살짝 어긋나 보임) */
+  margin: 0 0 16px;
   border: 1px solid #e2ded6;
   border-radius: 22px;
   background: linear-gradient(135deg, #fffdf8 0%, #f6f1e7 100%);
