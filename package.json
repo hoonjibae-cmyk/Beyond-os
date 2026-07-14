@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-65-mobile-header-unify",
-  "version": "0.41.65",
+  "name": "beyond-os-v41-66-notice-broadcast",
+  "version": "0.41.66",
   "private": true,
   "scripts": {
     "dev": "next dev",

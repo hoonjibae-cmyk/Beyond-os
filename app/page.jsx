@@ -211,6 +211,10 @@ const ACTION_LOG_LABELS = {
   'schedule.delete': '학생 시간표 삭제',
   'schedule.bulk_generate': '학생 시간표 일괄 생성',
   'survey.bulk_upload': '사전 설문 엑셀 업로드',
+  'notice.create': '공지사항 작성',
+  'notice.update': '공지사항 수정',
+  'notice.delete': '공지사항 삭제',
+  'notice.send': '공지사항 알림톡 발송',
   'daily_report.share_link': '데일리 공개 리포트 링크 생성',
   'weekly_report.share_link': '위클리 공개 리포트 링크 생성',
   'report_share_link.revoke': '공개 리포트 링크 비활성화',
@@ -13699,6 +13703,184 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
   );
 }
 
+function NoticeBroadcastTab({ apiFetch, setMessage }) {
+  const [notices, setNotices] = useState([]);
+  const [form, setForm] = useState({ id: null, title: '', body: '', externalUrl: '' });
+  const [mode, setMode] = useState('inapp'); // inapp | external
+  const [saving, setSaving] = useState(false);
+  const [publicUrl, setPublicUrl] = useState('');
+  const [confirm, setConfirm] = useState(null);
+  const [confirmChecked, setConfirmChecked] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  async function loadNotices() {
+    try {
+      const d = await apiFetch('/api/notices');
+      setNotices(d.notices || []);
+      if (d.warning) setMessage(d.warning);
+    } catch { /* noop */ }
+  }
+  useEffect(() => { loadNotices(); /* eslint-disable-next-line */ }, []);
+
+  function resetForm() {
+    setForm({ id: null, title: '', body: '', externalUrl: '' });
+    setMode('inapp'); setPublicUrl(''); setConfirm(null); setConfirmChecked(false);
+  }
+
+  async function saveNotice() {
+    if (!form.title.trim()) { setMessage('공지 제목을 입력하세요.'); return; }
+    if (mode === 'inapp' && !form.body.trim()) { setMessage('공지 본문을 작성하세요.'); return; }
+    if (mode === 'external' && !form.externalUrl.trim()) { setMessage('외부 웹링크 URL을 입력하세요.'); return; }
+    try {
+      setSaving(true);
+      const payload = {
+        id: form.id || undefined,
+        title: form.title,
+        body: mode === 'inapp' ? form.body : '',
+        externalUrl: mode === 'external' ? form.externalUrl : '',
+      };
+      const d = await apiFetch('/api/notices', { method: 'POST', body: JSON.stringify(payload) });
+      setForm((f) => ({ ...f, id: d.notice.id }));
+      setPublicUrl(d.notice.publicUrl || '');
+      setConfirm(null); setConfirmChecked(false);
+      await loadNotices();
+      setMessage('공지를 저장했습니다. 링크를 확인하고 발송을 진행하세요.');
+    } catch (e) { setMessage(e.message); } finally { setSaving(false); }
+  }
+
+  function loadNoticeToForm(n) {
+    setForm({ id: n.id, title: n.title || '', body: n.body || '', externalUrl: n.external_url || '' });
+    setMode(n.external_url ? 'external' : 'inapp');
+    setPublicUrl(n.publicUrl || '');
+    setConfirm(null); setConfirmChecked(false);
+  }
+
+  async function prepareSend() {
+    if (!form.id) { setMessage('먼저 공지를 저장하세요.'); return; }
+    try {
+      setSending(true);
+      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, previewOnly: true }) });
+      setConfirm({ recipientCount: d.recipientCount, testMode: d.testMode, testModeSource: d.testModeSource, link: d.link, hasLink: d.hasLink });
+      setConfirmChecked(false);
+    } catch (e) { setMessage(e.message); } finally { setSending(false); }
+  }
+
+  async function executeSend() {
+    if (!confirm) return;
+    if (!confirm.testMode && !confirmChecked) { setMessage('실제 발송 확인 체크가 필요합니다.'); return; }
+    try {
+      setSending(true);
+      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, actualSend: true }) });
+      if (d.ok) setMessage(`공지 알림톡 발송 접수 완료 · 대상 ${d.recipientCount}명${d.testMode ? ' (테스트 수신번호 모드)' : ''}`);
+      else setMessage(`발송 실패: ${d.message || d.error || '알 수 없는 오류'}`);
+      setConfirm(null); setConfirmChecked(false);
+      await loadNotices();
+    } catch (e) { setMessage(e.message); } finally { setSending(false); }
+  }
+
+  async function deleteNotice(n) {
+    if (!window.confirm(`'${n.title}' 공지를 삭제할까요? (발송 이력과 무관하게 목록에서 제거)`)) return;
+    try {
+      await apiFetch('/api/notices', { method: 'DELETE', body: JSON.stringify({ id: n.id }) });
+      if (form.id === n.id) resetForm();
+      await loadNotices();
+      setMessage('공지를 삭제했습니다.');
+    } catch (e) { setMessage(e.message); }
+  }
+
+  function copyLink(url) {
+    if (!url) return;
+    navigator.clipboard?.writeText(url).then(() => setMessage('링크를 복사했습니다.')).catch(() => setMessage('복사 실패 — 링크를 길게 눌러 복사하세요.'));
+  }
+
+  return (
+    <section className="content-card notice-broadcast-tab">
+      <h2>공지사항 발송</h2>
+      <p>공지를 작성하면 학부모 전체에게 카카오 알림톡으로 링크를 발송합니다. 발송 대상은 <b>활성 학생의 수신 동의 보호자</b> 기준이며, 테스트 수신번호 모드·Allowlist 설정이 그대로 적용됩니다.</p>
+      <div className="call note" style={{ marginTop: 4 }}>
+        <b>준비물</b>
+        <p>카카오 알림톡 공지 템플릿을 만들고 <span className="path">SOLAPI_TEMPLATE_ID_NOTICE</span> 환경변수를 설정해야 실제 발송됩니다. 변수는 <b>#{'{'}공지제목{'}'}</b>, <b>#{'{'}링크{'}'}</b> 2개입니다.</p>
+      </div>
+
+      <h4>1) 공지 작성</h4>
+      <div className="field">
+        <label>공지 제목</label>
+        <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 8월 운영시간 변경 안내" maxLength={60} />
+      </div>
+      <div className="notice-mode-tabs" style={{ display: 'inline-flex', background: 'var(--ap-surface-3,#ececef)', borderRadius: 12, padding: 4, gap: 2, margin: '4px 0 10px' }}>
+        <button type="button" className={mode === 'inapp' ? 'primary' : 'secondary'} onClick={() => setMode('inapp')}>인앱 작성</button>
+        <button type="button" className={mode === 'external' ? 'primary' : 'secondary'} onClick={() => setMode('external')}>외부 URL</button>
+      </div>
+      {mode === 'inapp' ? (
+        <div className="field">
+          <label>공지 본문</label>
+          <textarea value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} placeholder="학부모님께 전달할 공지 내용을 입력하세요. 저장하면 브랜드 통일된 공지 페이지가 자동 생성됩니다." rows={7} />
+        </div>
+      ) : (
+        <div className="field">
+          <label>외부 웹링크 URL</label>
+          <input value={form.externalUrl} onChange={(e) => setForm({ ...form, externalUrl: e.target.value })} placeholder="https://..." />
+          <div className="hint">이미 만든 공지 페이지(포스터·블로그·노션 등) 주소를 붙여넣으면 그 링크로 발송합니다.</div>
+        </div>
+      )}
+      <div className="btn-row">
+        <button className="primary" onClick={saveNotice} disabled={saving}>{saving ? '저장 중...' : (form.id ? '수정 저장' : '공지 저장')}</button>
+        <button className="secondary" onClick={resetForm}>새 공지</button>
+      </div>
+
+      {publicUrl ? (
+        <div className="notice-link-box" style={{ marginTop: 10 }}>
+          <div className="hint" style={{ marginBottom: 4 }}>발송될 링크</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <a href={publicUrl} target="_blank" rel="noreferrer" style={{ wordBreak: 'break-all', fontSize: 13 }}>{publicUrl}</a>
+            <button className="secondary" onClick={() => copyLink(publicUrl)}>복사</button>
+          </div>
+        </div>
+      ) : null}
+
+      <h4>2) 학부모 전체 발송</h4>
+      <div className="btn-row">
+        <button className="primary" onClick={prepareSend} disabled={!form.id || sending}>{sending && !confirm ? '대상 확인 중...' : '발송 준비 (대상 확인)'}</button>
+      </div>
+
+      {confirm ? (
+        <div className={`notice-confirm-panel call ${confirm.testMode ? 'warn' : 'field'}`} style={{ marginTop: 10 }}>
+          <b>{confirm.testMode ? '테스트 수신번호 모드로 발송' : '전체 학부모에게 실제 발송'}</b>
+          <p>수신 대상 <b>{confirm.recipientCount}명</b> (활성 학생 · 데일리 리포트 수신 ON 보호자, 번호 중복 제거).</p>
+          {confirm.testMode ? <p>현재 <b>테스트 수신번호 모드</b>입니다. 실제 학부모가 아니라 설정된 테스트 번호로만 발송됩니다. (실전 발송하려면 설정 › 리포트 발송 설정에서 테스트 모드를 끄세요.)</p> : null}
+          {!confirm.hasLink ? <p style={{ color: 'var(--ap-attn-text,#c0392b)' }}>⚠️ 링크가 없습니다. 본문 저장 또는 외부 URL을 확인하세요.</p> : null}
+          {!confirm.testMode ? (
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0', fontWeight: 700 }}>
+              <input type="checkbox" checked={confirmChecked} onChange={(e) => setConfirmChecked(e.target.checked)} />
+              실제 학부모 {confirm.recipientCount}명에게 발송하는 것을 확인합니다.
+            </label>
+          ) : null}
+          <div className="btn-row">
+            <button className="primary" onClick={executeSend} disabled={sending || !confirm.hasLink || (!confirm.testMode && !confirmChecked)}>{sending ? '발송 중...' : (confirm.testMode ? '테스트 발송' : '지금 발송')}</button>
+            <button className="secondary" onClick={() => { setConfirm(null); setConfirmChecked(false); }}>취소</button>
+          </div>
+        </div>
+      ) : null}
+
+      <h4>최근 공지</h4>
+      {notices.length ? (
+        <div className="notice-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {notices.map((n) => (
+            <div key={n.id} className="notice-row" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', border: '1px solid var(--ap-sep,#e6e4e0)', borderRadius: 12, padding: '10px 13px', background: 'var(--ap-surface,#fff)' }}>
+              <span className={`status-pill ${n.status === 'sent' ? 'done' : 'neutral'}`}>{n.status === 'sent' ? '발송됨' : '작성'}</span>
+              <strong style={{ flex: 1, minWidth: 120 }}>{n.title}</strong>
+              {n.status === 'sent' && n.sent_count ? <span className="hint">{n.sent_count}명 발송</span> : null}
+              <button className="secondary" onClick={() => loadNoticeToForm(n)}>불러오기</button>
+              <button className="secondary" onClick={() => copyLink(n.publicUrl)}>링크복사</button>
+              <button className="danger" onClick={() => deleteNotice(n)}>삭제</button>
+            </div>
+          ))}
+        </div>
+      ) : <p className="hint">아직 작성한 공지가 없습니다.</p>}
+    </section>
+  );
+}
+
 function SettingsTab({
   settingsView, setSettingsView, students, seatsForDisplay, openStudentEditor, diagnostics, loading, runCheck, cleanup,
   operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, bulkGenerateSchedules, scheduleCoverage, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
@@ -13711,6 +13893,7 @@ function SettingsTab({
       <div className="settings-tabs clean-panel">
         <button className={settingsView === 'students' ? 'active' : ''} onClick={() => setSettingsView('students')}>학생 관리</button>
         {canUseUserManagement ? <button className={settingsView === 'users' ? 'active' : ''} onClick={() => setSettingsView('users')}>유저 관리</button> : null}
+        <button className={settingsView === 'notice' ? 'active' : ''} onClick={() => setSettingsView('notice')}>공지사항 발송</button>
         <button className={settingsView === 'integrity' ? 'active' : ''} onClick={() => setSettingsView('integrity')}>좌석 데이터 점검</button>
         <button className={settingsView === 'system' ? 'active' : ''} onClick={() => setSettingsView('system')}>시스템 점검</button>
         <button className={settingsView === 'send' ? 'active' : ''} onClick={() => setSettingsView('send')}>리포트 발송 설정</button>
@@ -13728,6 +13911,10 @@ function SettingsTab({
 
       {settingsView === 'users' && canUseUserManagement ? (
         <UserManagementTab apiFetch={apiFetch} setMessage={setMessage} />
+      ) : null}
+
+      {settingsView === 'notice' ? (
+        <NoticeBroadcastTab apiFetch={apiFetch} setMessage={setMessage} />
       ) : null}
 
       {settingsView === 'integrity' ? (

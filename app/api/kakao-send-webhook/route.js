@@ -23,6 +23,7 @@ const TEMPLATE_CODE_DAILY = process.env.KAKAO_TEMPLATE_CODE_DAILY || '';
 const TEMPLATE_CODE_WEEKLY = process.env.KAKAO_TEMPLATE_CODE_WEEKLY || '';
 const TEMPLATE_CODE_ATTENDANCE = process.env.KAKAO_TEMPLATE_CODE_ATTENDANCE || process.env.KAKAO_TEMPLATE_CODE_CHECKINOUT || '';
 const TEMPLATE_CODE_PARENT_CONFIRMATION = process.env.KAKAO_TEMPLATE_CODE_PARENT_CONFIRMATION || '';
+const TEMPLATE_CODE_NOTICE = process.env.KAKAO_TEMPLATE_CODE_NOTICE || '';
 
 function boolEnv(name, defaultValue = false) {
   const raw = process.env[name];
@@ -293,6 +294,7 @@ function getTemplateCode(reportType) {
   if (reportType === 'weekly') return TEMPLATE_CODE_WEEKLY;
   if (reportType === 'attendance') return TEMPLATE_CODE_ATTENDANCE;
   if (reportType === 'parent_confirmation') return TEMPLATE_CODE_PARENT_CONFIRMATION;
+  if (reportType === 'notice') return TEMPLATE_CODE_NOTICE;
   return TEMPLATE_CODE_DAILY;
 }
 
