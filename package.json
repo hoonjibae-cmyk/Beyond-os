@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-66-notice-broadcast",
-  "version": "0.41.66",
+  "name": "beyond-os-v41-67-mentoring-mobile-layout",
+  "version": "0.41.67",
   "private": true,
   "scripts": {
     "dev": "next dev",

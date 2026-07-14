@@ -17662,8 +17662,57 @@ textarea,
 }
 
 @media (max-width: 860px) {
+  /* v41-67: 모바일 멘토링 상단바 공백 제거.
+     mode-bar/date-control가 세로(column) 정렬로 바뀌면 flex-basis가 '높이'로 작동해
+     date-control(760px)·기준날짜 label(220px)이 거대한 빈 상자가 됨 → 콘텐츠 높이로 복구. */
+  .mentoring-page-v4133 .mentoring-mode-bar {
+    gap: 10px;
+    padding: 10px;
+  }
   .mentoring-date-control {
+    flex: 0 1 auto;
+    flex-direction: row;
     flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+  }
+  /* 기준 날짜 입력을 맨 위 전체폭으로 */
+  .mentoring-date-control label {
+    order: 1;
+    flex: 1 1 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+  .mentoring-date-control label input[type="date"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: right;
+  }
+  /* 이전날 · 오늘 · 다음날 한 줄(3분할) */
+  .mentoring-date-control > button:nth-of-type(-n+3) {
+    order: 2;
+    flex: 1 1 calc(33.333% - 6px);
+    min-width: 0 !important;
+    width: auto;
+    padding: 10px 6px !important;
+    font-size: 12.5px !important;
+  }
+  /* 상태 배지 전체폭 */
+  .mentoring-date-control .mentoring-date-status {
+    order: 3;
+    flex: 1 1 100%;
+    width: 100%;
+    min-height: 34px;
+  }
+  /* 일정 수정 시작 · 기본값 되돌리기 · 차시 추가 한 줄(3분할) */
+  .mentoring-date-control > button:nth-of-type(n+4) {
+    order: 4;
+    flex: 1 1 calc(33.333% - 6px);
+    min-width: 0 !important;
+    width: auto;
+    padding: 10px 4px !important;
+    font-size: 12px !important;
+    letter-spacing: -0.06em;
   }
 }
 
