@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-67-mentoring-mobile-layout",
-  "version": "0.41.67",
+  "name": "beyond-os-v41-68-notice-template-guidance",
+  "version": "0.41.68",
   "private": true,
   "scripts": {
     "dev": "next dev",

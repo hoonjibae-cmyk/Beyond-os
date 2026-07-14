@@ -13799,7 +13799,8 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
       <p>공지를 작성하면 학부모 전체에게 카카오 알림톡으로 링크를 발송합니다. 발송 대상은 <b>활성 학생의 수신 동의 보호자</b> 기준이며, 테스트 수신번호 모드·Allowlist 설정이 그대로 적용됩니다.</p>
       <div className="call note" style={{ marginTop: 4 }}>
         <b>준비물</b>
-        <p>카카오 알림톡 공지 템플릿을 만들고 <span className="path">SOLAPI_TEMPLATE_ID_NOTICE</span> 환경변수를 설정해야 실제 발송됩니다. 변수는 <b>#{'{'}공지제목{'}'}</b>, <b>#{'{'}링크{'}'}</b> 2개입니다.</p>
+        <p>카카오 알림톡 템플릿을 만들고 <span className="path">SOLAPI_TEMPLATE_ID_NOTICE</span> 환경변수를 설정해야 실제 발송됩니다. 변수는 <b>#{'{'}공지제목{'}'}</b>, <b>#{'{'}링크{'}'}</b> 2개입니다.</p>
+        <p style={{ marginTop: 6 }}>⚠️ 심사 주의: 본문을 포괄적인 "<b>공지사항</b>"으로 쓰면 어뷰징 우려로 반려됩니다. "<b>The Place 26 운영 안내 ▶ #{'{'}공지제목{'}'}</b>"처럼 <b>발송 목적이 드러나는 고정 문구</b>로 등록하세요. 광고성 메시지는 알림톡이 아닌 '브랜드메시지'로 보내야 합니다.</p>
       </div>
 
       <h4>1) 공지 작성</h4>
