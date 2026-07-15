@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse, requireTabPermission, getAuthorizedUser } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { createNoticeToken as createToken, getNoticeLink } from '../../../lib/noticeShare';
+import { getNoticeCategory, DEFAULT_NOTICE_CATEGORY } from '../../../lib/noticeTemplates';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,13 +37,26 @@ export async function POST(request) {
     const title = String(body.title || '').trim();
     if (!title) return Response.json({ error: '공지 제목을 입력하세요.' }, { status: 400 });
 
+    const category = String(body.category || DEFAULT_NOTICE_CATEGORY);
+    const cat = getNoticeCategory(category);
+    const templateData = (body.templateData && typeof body.templateData === 'object') ? body.templateData : {};
+
     const externalUrl = String(body.externalUrl || '').trim() || null;
     const content = String(body.body || '').trim() || null;
-    if (!externalUrl && !content) {
-      return Response.json({ error: '공지 본문을 작성하거나 외부 웹링크 URL을 입력하세요.' }, { status: 400 });
-    }
-    if (externalUrl && !/^https?:\/\//i.test(externalUrl)) {
-      return Response.json({ error: '외부 웹링크는 http:// 또는 https:// 로 시작해야 합니다.' }, { status: 400 });
+
+    if (cat.input === 'fields') {
+      // 링크 없이 항목값(기간/사유/내용)을 알림톡 본문에 직접 표기하는 유형
+      const missing = cat.fields.filter((f) => !String(templateData[f.key] || '').trim());
+      if (missing.length) {
+        return Response.json({ error: `다음 항목을 입력하세요: ${missing.map((f) => f.label).join(', ')}` }, { status: 400 });
+      }
+    } else {
+      if (!externalUrl && !content) {
+        return Response.json({ error: '공지 본문을 작성하거나 외부 웹링크 URL을 입력하세요.' }, { status: 400 });
+      }
+      if (externalUrl && !/^https?:\/\//i.test(externalUrl)) {
+        return Response.json({ error: '외부 웹링크는 http:// 또는 https:// 로 시작해야 합니다.' }, { status: 400 });
+      }
     }
 
     const supabase = getSupabaseAdmin();
@@ -51,8 +65,10 @@ export async function POST(request) {
 
     const payload = {
       title,
-      body: content,
-      external_url: externalUrl,
+      body: cat.input === 'fields' ? null : content,
+      external_url: cat.input === 'fields' ? null : externalUrl,
+      category: cat.key,
+      template_data: cat.input === 'fields' ? templateData : null,
       updated_at: new Date().toISOString(),
     };
 
@@ -82,12 +98,12 @@ export async function POST(request) {
       targetType: 'notice',
       targetId: saved.id,
       targetName: saved.title,
-      payload: { hasExternalUrl: Boolean(externalUrl) },
+      payload: { category: cat.key, hasExternalUrl: Boolean(externalUrl) },
     });
 
     return Response.json({ notice: withLink(request, saved) });
   } catch (error) {
-    return Response.json({ error: `${error.message || 'Unknown error'} / notices 테이블이 없으면 beyond-os-supabase-notices-v41-66.sql을 먼저 실행하세요.` }, { status: 500 });
+    return Response.json({ error: `${error.message || 'Unknown error'} / notices 테이블/컬럼이 없으면 beyond-os-supabase-notices-v41-66.sql 및 beyond-os-supabase-notices-categories-v41-70.sql을 먼저 실행하세요.` }, { status: 500 });
   }
 }
 

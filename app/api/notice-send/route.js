@@ -3,6 +3,7 @@ import { requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getReportSendSettings, resolveRecipientTestMode, getRecipientTestModeSource } from '../../../lib/reportSendSettings';
 import { getNoticeLink } from '../../../lib/noticeShare';
+import { getNoticeCategory, buildNoticeKakaoVariables } from '../../../lib/noticeTemplates';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,29 +97,56 @@ export async function POST(request) {
     const sendSettings = await getReportSendSettings(supabase).catch(() => ({}));
     const testMode = resolveRecipientTestMode(sendSettings?.settings || sendSettings || {}, String(process.env.KAKAO_RECIPIENT_TEST_MODE || '').toLowerCase() === 'true');
     const testModeSource = getRecipientTestModeSource(sendSettings?.settings || sendSettings || {});
-    const link = getNoticeLink(request, notice);
+
+    const category = notice.category || 'operating_rules';
+    const cat = getNoticeCategory(category);
+    const isFields = cat.input === 'fields';
+    const templateData = notice.template_data || {};
+
+    // 링크형: 웹링크 필요 / 필드형: 항목값(기간·사유·내용) 필요
+    const link = isFields ? '' : getNoticeLink(request, notice);
+    const missingFields = isFields ? cat.fields.filter((f) => !String(templateData[f.key] || '').trim()) : [];
+    const contentReady = isFields ? missingFields.length === 0 : Boolean(link);
 
     // 미리보기: 실제 발송 없이 대상 수/모드만 반환
     if (previewOnly) {
-      return Response.json({ preview: true, recipientCount: recipients.length, testMode, testModeSource, link, hasLink: Boolean(link) });
+      return Response.json({
+        preview: true, recipientCount: recipients.length, testMode, testModeSource,
+        category: cat.key, categoryLabel: cat.label, input: cat.input,
+        link, hasLink: contentReady,
+      });
     }
 
     if (!recipients.length) {
       return Response.json({ error: '수신 동의된 보호자 연락처가 없습니다. (활성 학생 · 데일리 리포트 수신 ON 기준)' }, { status: 400 });
     }
-    if (!link) {
-      return Response.json({ error: '공지 링크를 만들 수 없습니다. 본문을 저장했는지, 또는 외부 URL이 올바른지 확인하세요.' }, { status: 400 });
+    if (!contentReady) {
+      return Response.json({
+        error: isFields
+          ? `발송 항목이 비어 있습니다: ${missingFields.map((f) => f.label).join(', ')}`
+          : '공지 링크를 만들 수 없습니다. 본문을 저장했는지, 또는 외부 URL이 올바른지 확인하세요.',
+      }, { status: 400 });
     }
+
+    const kakaoVariables = buildNoticeKakaoVariables(cat.key, { link, title: notice.title, data: templateData });
 
     const payload = {
       reportType: 'notice',
+      noticeCategory: cat.key,
       actualSend,
       isTest: !actualSend,
       recipients,
       recipientPhones: recipients.map((r) => r.phone),
       reportLink: link,
       noticeTitle: notice.title,
-      templateVariables: { noticeTitle: notice.title, noticeLink: link, reportLink: link },
+      templateVariables: {
+        noticeTitle: notice.title,
+        noticeLink: link,
+        reportLink: link,
+        noticeCategory: cat.key,
+        noticeData: templateData,
+        kakaoVariables,
+      },
       idempotencyKey: `notice:${notice.id}:${actualSend ? 'live' : 'test'}:${recipients.length}`,
     };
 
@@ -139,7 +167,7 @@ export async function POST(request) {
       targetType: 'notice',
       targetId: notice.id,
       targetName: notice.title,
-      payload: { recipientCount: recipients.length, actualSend, testMode, ok: result.ok, status: result.status },
+      payload: { category: cat.key, recipientCount: recipients.length, actualSend, testMode, ok: result.ok, status: result.status },
     });
 
     return Response.json({

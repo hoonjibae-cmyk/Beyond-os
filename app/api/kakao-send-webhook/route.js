@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getSolapiAdapterStatus, sendSolapiAlimtalk } from '../../../lib/solapiAdapter';
 import { getReportSendSettings, getRecipientTestModeSource, resolveRecipientTestMode } from '../../../lib/reportSendSettings';
+import { getNoticeCategory } from '../../../lib/noticeTemplates';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,11 +41,11 @@ function normalizeProviderMode() {
 const PROVIDER_MODE = normalizeProviderMode();
 const FAIL_SAFE_MODE = boolEnv('KAKAO_FAIL_SAFE_MODE', true);
 
-function getProviderAdapterStatus(reportType = 'daily', reportSendSettings = null) {
-  const templateCode = getTemplateCode(reportType);
+function getProviderAdapterStatus(reportType = 'daily', reportSendSettings = null, noticeCategory) {
+  const templateCode = getTemplateCode(reportType, noticeCategory);
   const directConfigured = Boolean(DIRECT_API_URL && DIRECT_API_KEY && SENDER_KEY && templateCode);
   const webhookConfigured = Boolean(PROVIDER_URL);
-  const solapi = getSolapiAdapterStatus(reportType);
+  const solapi = getSolapiAdapterStatus(reportType, noticeCategory);
 
   return {
     providerMode: PROVIDER_MODE,
@@ -290,11 +291,17 @@ function shouldBlockDuplicateRequest(existing) {
   return true;
 }
 
-function getTemplateCode(reportType) {
+function getTemplateCode(reportType, noticeCategory) {
   if (reportType === 'weekly') return TEMPLATE_CODE_WEEKLY;
   if (reportType === 'attendance') return TEMPLATE_CODE_ATTENDANCE;
   if (reportType === 'parent_confirmation') return TEMPLATE_CODE_PARENT_CONFIRMATION;
-  if (reportType === 'notice') return TEMPLATE_CODE_NOTICE;
+  if (reportType === 'notice') {
+    const cat = getNoticeCategory(noticeCategory);
+    for (const name of cat.templateCodeEnvs || []) {
+      if (process.env[name]) return process.env[name];
+    }
+    return TEMPLATE_CODE_NOTICE;
+  }
   return TEMPLATE_CODE_DAILY;
 }
 
@@ -304,7 +311,7 @@ function buildDirectKakaoPayload(payload = {}) {
     isTest: Boolean(payload.isTest),
     actualSend: Boolean(payload.actualSend),
     senderKey: SENDER_KEY,
-    templateCode: getTemplateCode(payload.reportType),
+    templateCode: getTemplateCode(payload.reportType, payload.noticeCategory),
     reportType: payload.reportType,
     idempotencyKey: payload.idempotencyKey,
     to: payload.recipientPhones || (payload.recipientPhone ? [payload.recipientPhone] : []),
@@ -330,7 +337,7 @@ function buildDirectKakaoPayload(payload = {}) {
 }
 
 async function callDirectKakaoProvider(payload, adapter) {
-  const templateCode = getTemplateCode(payload.reportType);
+  const templateCode = getTemplateCode(payload.reportType, payload.noticeCategory);
 
   if (!DIRECT_API_URL || !DIRECT_API_KEY || !SENDER_KEY || !templateCode) {
     return {
@@ -398,7 +405,7 @@ async function callDirectKakaoProvider(payload, adapter) {
 }
 
 async function callProvider(payload, reportSendSettings = null) {
-  const adapter = getProviderAdapterStatus(payload.reportType || 'daily', reportSendSettings);
+  const adapter = getProviderAdapterStatus(payload.reportType || 'daily', reportSendSettings, payload.noticeCategory);
   const recipientDecision = applyRecipientPolicy(payload, reportSendSettings);
 
   if (!recipientDecision.ok) {
@@ -577,7 +584,7 @@ export async function POST(request) {
     const isTest = Boolean(payload.isTest) || payload.actualSend === false || payload.mode === 'test_webhook';
     const reportSendSettingsResult = await getReportSendSettings(supabase);
     const reportSendSettings = reportSendSettingsResult.settings;
-    const adapter = getProviderAdapterStatus(payload.reportType || 'daily', reportSendSettings);
+    const adapter = getProviderAdapterStatus(payload.reportType || 'daily', reportSendSettings, payload.noticeCategory);
 
     const existing = await findExistingRequest(supabase, idempotencyKey);
     if (existing && !isTest && shouldBlockDuplicateRequest(existing)) {

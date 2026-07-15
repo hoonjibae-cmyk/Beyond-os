@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
+import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
 
 const STUDY_STATUS_OPTIONS = ['인강', '문제풀이', '암기', '독서', '수면', '비학습'];
@@ -13705,13 +13706,16 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
 
 function NoticeBroadcastTab({ apiFetch, setMessage }) {
   const [notices, setNotices] = useState([]);
-  const [form, setForm] = useState({ id: null, title: '', body: '', externalUrl: '' });
+  const [form, setForm] = useState({ id: null, title: '', body: '', externalUrl: '', category: 'operating_rules', templateData: {} });
   const [mode, setMode] = useState('inapp'); // inapp | external
   const [saving, setSaving] = useState(false);
   const [publicUrl, setPublicUrl] = useState('');
   const [confirm, setConfirm] = useState(null);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [sending, setSending] = useState(false);
+
+  const activeCategory = getNoticeCategory(form.category);
+  const isFields = activeCategory.input === 'fields';
 
   async function loadNotices() {
     try {
@@ -13723,33 +13727,47 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
   useEffect(() => { loadNotices(); /* eslint-disable-next-line */ }, []);
 
   function resetForm() {
-    setForm({ id: null, title: '', body: '', externalUrl: '' });
+    setForm({ id: null, title: '', body: '', externalUrl: '', category: 'operating_rules', templateData: {} });
+    setMode('inapp'); setPublicUrl(''); setConfirm(null); setConfirmChecked(false);
+  }
+
+  function selectCategory(key) {
+    // 카테고리를 바꾸면 새 공지로 초기화 (유형별 입력 구조가 달라 혼선 방지)
+    setForm({ id: null, title: '', body: '', externalUrl: '', category: key, templateData: {} });
     setMode('inapp'); setPublicUrl(''); setConfirm(null); setConfirmChecked(false);
   }
 
   async function saveNotice() {
-    if (!form.title.trim()) { setMessage('공지 제목을 입력하세요.'); return; }
-    if (mode === 'inapp' && !form.body.trim()) { setMessage('공지 본문을 작성하세요.'); return; }
-    if (mode === 'external' && !form.externalUrl.trim()) { setMessage('외부 웹링크 URL을 입력하세요.'); return; }
+    if (!form.title.trim()) { setMessage('공지 제목(내부 관리용)을 입력하세요.'); return; }
+    if (isFields) {
+      const missing = activeCategory.fields.filter((f) => !String(form.templateData[f.key] || '').trim());
+      if (missing.length) { setMessage(`다음 항목을 입력하세요: ${missing.map((f) => f.label).join(', ')}`); return; }
+    } else {
+      if (mode === 'inapp' && !form.body.trim()) { setMessage('공지 본문을 작성하세요.'); return; }
+      if (mode === 'external' && !form.externalUrl.trim()) { setMessage('외부 웹링크 URL을 입력하세요.'); return; }
+    }
     try {
       setSaving(true);
       const payload = {
         id: form.id || undefined,
         title: form.title,
-        body: mode === 'inapp' ? form.body : '',
-        externalUrl: mode === 'external' ? form.externalUrl : '',
+        category: form.category,
+        body: (!isFields && mode === 'inapp') ? form.body : '',
+        externalUrl: (!isFields && mode === 'external') ? form.externalUrl : '',
+        templateData: isFields ? form.templateData : undefined,
       };
       const d = await apiFetch('/api/notices', { method: 'POST', body: JSON.stringify(payload) });
       setForm((f) => ({ ...f, id: d.notice.id }));
       setPublicUrl(d.notice.publicUrl || '');
       setConfirm(null); setConfirmChecked(false);
       await loadNotices();
-      setMessage('공지를 저장했습니다. 링크를 확인하고 발송을 진행하세요.');
+      setMessage(isFields ? '공지를 저장했습니다. 발송을 진행하세요.' : '공지를 저장했습니다. 링크를 확인하고 발송을 진행하세요.');
     } catch (e) { setMessage(e.message); } finally { setSaving(false); }
   }
 
   function loadNoticeToForm(n) {
-    setForm({ id: n.id, title: n.title || '', body: n.body || '', externalUrl: n.external_url || '' });
+    const key = n.category || 'operating_rules';
+    setForm({ id: n.id, title: n.title || '', body: n.body || '', externalUrl: n.external_url || '', category: key, templateData: n.template_data || {} });
     setMode(n.external_url ? 'external' : 'inapp');
     setPublicUrl(n.publicUrl || '');
     setConfirm(null); setConfirmChecked(false);
@@ -13760,7 +13778,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
     try {
       setSending(true);
       const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, previewOnly: true }) });
-      setConfirm({ recipientCount: d.recipientCount, testMode: d.testMode, testModeSource: d.testModeSource, link: d.link, hasLink: d.hasLink });
+      setConfirm({ recipientCount: d.recipientCount, testMode: d.testMode, testModeSource: d.testModeSource, link: d.link, hasLink: d.hasLink, categoryLabel: d.categoryLabel, input: d.input });
       setConfirmChecked(false);
     } catch (e) { setMessage(e.message); } finally { setSending(false); }
   }
@@ -13799,37 +13817,87 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
       <p>공지를 작성하면 학부모 전체에게 카카오 알림톡으로 링크를 발송합니다. 발송 대상은 <b>활성 학생의 수신 동의 보호자</b> 기준이며, 테스트 수신번호 모드·Allowlist 설정이 그대로 적용됩니다.</p>
       <div className="call note" style={{ marginTop: 4 }}>
         <b>준비물</b>
-        <p>카카오 알림톡 템플릿을 만들고 <span className="path">SOLAPI_TEMPLATE_ID_NOTICE</span> 환경변수를 설정해야 실제 발송됩니다. 변수는 <b>#{'{'}공지제목{'}'}</b>, <b>#{'{'}링크{'}'}</b> 2개입니다.</p>
-        <p style={{ marginTop: 6 }}>⚠️ 심사 주의: "공지/안내/운영 안내"처럼 <b>포괄적인 말머리는 반려</b>됩니다(어뷰징 우려). "<b>2026 썸머스쿨 운영규정 안내</b>"처럼 <b>구체적 말머리 + 고정 본문</b>으로 등록하고, 매번 달라지는 상세 내용은 <b>링크(웹페이지)</b>에 담으세요. 알림톡 본문은 거의 고정이어야 하며(변수는 링크 등 최소한), 발송 목적이 여러 개면 목적별로 템플릿을 각각 등록해야 합니다. 광고성 메시지는 알림톡이 아닌 '브랜드메시지'로 보내세요.</p>
+        <p>목적별로 카카오 알림톡 템플릿을 등록하고, 카테고리별 환경변수(<span className="path">SOLAPI_TEMPLATE_ID_NOTICE_*</span>)에 승인된 템플릿 ID를 설정해야 실제 발송됩니다. 아래에서 <b>공지 유형(카테고리)</b>을 먼저 고르면 그 유형에 맞는 입력 항목과 등록용 템플릿 예시가 나타납니다.</p>
+        <p style={{ marginTop: 6 }}>⚠️ 심사 주의: "공지/안내/운영 안내"처럼 <b>포괄적인 말머리는 반려</b>됩니다(어뷰징 우려). <b>구체적 말머리 + 고정 본문</b>으로 등록하고, 링크형은 매번 달라지는 상세 내용을 <b>링크(웹페이지)</b>에 담으세요. 광고성 메시지는 알림톡이 아닌 '브랜드메시지'로 보내세요.</p>
       </div>
 
-      <h4>1) 공지 작성</h4>
+      <h4>1) 공지 유형 선택</h4>
+      <div className="notice-category-tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '4px 0 10px' }}>
+        {NOTICE_CATEGORIES.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            className={form.category === c.key ? 'primary' : 'secondary'}
+            onClick={() => selectCategory(c.key)}
+          >{c.label}</button>
+        ))}
+      </div>
+      <div className="call field" style={{ marginTop: 0 }}>
+        <p style={{ margin: 0 }}>{activeCategory.desc}</p>
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 800, fontSize: 13 }}>SOLAPI 등록용 템플릿 예시 (복사)</summary>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'var(--ap-surface-3,#f0f0f3)', borderRadius: 10, padding: '10px 12px', marginTop: 8, fontSize: 12.5, lineHeight: 1.5 }}>{activeCategory.sample}</pre>
+          <div className="hint" style={{ marginTop: 6 }}>변수: {activeCategory.kakaoVars.join(', ')} · 환경변수: <span className="path">{(activeCategory.templateIdEnvs || [])[0]}</span></div>
+        </details>
+      </div>
+
+      <h4>2) 공지 작성</h4>
       <div className="field">
-        <label>공지 제목</label>
-        <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 8월 운영시간 변경 안내" maxLength={60} />
+        <label>공지 제목 <span className="hint" style={{ fontWeight: 400 }}>(내부 관리·링크 페이지 제목용)</span></label>
+        <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={isFields ? '예: 8월 운영시간 변동' : '예: 2026 썸머스쿨 운영규정 안내'} maxLength={60} />
       </div>
-      <div className="notice-mode-tabs" style={{ display: 'inline-flex', background: 'var(--ap-surface-3,#ececef)', borderRadius: 12, padding: 4, gap: 2, margin: '4px 0 10px' }}>
-        <button type="button" className={mode === 'inapp' ? 'primary' : 'secondary'} onClick={() => setMode('inapp')}>인앱 작성</button>
-        <button type="button" className={mode === 'external' ? 'primary' : 'secondary'} onClick={() => setMode('external')}>외부 URL</button>
-      </div>
-      {mode === 'inapp' ? (
-        <div className="field">
-          <label>공지 본문</label>
-          <textarea value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} placeholder="학부모님께 전달할 공지 내용을 입력하세요. 저장하면 브랜드 통일된 공지 페이지가 자동 생성됩니다." rows={7} />
-        </div>
+
+      {isFields ? (
+        <>
+          {activeCategory.fields.map((f) => (
+            <div className="field" key={f.key}>
+              <label>{f.label} <span className="hint" style={{ fontWeight: 400 }}>({f.kakao})</span></label>
+              {f.max && f.max > 60 ? (
+                <textarea
+                  value={form.templateData[f.key] || ''}
+                  onChange={(e) => setForm({ ...form, templateData: { ...form.templateData, [f.key]: e.target.value } })}
+                  placeholder={f.placeholder}
+                  maxLength={f.max}
+                  rows={3}
+                />
+              ) : (
+                <input
+                  value={form.templateData[f.key] || ''}
+                  onChange={(e) => setForm({ ...form, templateData: { ...form.templateData, [f.key]: e.target.value } })}
+                  placeholder={f.placeholder}
+                  maxLength={f.max || 40}
+                />
+              )}
+            </div>
+          ))}
+          <div className="hint" style={{ marginBottom: 8 }}>이 유형은 위 항목이 알림톡 본문에 그대로 표기됩니다. (웹링크 불필요)</div>
+        </>
       ) : (
-        <div className="field">
-          <label>외부 웹링크 URL</label>
-          <input value={form.externalUrl} onChange={(e) => setForm({ ...form, externalUrl: e.target.value })} placeholder="https://..." />
-          <div className="hint">이미 만든 공지 페이지(포스터·블로그·노션 등) 주소를 붙여넣으면 그 링크로 발송합니다.</div>
-        </div>
+        <>
+          <div className="notice-mode-tabs" style={{ display: 'inline-flex', background: 'var(--ap-surface-3,#ececef)', borderRadius: 12, padding: 4, gap: 2, margin: '4px 0 10px' }}>
+            <button type="button" className={mode === 'inapp' ? 'primary' : 'secondary'} onClick={() => setMode('inapp')}>인앱 작성</button>
+            <button type="button" className={mode === 'external' ? 'primary' : 'secondary'} onClick={() => setMode('external')}>외부 URL</button>
+          </div>
+          {mode === 'inapp' ? (
+            <div className="field">
+              <label>공지 본문</label>
+              <textarea value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} placeholder="학부모님께 전달할 공지 내용을 입력하세요. 저장하면 브랜드 통일된 공지 페이지가 자동 생성됩니다." rows={7} />
+            </div>
+          ) : (
+            <div className="field">
+              <label>외부 웹링크 URL</label>
+              <input value={form.externalUrl} onChange={(e) => setForm({ ...form, externalUrl: e.target.value })} placeholder="https://..." />
+              <div className="hint">이미 만든 공지 페이지(포스터·블로그·노션 등) 주소를 붙여넣으면 그 링크로 발송합니다.</div>
+            </div>
+          )}
+        </>
       )}
       <div className="btn-row">
         <button className="primary" onClick={saveNotice} disabled={saving}>{saving ? '저장 중...' : (form.id ? '수정 저장' : '공지 저장')}</button>
         <button className="secondary" onClick={resetForm}>새 공지</button>
       </div>
 
-      {publicUrl ? (
+      {!isFields && publicUrl ? (
         <div className="notice-link-box" style={{ marginTop: 10 }}>
           <div className="hint" style={{ marginBottom: 4 }}>발송될 링크</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -13839,7 +13907,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
         </div>
       ) : null}
 
-      <h4>2) 학부모 전체 발송</h4>
+      <h4>3) 학부모 전체 발송</h4>
       <div className="btn-row">
         <button className="primary" onClick={prepareSend} disabled={!form.id || sending}>{sending && !confirm ? '대상 확인 중...' : '발송 준비 (대상 확인)'}</button>
       </div>
@@ -13847,9 +13915,10 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
       {confirm ? (
         <div className={`notice-confirm-panel call ${confirm.testMode ? 'warn' : 'field'}`} style={{ marginTop: 10 }}>
           <b>{confirm.testMode ? '테스트 수신번호 모드로 발송' : '전체 학부모에게 실제 발송'}</b>
+          {confirm.categoryLabel ? <p style={{ margin: '2px 0 4px' }}>유형: <b>{confirm.categoryLabel}</b></p> : null}
           <p>수신 대상 <b>{confirm.recipientCount}명</b> (활성 학생 · 데일리 리포트 수신 ON 보호자, 번호 중복 제거).</p>
           {confirm.testMode ? <p>현재 <b>테스트 수신번호 모드</b>입니다. 실제 학부모가 아니라 설정된 테스트 번호로만 발송됩니다. (실전 발송하려면 설정 › 리포트 발송 설정에서 테스트 모드를 끄세요.)</p> : null}
-          {!confirm.hasLink ? <p style={{ color: 'var(--ap-attn-text,#c0392b)' }}>⚠️ 링크가 없습니다. 본문 저장 또는 외부 URL을 확인하세요.</p> : null}
+          {!confirm.hasLink ? <p style={{ color: 'var(--ap-attn-text,#c0392b)' }}>⚠️ {confirm.input === 'fields' ? '발송 항목(기간·사유·내용)이 비어 있습니다. 저장 후 다시 시도하세요.' : '링크가 없습니다. 본문 저장 또는 외부 URL을 확인하세요.'}</p> : null}
           {!confirm.testMode ? (
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0', fontWeight: 700 }}>
               <input type="checkbox" checked={confirmChecked} onChange={(e) => setConfirmChecked(e.target.checked)} />
@@ -13869,10 +13938,11 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
           {notices.map((n) => (
             <div key={n.id} className="notice-row" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', border: '1px solid var(--ap-sep,#e6e4e0)', borderRadius: 12, padding: '10px 13px', background: 'var(--ap-surface,#fff)' }}>
               <span className={`status-pill ${n.status === 'sent' ? 'done' : 'neutral'}`}>{n.status === 'sent' ? '발송됨' : '작성'}</span>
+              <span className="hint" style={{ background: 'var(--ap-surface-3,#f0f0f3)', borderRadius: 8, padding: '2px 8px' }}>{getNoticeCategory(n.category).label}</span>
               <strong style={{ flex: 1, minWidth: 120 }}>{n.title}</strong>
               {n.status === 'sent' && n.sent_count ? <span className="hint">{n.sent_count}명 발송</span> : null}
               <button className="secondary" onClick={() => loadNoticeToForm(n)}>불러오기</button>
-              <button className="secondary" onClick={() => copyLink(n.publicUrl)}>링크복사</button>
+              {getNoticeCategory(n.category).input === 'link' ? <button className="secondary" onClick={() => copyLink(n.publicUrl)}>링크복사</button> : null}
               <button className="danger" onClick={() => deleteNotice(n)}>삭제</button>
             </div>
           ))}
