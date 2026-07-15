@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-68-notice-template-guidance",
-  "version": "0.41.68",
+  "name": "beyond-os-v41-69-notice-template-guidance",
+  "version": "0.41.69",
   "private": true,
   "scripts": {
     "dev": "next dev",
