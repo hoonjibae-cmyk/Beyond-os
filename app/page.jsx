@@ -4956,7 +4956,7 @@ export default function Page() {
         {isActiveTabAllowed && activeTab === 'dashboard' ? (
           <>
             <AlertCenter alerts={scheduleAlerts} nowTick={nowTick} onConfirm={confirmScheduleAlert} onNotifyParent={notifyParent} />
-            <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} checksBySession={checksBySession} defaultSchedule={defaultSchedule} />
+            <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} checksBySession={checksBySession} defaultSchedule={defaultSchedule} todaySchedules={todaySchedules} todayScheduleBreaks={todayScheduleBreaks} sessions={sessions} />
           </>
         ) : null}
 
@@ -6129,7 +6129,7 @@ function buildKioskHoldHistoryGroups(history = []) {
   }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedSeatNo, selectSeat, students, nowTick, apiFetch, loadDashboard, setMessage, currentUser, scheduleAlerts = [], onDismissFocusAlert, dismissedAlertMemos = {}, mentoringTodayAssignments = [], checksBySession = {}, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS }) {
+function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedSeatNo, selectSeat, students, nowTick, apiFetch, loadDashboard, setMessage, currentUser, scheduleAlerts = [], onDismissFocusAlert, dismissedAlertMemos = {}, mentoringTodayAssignments = [], checksBySession = {}, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, todaySchedules = [], todayScheduleBreaks = [], sessions = [] }) {
   const [seatFilter, setSeatFilter] = useState('all');
   const [seatSearch, setSeatSearch] = useState('');
   const [quickMode, setQuickMode] = useState(false);
