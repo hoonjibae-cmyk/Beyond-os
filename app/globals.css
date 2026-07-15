@@ -15937,6 +15937,52 @@ textarea,
   color: #1d4ed8 !important;
 }
 
+/* v41-71: 채움실 대상 (다음 차시 진행 중 외출/조퇴 예정 → 몰입실 대신 채움실 학습) */
+.seat.fill-room-target,
+.list-card.fill-room-target {
+  background: linear-gradient(135deg, #ccfbf1 0%, #99f6e4 100%) !important;
+  border-color: #0d9488 !important;
+  color: #115e59 !important;
+  box-shadow: 0 0 0 3px rgba(13,148,136,.18), 0 14px 28px rgba(13,148,136,.16) !important;
+}
+.seat.fill-room-target .seat-topline i {
+  background: rgba(255,255,255,.82) !important;
+  border-color: rgba(13,148,136,.28) !important;
+  color: #0f766e !important;
+}
+.fill-room-badge {
+  position: absolute;
+  right: 3px;
+  bottom: -7px;
+  z-index: 6;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #0d9488;
+  border: 2px solid #fff;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: 0 7px 14px rgba(13,148,136,.28);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.fill-room-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #0d9488;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  vertical-align: middle;
+}
+.list-card .list-main em.fill-room-note {
+  background: rgba(204,251,241,.9) !important;
+  color: #0f766e !important;
+}
+
 .mentoring-page {
   display: flex;
   flex-direction: column;

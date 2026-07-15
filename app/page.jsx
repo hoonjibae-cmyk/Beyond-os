@@ -1881,7 +1881,7 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
     }
 
     const checkOut = timeToMinutes(schedule.planned_check_out);
-    if (checkOut !== null && checkOut < 22 * 60 && now >= checkOut - 5 && now <= checkOut) {
+    if (checkOut !== null && checkOut < 22 * 60 && now >= checkOut - 10 && now <= checkOut) {
       alerts.push({
         id: `checkout-preview-${schedule.id}`,
         type: 'early_checkout_preview',
@@ -1900,7 +1900,7 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
       const ret = timeToMinutes(item.return_time);
       const reason = [item.reason, item.reason_detail].filter(Boolean).join(' · ');
 
-      if (leave !== null && now >= leave - 5 && now <= leave) {
+      if (leave !== null && now >= leave - 10 && now <= leave) {
         alerts.push({
           id: `leave-preview-${item.id}`,
           type: 'leave_preview',
@@ -6533,6 +6533,126 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
     return Number.isFinite(seatNo) ? mentoringCueMaps.bySeatNo[seatNo] || null : null;
   }
 
+  // v41-71: 채움실 대상
+  // 다음 차시가 '진행되는 도중'에 외출 또는 조퇴(정규보다 일찍 하원) 예정이 있는 학생은
+  // 몰입실(FOCUS ROOM)에서 학습 시 중간 이탈로 방해가 되므로, 쉬는 시간(차시 시작 10분 전)부터
+  // 해당 차시 종료 시까지 좌석배치표에서 '채움실 대상'으로 표시합니다.
+  // (차시 경계=차시 종료 시각에 나가는 경우는 대상 아님. 차시 진행 중 이탈만 대상)
+  const fillRoomMaps = useMemo(() => {
+    const nowMinutes = currentKstMinutes();
+    const today = getKstDateString();
+    const windows = normalizeDefaultScheduleSettings(defaultSchedule).studyWindows || [];
+    const byStudentId = {};
+    const bySeatNo = {};
+
+    const breaksBySchedule = {};
+    for (const b of todayScheduleBreaks || []) {
+      const key = b.schedule_id;
+      if (!breaksBySchedule[key]) breaksBySchedule[key] = [];
+      breaksBySchedule[key].push(b);
+    }
+    const sessionByStudentId = {};
+    for (const s of sessions || []) sessionByStudentId[s.student_id] = s;
+
+    // 시각(분)이 어느 차시 '진행 중(경계 제외)'에 속하는지 반환 (없으면 null)
+    function windowContaining(minute) {
+      if (minute === null || minute === undefined) return null;
+      return windows.find((w) => {
+        const s = timeToMinutes(w.start);
+        const e = timeToMinutes(w.end);
+        return s !== null && e !== null && minute > s && minute < e;
+      }) || null;
+    }
+
+    function remember({ studentId, seatNo, target }) {
+      if (!target) return;
+      if (studentId) {
+        const key = String(studentId);
+        const prev = byStudentId[key];
+        if (!prev || target.startMinutes < prev.startMinutes) byStudentId[key] = target;
+      }
+      if (seatNo !== null && seatNo !== undefined && seatNo !== '') {
+        const parsed = Number(seatNo);
+        if (Number.isFinite(parsed)) {
+          const prev = bySeatNo[parsed];
+          if (!prev || target.startMinutes < prev.startMinutes) bySeatNo[parsed] = target;
+        }
+      }
+    }
+
+    for (const schedule of todaySchedules || []) {
+      if (schedule?.schedule_date !== today || !schedule?.student_id) continue;
+      const session = sessionByStudentId[schedule.student_id];
+      if (session?.seat_status === 'absent' || session?.seat_status === 'out') continue;
+
+      const candidates = [];
+      // 조퇴: 하원시각이 차시 진행 중에 위치 (차시 종료 경계면 대상 아님)
+      const checkOutWindow = windowContaining(timeToMinutes(schedule.planned_check_out));
+      if (checkOutWindow) {
+        candidates.push({ window: checkOutWindow, kind: 'early_leave', time: String(schedule.planned_check_out || '').slice(0, 5), reason: '' });
+      }
+      // 외출: 외출 시작시각이 차시 진행 중에 위치
+      for (const b of breaksBySchedule[schedule.id] || []) {
+        const leaveWindow = windowContaining(timeToMinutes(b.leave_start));
+        if (!leaveWindow) continue;
+        candidates.push({
+          window: leaveWindow,
+          kind: 'outing',
+          time: String(b.leave_start || '').slice(0, 5),
+          reason: [b.reason, b.reason_detail].filter(Boolean).join(' · '),
+        });
+      }
+      if (!candidates.length) continue;
+
+      // 표시기간: 해당 차시 시작 10분 전 ~ 차시 종료
+      const active = candidates.filter((c) => {
+        const ws = timeToMinutes(c.window.start);
+        const we = timeToMinutes(c.window.end);
+        return ws !== null && we !== null && nowMinutes >= ws - 10 && nowMinutes < we;
+      });
+      if (!active.length) continue;
+      active.sort((a, b2) => (timeToMinutes(a.window.start) || 0) - (timeToMinutes(b2.window.start) || 0));
+      const c = active[0];
+      const target = {
+        window: c.window,
+        kind: c.kind,
+        time: c.time,
+        reason: c.reason,
+        startMinutes: timeToMinutes(c.window.start) || 0,
+        label: `${c.window.label} 중 ${c.kind === 'outing' ? '외출' : '조퇴'} 예정 (${c.time})${c.reason ? ` · ${c.reason}` : ''}`,
+      };
+
+      const seatCandidates = [
+        schedule.students?.default_seat_no,
+        assignedSeatNoByStudentId[String(schedule.student_id)],
+        assignedSeatNoByStudentId[schedule.student_id],
+      ];
+      const uniqueSeatCandidates = [...new Set(seatCandidates.filter((seatNo) => seatNo !== null && seatNo !== undefined && seatNo !== ''))];
+      remember({ studentId: schedule.student_id, seatNo: uniqueSeatCandidates[0], target });
+      uniqueSeatCandidates.slice(1).forEach((seatNo) => remember({ studentId: null, seatNo, target }));
+    }
+
+    return { byStudentId, bySeatNo };
+  }, [todaySchedules, todayScheduleBreaks, sessions, defaultSchedule, nowTick, assignedSeatNoByStudentId]);
+
+  function getFillRoomTarget(row) {
+    const defaultSeatStudent = defaultSeatStudentByNo[Number(row?.seat?.seat_no)] || null;
+    const candidateStudentIds = [
+      row?.session?.student_id,
+      row?.session?.students?.id,
+      row?.student?.id,
+      row?.seat?.current_student_id,
+      row?.seat?.current_student?.id,
+      defaultSeatStudent?.id,
+    ].filter(Boolean).map(String);
+    for (const studentId of candidateStudentIds) {
+      const target = fillRoomMaps.byStudentId[studentId];
+      if (target) return target;
+    }
+    const seatNo = Number(row?.seat?.seat_no);
+    return Number.isFinite(seatNo) ? fillRoomMaps.bySeatNo[seatNo] || null : null;
+  }
+
   function getUrgentAttention(row) {
     const studentId = row.session?.student_id || row.student?.id;
     const alert = studentId ? urgentAlertByStudentId[studentId] : null;
@@ -6883,13 +7003,15 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
                 const mentorCue = getMentoringCue(row);
                 const mentoringStatusPriority = ['needs_attention', 'absent', 'out'].includes(status);
                 const mentoringHighlight = Boolean(mentorCue && !urgent && !mentoringStatusPriority);
+                const fillRoomTarget = getFillRoomTarget(row);
                 const isQuickSelected = selectedQuickSeatSet.has(Number(seat.seat_no));
                 const quickDisabled = quickMode && !isQuickEligible(row);
                 return (
-                  <button key={seat.seat_no} className={`seat ${selectedSeatNo === seat.seat_no ? 'selected' : ''} ${status} ${isFilteredOut ? 'filtered-out' : ''} ${isMissingStudy ? 'study-missing' : ''} ${urgent ? 'priority-attention' : ''} ${mentoringHighlight ? 'mentoring-upcoming' : ''} ${mentorCue && mentoringStatusPriority ? 'mentoring-status-priority' : ''} ${isQuickSelected ? 'quick-selected' : ''} ${quickDisabled ? 'quick-disabled' : ''}`} style={{ left: (Number(seat.x) || 0) * 0.82, top: (Number(seat.y) || 0) * 0.9, width: seat.width, height: seat.height }} onClick={() => handleSeatClick(row)}>
+                  <button key={seat.seat_no} className={`seat ${selectedSeatNo === seat.seat_no ? 'selected' : ''} ${status} ${isFilteredOut ? 'filtered-out' : ''} ${isMissingStudy ? 'study-missing' : ''} ${urgent ? 'priority-attention' : ''} ${mentoringHighlight ? 'mentoring-upcoming' : ''} ${mentorCue && mentoringStatusPriority ? 'mentoring-status-priority' : ''} ${fillRoomTarget && !urgent ? 'fill-room-target' : ''} ${isQuickSelected ? 'quick-selected' : ''} ${quickDisabled ? 'quick-disabled' : ''}`} style={{ left: (Number(seat.x) || 0) * 0.82, top: (Number(seat.y) || 0) * 0.9, width: seat.width, height: seat.height }} onClick={() => handleSeatClick(row)}>
                     {quickMode && isQuickEligible(row) ? <span className="quick-select-dot">{isQuickSelected ? '✓' : '+'}</span> : null}
                     {urgent ? <span className="priority-attention-badge">확인</span> : null}
                     {mentorCue ? <span className={`mentoring-seat-badge ${mentoringStatusPriority ? 'muted' : ''}`}>멘토링</span> : null}
+                    {fillRoomTarget ? <span className="fill-room-badge" title={fillRoomTarget.label}>채움실</span> : null}
                     {isMissingStudy ? <span className="missing-study-badge" title={getCurrentPeriodMissingLabel()}>미입력</span> : null}
                     <div className="seat-topline"><span className="seat-no">{String(seat.seat_no).padStart(2, '0')}</span><i>{STATUS_LABELS[status]}</i></div>
                     {student?.name ? <div className="student-name">{student.name}</div> : <div className="student-name empty">미배정</div>}
@@ -6908,14 +7030,16 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
               const mentorCue = getMentoringCue(row);
               const mentoringStatusPriority = ['needs_attention', 'absent', 'out'].includes(status);
               const mentoringHighlight = Boolean(mentorCue && !urgent && !mentoringStatusPriority);
+              const fillRoomTarget = getFillRoomTarget(row);
               const isQuickSelected = selectedQuickSeatSet.has(Number(seat.seat_no));
               return (
-                <button key={seat.seat_no} className={`list-card ${status} ${selectedSeatNo === seat.seat_no ? 'selected' : ''} ${isCurrentPeriodStudyMissing(row) ? 'study-missing' : ''} ${urgent ? 'priority-attention' : ''} ${mentoringHighlight ? 'mentoring-upcoming' : ''} ${mentorCue && mentoringStatusPriority ? 'mentoring-status-priority' : ''} ${isQuickSelected ? 'quick-selected' : ''}`} onClick={() => handleSeatClick(row)}>
+                <button key={seat.seat_no} className={`list-card ${status} ${selectedSeatNo === seat.seat_no ? 'selected' : ''} ${isCurrentPeriodStudyMissing(row) ? 'study-missing' : ''} ${urgent ? 'priority-attention' : ''} ${mentoringHighlight ? 'mentoring-upcoming' : ''} ${mentorCue && mentoringStatusPriority ? 'mentoring-status-priority' : ''} ${fillRoomTarget && !urgent ? 'fill-room-target' : ''} ${isQuickSelected ? 'quick-selected' : ''}`} onClick={() => handleSeatClick(row)}>
                   <div className="list-no">{quickMode && isQuickEligible(row) ? (isQuickSelected ? '✓' : '+') : String(seat.seat_no).padStart(2, '0')}</div>
                   <div className="list-main">
-                    <strong>{student?.name || '미배정'}</strong>
+                    <strong>{student?.name || '미배정'}{fillRoomTarget ? <span className="fill-room-chip">채움실 대상</span> : null}</strong>
                     <span>{STATUS_LABELS[status]} · {getSeatLearningLabel(row)}</span>
                     <small>{getSeatTimeLabel(row)} · {getSeatSourceLabel(row)}</small>
+                    {fillRoomTarget ? <em className="fill-room-note">채움실 대상 · {fillRoomTarget.label}</em> : null}
                     {mentorCue ? <em className={`mentoring-list-note ${mentoringStatusPriority ? 'muted' : ''}`}>다음 멘토링 · {mentorCue.label}{mentoringStatusPriority ? ' · 출결상태 우선' : ''}</em> : null}
                     {issue ? <em>{issue}</em> : null}
                   </div>

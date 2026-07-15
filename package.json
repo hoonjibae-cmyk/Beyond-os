@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-70-notice-categories",
-  "version": "0.41.70",
+  "name": "beyond-os-v41-71-fill-room-target",
+  "version": "0.41.71",
   "private": true,
   "scripts": {
     "dev": "next dev",
