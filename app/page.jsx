@@ -1842,6 +1842,8 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
   for (const schedule of effectiveSchedules || []) {
     if (schedule.schedule_date !== today) continue;
     const student = schedule.students;
+    // v41-72: 비활성 학생은 오늘 알림(미입실·외출·복귀 등) 대상에서 제외합니다.
+    if ((student?.status || 'active') === 'inactive') continue;
     const session = sessionByStudentId[schedule.student_id];
     const seat = seatByStudentId[schedule.student_id] || {};
     const studentName = student?.name || '학생';
@@ -2117,10 +2119,22 @@ export default function Page() {
   const scheduleBreaksBySchedule = useMemo(() => groupBreaksBySchedule(scheduleBreakRows), [scheduleBreakRows]);
 
   const sessionBySeat = useMemo(() => {
+    // v41-72: 비활성 학생은 오늘 세션(출결 기록)이 남아 있어도 좌석배치표/집계에서 제외합니다.
+    // (세션 자체는 DB에 보존 — 과거 기록/리포트는 그대로, 좌석만 즉시 비웁니다.)
+    const inactiveStudentIds = new Set(
+      (students || []).filter((item) => (item?.status || 'active') === 'inactive').map((item) => String(item.id))
+    );
+    const isInactiveSession = (session) => {
+      if ((session?.students?.status || 'active') === 'inactive') return true;
+      return session?.student_id ? inactiveStudentIds.has(String(session.student_id)) : false;
+    };
     const map = {};
-    for (const session of sessions) map[session.seat_no] = session;
+    for (const session of sessions) {
+      if (isInactiveSession(session)) continue;
+      map[session.seat_no] = session;
+    }
     return map;
-  }, [sessions]);
+  }, [sessions, students]);
 
   const seatsForDisplay = seats?.length ? seats : STATIC_SEATS;
   const selectedSession = selectedSeatNo ? sessionBySeat[selectedSeatNo] : null;

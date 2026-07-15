@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-71-1-fill-room-target",
-  "version": "0.41.71",
+  "name": "beyond-os-v41-72-inactive-seat-release",
+  "version": "0.41.72",
   "private": true,
   "scripts": {
     "dev": "next dev",
