@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-72-inactive-seat-release",
-  "version": "0.41.72",
+  "name": "beyond-os-v41-73-planned-absence",
+  "version": "0.41.73",
   "private": true,
   "scripts": {
     "dev": "next dev",

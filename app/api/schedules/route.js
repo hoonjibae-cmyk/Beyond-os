@@ -93,7 +93,7 @@ function validateScheduleBody(body) {
   return errors;
 }
 
-async function upsertScheduleForDate(supabase, body, date) {
+async function upsertScheduleForDate(supabase, body, date, absence = {}) {
   const payload = {
     student_id: body.studentId,
     schedule_date: date,
@@ -103,6 +103,11 @@ async function upsertScheduleForDate(supabase, body, date) {
     confirmation_note: body.confirmationNote || null,
     schedule_note: body.scheduleNote || null,
   };
+  // planned_absent 컬럼(마이그레이션)이 적용된 경우에만 결석 필드를 기록합니다.
+  if (absence.absenceSupported) {
+    payload.planned_absent = Boolean(absence.plannedAbsent);
+    payload.absent_reason = absence.plannedAbsent ? (absence.absentReason || null) : null;
+  }
 
   const { data: schedule, error: scheduleError } = await supabase
     .from('student_daily_schedules')
@@ -111,6 +116,61 @@ async function upsertScheduleForDate(supabase, body, date) {
     .single();
   if (scheduleError) throw scheduleError;
   return schedule;
+}
+
+const PLANNED_ABSENCE_MARK = '[예약결석]';
+
+// 예약 결석: 해당 날짜 세션을 자동으로 '결석'으로 만듭니다.
+// 단, 이미 입실 기록(check_in_at)이 있으면 실제 출결을 덮어쓰지 않고 건너뜁니다.
+async function applyPlannedAbsentSession(supabase, { studentId, date, seatNo, reason }) {
+  const { data: existing } = await supabase
+    .from('daily_sessions')
+    .select('id, seat_no, check_in_at')
+    .eq('student_id', studentId)
+    .eq('session_date', date)
+    .maybeSingle();
+
+  if (existing?.check_in_at) return { skipped: 'has_check_in' };
+
+  const seat = seatNo || existing?.seat_no || null;
+  if (!seat) return { skipped: 'no_seat' }; // 좌석 정보가 없으면 세션 생성은 보류(스케줄에는 예약결석 기록됨)
+
+  const memo = reason ? `${PLANNED_ABSENCE_MARK} ${reason}` : PLANNED_ABSENCE_MARK;
+  const payload = {
+    student_id: studentId,
+    seat_no: seat,
+    session_date: date,
+    seat_status: 'absent',
+    check_in_at: null,
+    check_out_at: null,
+    away_started_at: null,
+    away_total_minutes: 0,
+    pure_study_minutes: 0,
+    pure_study_manual_text: null,
+    attendance_memo: memo,
+  };
+  const { error } = await supabase
+    .from('daily_sessions')
+    .upsert(payload, { onConflict: 'student_id,session_date' });
+  if (error) throw error;
+  return { applied: true };
+}
+
+// 예약 결석 해제: 우리가 만든(체크인 없고 [예약결석] 메모) 결석 세션만 되돌립니다.
+// 수동 결석/실제 출결은 건드리지 않습니다.
+async function rollbackPlannedAbsentSession(supabase, { studentId, date }) {
+  const { data: existing } = await supabase
+    .from('daily_sessions')
+    .select('id, seat_status, check_in_at, attendance_memo')
+    .eq('student_id', studentId)
+    .eq('session_date', date)
+    .maybeSingle();
+  if (!existing) return;
+  if (existing.seat_status === 'absent'
+    && !existing.check_in_at
+    && String(existing.attendance_memo || '').startsWith(PLANNED_ABSENCE_MARK)) {
+    await supabase.from('daily_sessions').delete().eq('id', existing.id);
+  }
 }
 
 async function replaceBreaksForSchedule(supabase, scheduleId, breaks) {
@@ -190,14 +250,59 @@ export async function POST(request) {
 
     const commuteDates = expandDates(body.scheduleDate, body.commuteRepeat || 'none', body.commuteRepeatUntil || body.scheduleDate);
     const breakDates = expandDates(body.scheduleDate, body.breakRepeat || 'none', body.breakRepeatUntil || body.scheduleDate);
-    const allDates = [...new Set([...commuteDates, ...breakDates])].sort();
+    const absentDates = body.plannedAbsent
+      ? expandDates(body.scheduleDate, body.absentRepeat || 'none', body.absentRepeatUntil || body.scheduleDate)
+      : [];
+    const absentSet = new Set(absentDates);
+    const allDates = [...new Set([...commuteDates, ...breakDates, ...absentDates])].sort();
     const savedSchedules = [];
 
+    // planned_absent 컬럼(마이그레이션) 적용 여부를 확인하고, 롤백 판정을 위해 이전 값을 읽어둡니다.
+    let absenceSupported = true;
+    let priorAbsentByDate = {};
+    let defaultSeatNo = null;
+    try {
+      const { data: priorRows, error: priorError } = await supabase
+        .from('student_daily_schedules')
+        .select('schedule_date, planned_absent')
+        .eq('student_id', body.studentId)
+        .in('schedule_date', allDates);
+      if (priorError) throw priorError;
+      for (const row of priorRows || []) priorAbsentByDate[row.schedule_date] = Boolean(row.planned_absent);
+    } catch {
+      absenceSupported = false; // planned_absent 컬럼 미적용 환경
+    }
+    if (absenceSupported) {
+      const { data: studentRow } = await supabase
+        .from('students')
+        .select('default_seat_no')
+        .eq('id', body.studentId)
+        .maybeSingle();
+      defaultSeatNo = studentRow?.default_seat_no || null;
+    }
+
+    // 결석 일정을 사용하려는데 컬럼이 없으면 명확히 안내합니다. (일반 저장은 그대로 동작)
+    if (body.plannedAbsent && !absenceSupported) {
+      return Response.json({
+        error: '결석 일정 기능을 쓰려면 beyond-os-supabase-planned-absence-v41-73.sql을 먼저 실행하세요. (planned_absent 컬럼 없음)',
+      }, { status: 400 });
+    }
+
     for (const date of allDates) {
-      const schedule = await upsertScheduleForDate(supabase, body, date);
+      const isAbsentDate = absentSet.has(date);
+      const schedule = await upsertScheduleForDate(supabase, body, date, {
+        absenceSupported,
+        plannedAbsent: isAbsentDate,
+        absentReason: body.absentReason || '',
+      });
       savedSchedules.push(schedule);
       if (breakDates.includes(date)) {
         await replaceBreaksForSchedule(supabase, schedule.id, body.breaks || []);
+      }
+      if (absenceSupported && isAbsentDate) {
+        await applyPlannedAbsentSession(supabase, { studentId: body.studentId, date, seatNo: defaultSeatNo, reason: body.absentReason || '' });
+      } else if (absenceSupported && priorAbsentByDate[date]) {
+        await rollbackPlannedAbsentSession(supabase, { studentId: body.studentId, date });
       }
     }
 
@@ -211,11 +316,12 @@ export async function POST(request) {
         affectedDates: allDates,
         commuteDates,
         breakDates,
+        absentDates,
         breakCount: Array.isArray(body.breaks) ? body.breaks.length : 0,
       },
     });
 
-    return Response.json({ schedules: savedSchedules, affectedDates: allDates, commuteDates, breakDates });
+    return Response.json({ schedules: savedSchedules, affectedDates: allDates, commuteDates, breakDates, absentDates });
   } catch (error) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
   }
