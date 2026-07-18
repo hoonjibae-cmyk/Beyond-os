@@ -6575,9 +6575,13 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
     for (const s of sessions || []) sessionByStudentId[s.student_id] = s;
 
     // 시각(분)이 어느 차시 '진행 중(경계 제외)'에 속하는지 반환 (없으면 null)
+    // 자율학습(마지막 자율 블록)은 '차시(수업)'가 아니라 자율 시간이므로 채움실 판정 대상에서 제외합니다.
+    // (자율학습 중 이탈은 몰입실 방해 개념이 약함)
+    const isSelfStudyWindow = (w) => /자율/.test(String(w?.label || ''));
     function windowContaining(minute) {
       if (minute === null || minute === undefined) return null;
       return windows.find((w) => {
+        if (isSelfStudyWindow(w)) return false;
         const s = timeToMinutes(w.start);
         const e = timeToMinutes(w.end);
         return s !== null && e !== null && minute > s && minute < e;
