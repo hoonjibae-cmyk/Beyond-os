@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-75-1-perf-region",
-  "version": "0.41.75",
+  "name": "beyond-os-v41-76-notice-recipients",
+  "version": "0.41.76",
   "private": true,
   "scripts": {
     "dev": "next dev",

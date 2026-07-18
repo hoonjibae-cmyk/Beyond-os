@@ -13859,6 +13859,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
   const [confirm, setConfirm] = useState(null);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [sending, setSending] = useState(false);
+  const [recipientView, setRecipientView] = useState(null); // 발송 대상 조회 중인 공지 id
 
   const activeCategory = getNoticeCategory(form.category);
   const isFields = activeCategory.input === 'fields';
@@ -14081,17 +14082,44 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
       <h4>최근 공지</h4>
       {notices.length ? (
         <div className="notice-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {notices.map((n) => (
-            <div key={n.id} className="notice-row" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', border: '1px solid var(--ap-sep,#e6e4e0)', borderRadius: 12, padding: '10px 13px', background: 'var(--ap-surface,#fff)' }}>
-              <span className={`status-pill ${n.status === 'sent' ? 'done' : 'neutral'}`}>{n.status === 'sent' ? '발송됨' : '작성'}</span>
-              <span className="hint" style={{ background: 'var(--ap-surface-3,#f0f0f3)', borderRadius: 8, padding: '2px 8px' }}>{getNoticeCategory(n.category).label}</span>
-              <strong style={{ flex: 1, minWidth: 120 }}>{n.title}</strong>
-              {n.status === 'sent' && n.sent_count ? <span className="hint">{n.sent_count}명 발송</span> : null}
-              <button className="secondary" onClick={() => loadNoticeToForm(n)}>불러오기</button>
-              {getNoticeCategory(n.category).input === 'link' ? <button className="secondary" onClick={() => copyLink(n.publicUrl)}>링크복사</button> : null}
-              <button className="danger" onClick={() => deleteNotice(n)}>삭제</button>
+          {notices.map((n) => {
+            const summary = n.last_send_summary || null;
+            const sentRecipients = Array.isArray(summary?.recipients) ? summary.recipients : [];
+            const isOpen = recipientView === n.id;
+            return (
+            <div key={n.id} style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid var(--ap-sep,#e6e4e0)', borderRadius: 12, background: 'var(--ap-surface,#fff)' }}>
+              <div className="notice-row" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '10px 13px' }}>
+                <span className={`status-pill ${n.status === 'sent' ? 'done' : 'neutral'}`}>{n.status === 'sent' ? '발송됨' : '작성'}</span>
+                <span className="hint" style={{ background: 'var(--ap-surface-3,#f0f0f3)', borderRadius: 8, padding: '2px 8px' }}>{getNoticeCategory(n.category).label}</span>
+                <strong style={{ flex: 1, minWidth: 120 }}>{n.title}</strong>
+                {n.status === 'sent' && n.sent_count ? <span className="hint">{n.sent_count}명 발송{summary?.testMode ? ' (테스트)' : ''}</span> : null}
+                {n.status === 'sent' ? <button className="secondary" onClick={() => setRecipientView(isOpen ? null : n.id)}>{isOpen ? '대상 닫기' : '발송 대상'}</button> : null}
+                <button className="secondary" onClick={() => loadNoticeToForm(n)}>불러오기</button>
+                {getNoticeCategory(n.category).input === 'link' ? <button className="secondary" onClick={() => copyLink(n.publicUrl)}>링크복사</button> : null}
+                <button className="danger" onClick={() => deleteNotice(n)}>삭제</button>
+              </div>
+              {isOpen ? (
+                <div className="notice-recipients" style={{ borderTop: '1px solid var(--ap-sep,#e6e4e0)', padding: '10px 13px', background: 'var(--ap-surface-2,#fbfbfd)' }}>
+                  {summary ? (
+                    <>
+                      <div className="hint" style={{ marginBottom: 6 }}>
+                        {summary.at ? `${new Date(summary.at).toLocaleString('ko-KR')} · ` : ''}수신 대상 <b>{summary.recipientCount ?? sentRecipients.length}명</b>
+                        {summary.testMode ? ' · ⚠️ 테스트 수신번호 모드로 발송(실제 학부모 미발송)' : ''}
+                      </div>
+                      {sentRecipients.length ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {sentRecipients.map((r, i) => (
+                            <span key={i} className="hint" style={{ background: 'var(--ap-surface-3,#f0f0f3)', borderRadius: 8, padding: '3px 9px' }}>{r.name || '보호자'} · {r.phone || ''}</span>
+                          ))}
+                        </div>
+                      ) : <p className="hint" style={{ margin: 0 }}>수신자 상세가 저장되지 않은 공지입니다. (이 기능 적용 전에 발송된 건이며, 이후 발송분부터 대상 목록이 기록됩니다.)</p>}
+                    </>
+                  ) : <p className="hint" style={{ margin: 0 }}>발송 요약 정보가 없습니다.</p>}
+                </div>
+              ) : null}
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : <p className="hint">아직 작성한 공지가 없습니다.</p>}
     </section>

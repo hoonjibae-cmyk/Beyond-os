@@ -15,6 +15,12 @@ function normalizePhone(value) {
   return String(value || '').replace(/[^\d]/g, '');
 }
 
+function maskPhone(value) {
+  const phone = normalizePhone(value);
+  if (phone.length < 7) return phone || '';
+  return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
+}
+
 // 활성 학생의 수신 동의(데일리 리포트 수신) 보호자 → 전화번호 기준 중복 제거
 async function collectRecipients(supabase) {
   const { data: students, error } = await supabase
@@ -152,13 +158,22 @@ export async function POST(request) {
 
     const result = await callWebhook(payload);
 
-    // 실제 발송이 접수되면 공지 상태 갱신
+    // 실제 발송이 접수되면 공지 상태 갱신 (발송 대상 스냅샷 포함 — 번호는 마스킹 저장)
     if (actualSend && result.ok) {
+      const recipientSnapshot = recipients.map((r) => ({ name: r.name, phone: maskPhone(r.phone) }));
       await supabase.from('notices').update({
         status: 'sent',
         sent_at: new Date().toISOString(),
         sent_count: recipients.length,
-        last_send_summary: { at: new Date().toISOString(), recipientCount: recipients.length, testMode, status: result.status },
+        last_send_summary: {
+          at: new Date().toISOString(),
+          recipientCount: recipients.length,
+          testMode,
+          status: result.status,
+          category: cat.key,
+          categoryLabel: cat.label,
+          recipients: recipientSnapshot,
+        },
       }).eq('id', notice.id);
     }
 
