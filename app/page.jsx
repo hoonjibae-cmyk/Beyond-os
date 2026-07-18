@@ -12081,7 +12081,8 @@ function buildBroadcastBoards({ yesterday, week, month }, { singlePage = false }
   };
 
   const attended = (row) => row.attendanceDays > 0;
-  const studied = (row) => row.totalStudyMinutes > 0;
+  // 순공 랭킹은 활성 학생 전원을 포함합니다(순공 0도 리스트업). 비활성은 이미 서버에서 제외됨.
+  const includeAll = () => true;
 
   // 랭킹 1종 → 포디엄(1~3위) + 나머지(4위~)를 페이지로 나눈 여러 프레임으로 확장.
   // 4위 이하가 12명 이하면 1페이지, 그보다 많으면 2페이지로 균등 분할합니다.
@@ -12113,19 +12114,19 @@ function buildBroadcastBoards({ yesterday, week, month }, { singlePage = false }
       key: 'study-yesterday', badge: '어제', accent: 'flame',
       title: '어제의 순공왕', emoji: '🔥', unitLabel: '순수 공부시간',
       period: yesterday.label,
-      ...rankTop(yesterday.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
+      ...rankTop(yesterday.rows, { sortBy: (r) => r.totalStudyMinutes, filter: includeAll, value: (r) => formatMinutes(r.totalStudyMinutes) }),
     },
     {
       key: 'study-week', badge: '최근 7일', accent: 'volt',
       title: '이번 주 순공 레전드', emoji: '⚡', unitLabel: '주간 총 순공시간',
       period: week.label,
-      ...rankTop(week.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
+      ...rankTop(week.rows, { sortBy: (r) => r.totalStudyMinutes, filter: includeAll, value: (r) => formatMinutes(r.totalStudyMinutes) }),
     },
     {
       key: 'study-month', badge: '최근 30일', accent: 'gold',
       title: '이달의 순공 마스터', emoji: '👑', unitLabel: '월간 총 순공시간',
       period: month.label,
-      ...rankTop(month.rows, { sortBy: (r) => r.totalStudyMinutes, filter: studied, value: (r) => formatMinutes(r.totalStudyMinutes) }),
+      ...rankTop(month.rows, { sortBy: (r) => r.totalStudyMinutes, filter: includeAll, value: (r) => formatMinutes(r.totalStudyMinutes) }),
     },
     {
       key: 'attend-month', badge: '최근 30일', accent: 'sky',
