@@ -2299,7 +2299,7 @@ export default function Page() {
       }
     };
 
-    const interval = window.setInterval(syncDashboard, 3000);
+    const interval = window.setInterval(syncDashboard, 8000);
     const handleVisibilityChange = () => {
       if (!document.hidden) syncDashboard();
     };
