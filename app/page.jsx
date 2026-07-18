@@ -4519,6 +4519,8 @@ export default function Page() {
       await loadDashboard({ silent: true, suppressChangeNotice: true });
       setMessage('액티비티 시간표 저장 완료');
     } catch (error) {
+      // 모달이 열린 상태에서는 하단 토스트가 가려질 수 있어 alert로도 즉시 표시합니다.
+      alert(error.message || '액티비티 시간표 저장에 실패했습니다.');
       setMessage(error.message);
     }
   }
