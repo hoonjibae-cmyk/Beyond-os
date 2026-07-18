@@ -45,30 +45,36 @@ export async function GET(request) {
       eventsBySession[event.session_id].push(event);
     }
 
+    // 1) 활성 학생 전체를 먼저 시드합니다 → 순공시간이 0이어도 랭킹 리스트에 전부 포함.
+    //    비활성 학생은 애초에 시드하지 않으므로 랭킹에서 즉시 제외됩니다.
+    const { data: activeStudents, error: studentsError } = await supabase
+      .from('students')
+      .select('id, name, school, grade, nickname, ranking_opt_in')
+      .eq('status', 'active');
+    if (studentsError) throw studentsError;
+
     const map = {};
+    for (const student of activeStudents || []) {
+      map[student.id] = {
+        studentId: student.id,
+        name: student.name,
+        school: student.school,
+        grade: student.grade,
+        nickname: student.nickname || null,
+        rankingOptIn: Boolean(student.ranking_opt_in),
+        attendanceDays: 0,
+        totalStudyMinutes: 0,
+        awayCount: 0,
+        awayMinutes: 0,
+        needsAttentionCount: 0,
+        absentCount: 0,
+      };
+    }
 
+    // 2) 세션 누적 — 활성 학생(시드된)만 반영. 비활성/삭제 학생 세션은 건너뜁니다.
     for (const session of sessions || []) {
-      const student = session.students;
-      if (!student) continue;
-
-      if (!map[student.id]) {
-        map[student.id] = {
-          studentId: student.id,
-          name: student.name,
-          school: student.school,
-          grade: student.grade,
-          nickname: student.nickname || null,
-          rankingOptIn: Boolean(student.ranking_opt_in),
-          attendanceDays: 0,
-          totalStudyMinutes: 0,
-          awayCount: 0,
-          awayMinutes: 0,
-          needsAttentionCount: 0,
-          absentCount: 0,
-        };
-      }
-
-      const row = map[student.id];
+      const row = map[session.student_id];
+      if (!row) continue;
       row.attendanceDays += session.check_in_at ? 1 : 0;
       row.totalStudyMinutes += calculateScheduledPureStudyMinutes(session, { events: eventsBySession[session.id] || [], studyWindows: resolveScheduleForDate(scheduleConfig, session.session_date).studyWindows });
       row.needsAttentionCount += session.seat_status === 'needs_attention' ? 1 : 0;

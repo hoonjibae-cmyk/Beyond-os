@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-78-1-ranking-light",
-  "version": "0.41.78",
+  "name": "beyond-os-v41-79-ranking-scope",
+  "version": "0.41.79",
   "private": true,
   "scripts": {
     "dev": "next dev",
