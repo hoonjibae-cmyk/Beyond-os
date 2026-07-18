@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-73-planned-absence",
-  "version": "0.41.73",
+  "name": "beyond-os-v41-74-timeline-absent",
+  "version": "0.41.74",
   "private": true,
   "scripts": {
     "dev": "next dev",

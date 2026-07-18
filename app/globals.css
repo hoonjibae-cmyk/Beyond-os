@@ -946,6 +946,12 @@ textarea { min-height: 78px; resize: vertical; }
 .mini-activity { display: inline-block; padding: 6px 8px; border-radius: 999px; font-size: 12px; font-weight: 900; border: 1px solid #d8d2c6; }
 .mini-activity.self-study { background: #e4f6d9; color: #24501f; border-color: #6fb14a; }
 .mini-activity.break-activity { background: #ffe0a3; color: #422d00; border-color: #d99b1d; }
+.mini-activity.absent { background: #f6ecfb; color: #7d2fb0; border-color: rgba(175,82,222,.5); }
+/* v41-74: 개인 시간표 결석 표시 */
+.timeline-absent-tag { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: #af52de; color: #fff; font-size: 12px; font-weight: 900; vertical-align: middle; }
+.timeline-absent-banner { margin: 0 14px 12px; padding: 10px 13px; border-radius: 12px; background: #f6ecfb; border: 1px solid rgba(175,82,222,.4); color: #7d2fb0; font-size: 13px; font-weight: 700; line-height: 1.5; }
+.activity-timeline-wrap.is-absent .day-timeline .activity-block { opacity: .5; filter: grayscale(.35); }
+.student-activity-row.is-absent { border-color: rgba(175,82,222,.5); background: rgba(246,236,251,.5); }
 .week-activity-grid { display: grid; grid-template-columns: repeat(7, minmax(140px, 1fr)); gap: 10px; }
 .activity-chip.self-study { background: #e4f6d9; border-color: #6fb14a; color: #24501f; }
 .activity-chip.break-activity { background: #ffe0a3; border-color: #d99b1d; color: #422d00; }
