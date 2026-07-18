@@ -18922,6 +18922,34 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .broadcast-podium{ gap:8px; }
   .broadcast-watermark{ right:12px; bottom:10px; }
 }
+
+/* v41-78: 게시용(TV) 랭킹보드 밝은(라이트) 테마 — 배경을 밝게 + 글자/카드/값 대비 재조정 */
+.broadcast-stage{
+  background:radial-gradient(125% 120% at 50% -10%, #ffffff 0%, #eef3fb 52%, #e1e9f6 100%);
+  color:#1b2140;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.05), 0 20px 60px rgba(20,40,90,.14);
+}
+.broadcast-stage::before{ opacity:.32; }
+.broadcast-header h3{ color:#141a33 !important; text-shadow:0 1px 2px rgba(255,255,255,.7), 0 0 22px color-mix(in srgb, var(--accent) 28%, transparent); }
+.broadcast-meta{ color:#5b6480; }
+.broadcast-period{ color:#1b2140; background:rgba(0,0,0,.05); }
+.broadcast-empty{ color:#5b6480; }
+.broadcast-buttons button{ border-color:rgba(0,0,0,.14); background:rgba(0,0,0,.045); color:#2a3358; }
+.broadcast-buttons button:hover{ background:rgba(0,0,0,.09); }
+.broadcast-dots button{ background:rgba(0,0,0,.2); }
+.podium-slot{ background:linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.015)); border-color:rgba(0,0,0,.08); }
+.podium-medal{ filter:drop-shadow(0 0 8px rgba(0,0,0,.14)); }
+.podium-slot.masked .podium-name{ color:#8a93b0; }
+.podium-value{ color:color-mix(in srgb, var(--accent) 60%, #101430); }
+.podium-rank{ border:1px solid rgba(0,0,0,.06); box-shadow:0 4px 12px rgba(20,40,90,.22); }
+.broadcast-list li{ background:rgba(0,0,0,.035); border-color:rgba(0,0,0,.08); }
+.rl-rank{ color:#6b748f; }
+.broadcast-list li.masked .rl-name{ color:#8a93b0; }
+.rl-bar{ background:rgba(0,0,0,.08); }
+.rl-value{ color:color-mix(in srgb, var(--accent) 60%, #101430); }
+.broadcast-watermark{ color:rgba(0,0,0,.42); text-shadow:0 1px 3px rgba(255,255,255,.6); }
+.broadcast-watermark .bw-mark{ color:color-mix(in srgb, var(--accent) 62%, #101430); }
+.broadcast-progress{ background:rgba(0,0,0,.1); }
 @media (prefers-reduced-motion: reduce){
   .broadcast-screen, .podium-medal, .podium-bar span, .broadcast-list li, .rl-bar i, .broadcast-progress i.running{ animation:none !important; }
   .rl-bar i{ width:var(--bar); }

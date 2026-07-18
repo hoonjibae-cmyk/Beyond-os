@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-77-summary-tuning",
-  "version": "0.41.77",
+  "name": "beyond-os-v41-78-ranking-light",
+  "version": "0.41.78",
   "private": true,
   "scripts": {
     "dev": "next dev",
