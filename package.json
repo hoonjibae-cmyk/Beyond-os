@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-76-notice-recipients",
-  "version": "0.41.76",
+  "name": "beyond-os-v41-77-summary-tuning",
+  "version": "0.41.77",
   "private": true,
   "scripts": {
     "dev": "next dev",

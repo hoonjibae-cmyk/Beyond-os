@@ -262,6 +262,9 @@ function buildSummary({ sessions = [], events = [], checks = [], reports = [], p
     studyCheckCount: checks.length,
     topSubject: studySummary.topSubject,
     topStudyStatus: studySummary.topStatus,
+    studyStatusCounts: studySummary.statusCounts,
+    subjectCounts: studySummary.subjectCounts,
+    onlineLectureCheckCount: studySummary.statusCounts?.['인강'] || 0,
     plannerSubmitted: planners.length,
     focusCount: acknowledgements.length,
     lowSignalChecks,
@@ -274,6 +277,8 @@ function buildSummary({ sessions = [], events = [], checks = [], reports = [], p
 
 function buildCounselingSource({ student, start, end, summary, rows }) {
   const studyVolumeGuide = classifyWeeklyStudyVolume(summary?.totalStudyMinutes || 0, start, end);
+  // 플래너는 AI 상담요약 판단 근거에서 제외합니다. (사진 판독 없이 제출 횟수만으로 실행력 단정 방지)
+  const { plannerSubmitted, ...summaryForAi } = summary || {};
   return {
     student: {
       name: student?.name || '',
@@ -282,7 +287,7 @@ function buildCounselingSource({ student, start, end, summary, rows }) {
     },
     range: { start, end },
     summary: {
-      ...summary,
+      ...summaryForAi,
       studyVolumeGuide,
     },
     studyVolumeGuide,
@@ -293,9 +298,9 @@ function buildCounselingSource({ student, start, end, summary, rows }) {
         date: row.date,
         attendance: row.attendanceSummary,
         pureStudy: row.pureStudyLabel,
+        away: row.awayLabel,
         study: row.periodSummary,
-        observation: row.observation,
-        planner: row.plannerMemo,
+        mentorComment: row.mentorComment,
         focus: row.focusIssues,
         report: row.reportStatus,
       })),
