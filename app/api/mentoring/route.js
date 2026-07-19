@@ -437,7 +437,7 @@ async function materializeDateSchedule(supabase, scheduleDateInput = getKstDateS
 
   const { data: weeklyAssignments, error: weeklyAssignmentsError } = await supabase
     .from('mentoring_assignments')
-    .select('*')
+    .select('*, students(status)')
     .eq('is_active', true)
     .in('slot_id', weeklySlotIds);
   if (weeklyAssignmentsError) throw weeklyAssignmentsError;
@@ -453,6 +453,7 @@ async function materializeDateSchedule(supabase, scheduleDateInput = getKstDateS
 
   const inserts = [];
   for (const assignment of weeklyAssignments || []) {
+    if (assignment.students?.status === 'inactive') continue;
     if (!isAssignmentActiveOnDate(assignment, scheduleDate)) continue;
     if (existingByTemplateAssignment.has(String(assignment.id))) continue;
     const dateSlot = activeDateSlotByTemplate.get(String(assignment.slot_id));
@@ -521,7 +522,7 @@ async function loadDateSchedule(supabase, scheduleDateInput = getKstDateString()
       source_scope: 'weekly-template',
     }));
     const dateAssignments = (weeklyAssignments || [])
-      .filter((item) => item?.is_active !== false && slotIds.has(String(item.slot_id)) && isAssignmentActiveOnDate(item, scheduleDate))
+      .filter((item) => item?.is_active !== false && item.students?.status !== 'inactive' && slotIds.has(String(item.slot_id)) && isAssignmentActiveOnDate(item, scheduleDate))
       .map((item) => ({
         ...item,
         schedule_date: scheduleDate,
@@ -604,7 +605,8 @@ async function loadDateSchedule(supabase, scheduleDateInput = getKstDateString()
         .in('date_slot_id', dateSlotIds)
         .order('created_at', { ascending: true });
       if (assignmentsError) throw assignmentsError;
-      dateAssignments = (rows || []).map((item) => ({
+      // 비활성 학생의 날짜별 배정은 즉시 표시에서 제외합니다.
+      dateAssignments = (rows || []).filter((item) => item.students?.status !== 'inactive').map((item) => ({
         ...item,
         slot_id: item.date_slot_id,
         mentoring_slots: mapDateSlotForClient(item.mentoring_date_slots),
