@@ -1043,11 +1043,11 @@ textarea { min-height: 78px; resize: vertical; }
 .mobile-panel-close {
   min-height: 44px;
   min-width: 92px;
-  border: 1px solid #4c463b;
-  border-radius: 14px;
-  background: #4a463d;
-  color: #fff;
-  font-weight: 950;
+  border: 1px solid var(--ap-sep, rgba(0,0,0,.12));
+  border-radius: 12px;
+  background: var(--ap-surface-3, #f0f0f3);
+  color: var(--ap-text, #1d1d1f);
+  font-weight: 800;
   font-size: 15px;
   touch-action: manipulation;
 }
@@ -6332,17 +6332,22 @@ button.danger {
     align-items: center !important;
     justify-content: space-between !important;
     gap: 10px !important;
-    margin: -2px -2px 10px !important;
-    padding: 8px 2px 12px !important;
-    background: #211f1b !important;
-    border-bottom: 1px solid #3c362d !important;
+    margin: -2px -16px 12px !important;
+    padding: 12px 16px 12px !important;
+    background: var(--ap-bar, rgba(255,255,255,.82)) !important;
+    -webkit-backdrop-filter: saturate(180%) blur(20px) !important;
+    backdrop-filter: saturate(180%) blur(20px) !important;
+    border-bottom: 1px solid var(--ap-sep, rgba(0,0,0,.09)) !important;
+    box-shadow: 0 1px 8px rgba(0,0,0,.04) !important;
   }
 
   .panel-mobile-head h2 {
     margin: 0 !important;
-    font-size: 22px !important;
+    font-size: 21px !important;
+    font-weight: 800 !important;
     line-height: 1.15 !important;
-    color: #fff !important;
+    color: var(--ap-text, #1d1d1f) !important;
+    letter-spacing: -.02em !important;
   }
 
   .mobile-panel-close {
@@ -6369,8 +6374,8 @@ button.danger {
   }
 
   .panel {
-    padding-left: 14px !important;
-    padding-right: 14px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
   }
 
   .panel-mobile-head h2 {
