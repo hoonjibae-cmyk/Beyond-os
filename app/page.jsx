@@ -12661,26 +12661,43 @@ function formatSurveyDate(value) {
   return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+// 학부모 설문에서 노출할 핵심 4개 항목 (설문 질문 키워드 → 간략 제목)
+const PARENT_SURVEY_FIELDS = [
+  { key: 'schedule', label: '요일별 스케줄', icon: '🗓️', test: /요일/ },
+  { key: 'special', label: '특별 일정', icon: '📌', test: /특별/ },
+  { key: 'academic', label: '학업 특이사항', icon: '📖', test: /특이/ },
+  { key: 'request', label: '센터 당부사항', icon: '💬', test: /당부/ },
+];
+
 function SurveyCard({ survey }) {
   const answers = Array.isArray(survey.answers) ? survey.answers : [];
-  // 섹션(설문지 대괄호 그룹) 순서를 보존하며 묶습니다.
-  const sections = [];
-  const sectionIndex = new Map();
-  answers.forEach((item) => {
-    const answer = String(item?.answer ?? '').trim();
-    if (!answer) return;
-    const question = String(item?.question ?? '').trim();
-    // 이름/학교·학년/보호자 성함 등 헤더 메타는 카드 상단에 이미 표시하므로 제외
-    if (/^(학생\s*이름|학교\s*\/?\s*학년|보호자\s*성함|타임스탬프)/.test(question)) return;
-    const section = String(item?.section ?? '').trim() || '기타';
-    if (!sectionIndex.has(section)) {
-      sectionIndex.set(section, sections.length);
-      sections.push({ section, items: [] });
-    }
-    sections[sectionIndex.get(section)].items.push({ question, answer });
-  });
-
   const isParent = survey.survey_type === 'parent';
+
+  // 학부모 설문: 핵심 4개 항목만 간략한 제목으로 표시
+  const parentFields = isParent
+    ? PARENT_SURVEY_FIELDS.map((field) => {
+      const hit = answers.find((a) => field.test.test(String(a?.question || '')) && String(a?.answer ?? '').trim());
+      return { ...field, value: hit ? String(hit.answer).trim() : '' };
+    })
+    : [];
+
+  // 학생 설문: 기존 섹션 그룹 유지
+  const sections = [];
+  if (!isParent) {
+    const sectionIndex = new Map();
+    answers.forEach((item) => {
+      const answer = String(item?.answer ?? '').trim();
+      if (!answer) return;
+      const question = String(item?.question ?? '').trim();
+      if (/^(학생\s*이름|학교\s*\/?\s*학년|보호자\s*성함|타임스탬프)/.test(question)) return;
+      const section = String(item?.section ?? '').trim() || '기타';
+      if (!sectionIndex.has(section)) {
+        sectionIndex.set(section, sections.length);
+        sections.push({ section, items: [] });
+      }
+      sections[sectionIndex.get(section)].items.push({ question, answer });
+    });
+  }
 
   return (
     <article className={`survey-card ${isParent ? 'is-parent' : 'is-student'}`}>
@@ -12695,7 +12712,16 @@ function SurveyCard({ survey }) {
           {survey.submitted_at ? <div><dt>제출</dt><dd>{formatSurveyDate(survey.submitted_at)}</dd></div> : null}
         </dl>
       </header>
-      {sections.length ? (
+      {isParent ? (
+        <div className="survey-card-body survey-parent-fields">
+          {parentFields.map((f) => (
+            <div key={f.key} className={`survey-field ${f.value ? '' : 'is-empty'}`}>
+              <div className="survey-field-label"><span className="survey-field-icon" aria-hidden="true">{f.icon}</span>{f.label}</div>
+              <div className="survey-field-value">{f.value || '응답 없음'}</div>
+            </div>
+          ))}
+        </div>
+      ) : sections.length ? (
         <div className="survey-card-body">
           {sections.map((group) => (
             <section key={group.section} className="survey-section">
