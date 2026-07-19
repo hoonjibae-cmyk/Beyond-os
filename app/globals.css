@@ -18662,6 +18662,9 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .month-summary-chip.absent, button.month-summary-chip.month-chip-button.absent{ background:var(--ap-absent, #af52de) !important; color:#ffffff !important; font-weight:800 !important; }
 .calendar-day.month-absent-day{ background:var(--ap-absent-fill, #f6ecfb) !important; border-color:color-mix(in srgb, var(--ap-absent, #af52de) 45%, transparent) !important; box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ap-absent, #af52de) 22%, transparent); }
 .calendar-day.month-absent-day strong{ color:#7d2fb0; }
+/* v41-85: 주별 보기 결석 칩 */
+.schedule-chip.activity-chip.absent{ background:var(--ap-absent, #af52de) !important; border-color:var(--ap-absent, #af52de) !important; color:#ffffff !important; }
+.schedule-chip.activity-chip.absent b{ color:#ffffff !important; }
 /* 범례 점 */
 .event-dot.match{ background:#c7c7cc; }
 .event-dot.deviation{ background:#5b9bf3; }

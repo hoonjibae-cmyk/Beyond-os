@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-84-month-absent-mark",
-  "version": "0.41.84",
+  "name": "beyond-os-v41-85-week-absent-mark",
+  "version": "0.41.85",
   "private": true,
   "scripts": {
     "dev": "next dev",
