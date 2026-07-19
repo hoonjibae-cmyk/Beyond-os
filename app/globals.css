@@ -18774,6 +18774,10 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .survey-field-icon{ font-size:14px; line-height:1; }
 .survey-field-value{ font-size:13.5px; color:#1d1d1f; line-height:1.6; white-space:pre-wrap; word-break:break-word; }
 .survey-parent-fields .survey-field.is-empty .survey-field-value{ color:#b0b4bd; font-style:normal; }
+.survey-schedule-list{ display:flex; flex-direction:column; gap:6px; }
+.survey-schedule-row{ display:grid; grid-template-columns:26px 1fr; align-items:start; gap:9px; }
+.survey-dow{ display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:8px; background:#1d4ed8; color:#fff; font-size:12px; font-weight:900; }
+.survey-dow-value{ font-size:13.5px; color:#1d1d1f; line-height:1.55; white-space:pre-wrap; word-break:break-word; padding-top:2px; }
 @media (max-width:900px){
   .survey-card-grid{ grid-template-columns:1fr; }
   .survey-upload-actions{ grid-template-columns:1fr; }

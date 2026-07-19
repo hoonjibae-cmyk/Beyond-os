@@ -12661,12 +12661,14 @@ function formatSurveyDate(value) {
   return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-// 학부모 설문에서 노출할 핵심 4개 항목 (설문 질문 키워드 → 간략 제목)
-const PARENT_SURVEY_FIELDS = [
-  { key: 'schedule', label: '요일별 스케줄', icon: '🗓️', test: /요일/ },
-  { key: 'special', label: '특별 일정', icon: '📌', test: /특별/ },
-  { key: 'academic', label: '학업 특이사항', icon: '📖', test: /특이/ },
-  { key: 'request', label: '센터 당부사항', icon: '💬', test: /당부/ },
+const SURVEY_WEEKDAYS = [
+  { short: '월', full: '월요일' },
+  { short: '화', full: '화요일' },
+  { short: '수', full: '수요일' },
+  { short: '목', full: '목요일' },
+  { short: '금', full: '금요일' },
+  { short: '토', full: '토요일' },
+  { short: '일', full: '일요일' },
 ];
 
 function SurveyCard({ survey }) {
@@ -12674,12 +12676,26 @@ function SurveyCard({ survey }) {
   const isParent = survey.survey_type === 'parent';
 
   // 학부모 설문: 핵심 4개 항목만 간략한 제목으로 표시
-  const parentFields = isParent
-    ? PARENT_SURVEY_FIELDS.map((field) => {
-      const hit = answers.find((a) => field.test.test(String(a?.question || '')) && String(a?.answer ?? '').trim());
-      return { ...field, value: hit ? String(hit.answer).trim() : '' };
-    })
-    : [];
+  const parentFields = isParent ? (() => {
+    // 요일별 스케줄: 월~일 각각 별도 질문이면 모두 모아서 요일별로 표시
+    const scheduleItems = [];
+    for (const wd of SURVEY_WEEKDAYS) {
+      const hit = answers.find((a) => String(a?.question || '').includes(wd.full) && String(a?.answer ?? '').trim());
+      if (hit) scheduleItems.push({ day: wd.short, value: String(hit.answer).trim() });
+    }
+    const single = (re) => {
+      const hit = answers.find((a) => re.test(String(a?.question || '')) && String(a?.answer ?? '').trim());
+      return hit ? String(hit.answer).trim() : '';
+    };
+    // 요일별 개별 질문이 없으면 '요일별 스케줄' 단일 질문으로 폴백
+    const scheduleFallback = scheduleItems.length ? '' : single(/요일/);
+    return [
+      { key: 'schedule', label: '요일별 스케줄', icon: '🗓️', items: scheduleItems, value: scheduleFallback },
+      { key: 'special', label: '특별 일정', icon: '📌', value: single(/특별/) },
+      { key: 'academic', label: '학업 특이사항', icon: '📖', value: single(/특이/) },
+      { key: 'request', label: '센터 당부사항', icon: '💬', value: single(/당부/) },
+    ];
+  })() : [];
 
   // 학생 설문: 기존 섹션 그룹 유지
   const sections = [];
@@ -12714,12 +12730,27 @@ function SurveyCard({ survey }) {
       </header>
       {isParent ? (
         <div className="survey-card-body survey-parent-fields">
-          {parentFields.map((f) => (
-            <div key={f.key} className={`survey-field ${f.value ? '' : 'is-empty'}`}>
-              <div className="survey-field-label"><span className="survey-field-icon" aria-hidden="true">{f.icon}</span>{f.label}</div>
-              <div className="survey-field-value">{f.value || '응답 없음'}</div>
-            </div>
-          ))}
+          {parentFields.map((f) => {
+            const hasItems = Array.isArray(f.items) && f.items.length > 0;
+            const isEmpty = !hasItems && !f.value;
+            return (
+              <div key={f.key} className={`survey-field ${isEmpty ? 'is-empty' : ''}`}>
+                <div className="survey-field-label"><span className="survey-field-icon" aria-hidden="true">{f.icon}</span>{f.label}</div>
+                {hasItems ? (
+                  <div className="survey-field-value survey-schedule-list">
+                    {f.items.map((it) => (
+                      <div key={it.day} className="survey-schedule-row">
+                        <span className="survey-dow">{it.day}</span>
+                        <span className="survey-dow-value">{it.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="survey-field-value">{f.value || '응답 없음'}</div>
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : sections.length ? (
         <div className="survey-card-body">
