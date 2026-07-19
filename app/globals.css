@@ -19278,6 +19278,17 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   background:var(--ap-accent) !important; border-color:var(--ap-accent) !important; color:#fff !important;
 }
 .mentoring-student-chip.selected span, .mentoring-student-chip.selected strong{ color:#fff !important; }
+/* v41-88: 활성(선택) 멘토 카드 — 파란 배경 위 담당/배정 요약 글씨가 안 보이던 문제 수정 */
+.mentoring-mentor-card.active-config strong,
+.mentoring-mentor-card.active-config span{ color:#fff !important; }
+/* v41-88: 담당학생(선택) 카드를 파란 강조로 — 회색 비담당 카드와 확실히 구분 */
+.mentoring-responsibility-chip.selected{
+  background:var(--ap-accent-tint) !important;
+  border-color:var(--ap-accent) !important;
+  box-shadow:0 0 0 2px rgba(0,113,227,.16) inset !important;
+}
+.mentoring-responsibility-chip.selected strong{ color:var(--ap-accent-press) !important; }
+.mentoring-responsibility-chip.selected span{ color:var(--ap-accent) !important; }
 .mentoring-slot-card.drag-over, .mentoring-drag-handle, .mentoring-day-tabs button em,
 .seat-picker-seat.selected, .kiosk-log-action-panel{
   background:var(--ap-accent-tint) !important; border-color:var(--ap-accent) !important; color:var(--ap-accent-press) !important;

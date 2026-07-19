@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-87-inactive-mentor-detach",
-  "version": "0.41.87",
+  "name": "beyond-os-v41-88-mentoring-config-contrast",
+  "version": "0.41.88",
   "private": true,
   "scripts": {
     "dev": "next dev",

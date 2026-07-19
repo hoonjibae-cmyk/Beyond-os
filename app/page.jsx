@@ -14195,7 +14195,7 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
           <div className="mentoring-responsibility-actions">
             <button type="button" className="primary" onClick={saveMentorStudentSettings} disabled={loading}>담당학생 저장</button>
             <button type="button" className="secondary" onClick={resetMentorStudentDraft} disabled={loading}>저장값으로 되돌리기</button>
-            <span>{selectedMentorForStudentConfig.mentor_name} 기준으로 흰색 카드는 담당학생, 회색 카드는 비담당학생입니다.</span>
+            <span>{selectedMentorForStudentConfig.mentor_name} 기준으로 파란색 카드는 담당학생, 회색 카드는 비담당학생입니다.</span>
           </div>
         </div>
       ) : (
