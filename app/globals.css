@@ -18760,7 +18760,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .survey-card-body{ padding:6px 16px 14px; }
 .survey-section{ margin-top:12px; }
 .survey-section > h5{ margin:0 0 8px; font-size:12px; font-weight:800; color:#0071e3; letter-spacing:-.01em; }
-.survey-qa{ margin:0; display:flex; flex-direction:column; gap:8px; }
+.survey-qa{ margin:0; display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; align-items:start; }
 .survey-qa-row{ display:flex; flex-direction:column; gap:3px; padding:9px 12px; background:#f5f5f7; border-radius:10px; }
 .survey-qa-row dt{ margin:0; font-size:12px; font-weight:700; color:#3a3a3c; line-height:1.45; }
 .survey-qa-row dd{ margin:0; font-size:13px; color:#1d1d1f; line-height:1.55; white-space:pre-wrap; }
@@ -18798,6 +18798,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 @media (max-width:900px){
   .survey-card-grid{ grid-template-columns:1fr; }
   .survey-upload-actions{ grid-template-columns:1fr; }
+  .survey-qa{ grid-template-columns:1fr; }
 }
 /* APPLE THEME END */
 
