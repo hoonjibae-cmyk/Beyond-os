@@ -1954,6 +1954,9 @@ export default function Page() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [studentHistoryFocusStudentId, setStudentHistoryFocusStudentId] = useState('');
   const [studentInfoFocusStudentId, setStudentInfoFocusStudentId] = useState('');
+  // 메뉴(학생 시간표·학습 관리·학생 기본정보) 간 이동 시 마지막으로 보던 학생을 연속으로 이어서 보여주기 위한 공용 포커스
+  const [globalFocusStudentId, setGlobalFocusStudentId] = useState('');
+  const prevActiveTabRef = useRef('dashboard');
   const [mentorCommentFocusRequest, setMentorCommentFocusRequest] = useState(null);
   const [studentCareMentoringContext, setStudentCareMentoringContext] = useState(null);
   const [seats, setSeats] = useState(STATIC_SEATS);
@@ -2341,6 +2344,29 @@ export default function Page() {
     if (isLoggedIn && (activeTab === 'studentHistory' || activeTab === 'studentInfo')) loadSurveys();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn, activeTab]);
+
+  // 학생 중심 메뉴로 '이동'할 때, 직전에 보던 학생(globalFocusStudentId)을 그대로 이어서 보여줍니다.
+  // (탭을 벗어나지 않은 상태에서의 선택 변경은 건드리지 않도록, 실제 탭 전환 시에만 적용)
+  useEffect(() => {
+    const prevTab = prevActiveTabRef.current;
+    prevActiveTabRef.current = activeTab;
+    if (!isLoggedIn) return;
+    if (prevTab === activeTab) return;
+    const id = String(globalFocusStudentId || '');
+    if (!id) return;
+    if (activeTab === 'schedules') {
+      if (String(scheduleStudentFilter) !== id) setScheduleStudentFilter(id);
+    } else if (activeTab === 'studentInfo') {
+      if (String(studentInfoFocusStudentId) !== id) setStudentInfoFocusStudentId(id);
+    } else if (activeTab === 'studentHistory') {
+      if (String(attendanceStudentFilter) !== id) {
+        setAttendanceStudentFilter(id);
+        setStudentHistoryFocusStudentId(id);
+        loadAttendanceHistory(attendanceStart, attendanceEnd, id);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, globalFocusStudentId, isLoggedIn]);
 
   function markLocalMutation(reason = 'local', url = '') {
     const now = Date.now();
@@ -4216,6 +4242,7 @@ export default function Page() {
     const nextContext = mentoringContext
       ? { ...mentoringContext, source: 'mentoring', studentId }
       : null;
+    setGlobalFocusStudentId(String(studentId));
     setActiveTab('studentHistory');
     setAttendanceStudentFilter(studentId);
     setAttendanceStatusFilter('all');
@@ -4237,12 +4264,14 @@ export default function Page() {
   // 좌석배치도에서 선택한 학생을 각 메뉴로 바로 이동(PC 전용 빠른 이동 버튼)
   function goToStudentInfoFromSeat(studentId) {
     if (!studentId) return;
+    setGlobalFocusStudentId(String(studentId));
     setStudentInfoFocusStudentId(String(studentId));
     setActiveTab('studentInfo');
   }
 
   function goToScheduleFromSeat(studentId) {
     if (!studentId) return;
+    setGlobalFocusStudentId(String(studentId));
     setScheduleStudentFilter(String(studentId));
     setActiveTab('schedules');
   }
@@ -4252,6 +4281,7 @@ export default function Page() {
     const sid = String(studentId);
     const today = getKstDateString();
     const range = { start: addDays(today, -6), end: today };
+    setGlobalFocusStudentId(sid);
     setActiveTab('studentHistory');
     setAttendanceStudentFilter(sid);
     setAttendanceStatusFilter('all');
@@ -5020,7 +5050,7 @@ export default function Page() {
               scheduleBaseDate={scheduleBaseDate}
               setScheduleBaseDate={setScheduleBaseDate}
               scheduleStudentFilter={scheduleStudentFilter}
-              setScheduleStudentFilter={setScheduleStudentFilter}
+              setScheduleStudentFilter={(value) => { setScheduleStudentFilter(value); if (value && value !== 'all') setGlobalFocusStudentId(String(value)); }}
               scheduleRows={scheduleRows}
               scheduleBreakRows={scheduleBreakRows}
               scheduleBreaksBySchedule={scheduleBreaksBySchedule}
@@ -5129,6 +5159,7 @@ export default function Page() {
                 const nextStudentId = studentId || '';
                 setAttendanceStudentFilter(nextStudentId);
                 setStudentHistoryFocusStudentId(nextStudentId);
+                if (nextStudentId) setGlobalFocusStudentId(String(nextStudentId));
                 if (!nextStudentId || String(nextStudentId) !== String(studentCareMentoringContext?.studentId || '')) {
                   setStudentCareMentoringContext(null);
                 }
@@ -5166,7 +5197,7 @@ export default function Page() {
             currentUser={currentUser}
             setMessage={setMessage}
             focusStudentId={studentInfoFocusStudentId}
-            setFocusStudentId={setStudentInfoFocusStudentId}
+            setFocusStudentId={(value) => { setStudentInfoFocusStudentId(value); if (value) setGlobalFocusStudentId(String(value)); }}
             onStudentUpdated={() => loadDashboard({ silent: true, suppressChangeNotice: true })}
             surveyProps={{
               surveys,

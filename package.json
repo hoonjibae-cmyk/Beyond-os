@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-88-mentoring-config-contrast",
-  "version": "0.41.88",
+  "name": "beyond-os-v41-89-sticky-student-focus",
+  "version": "0.41.89",
   "private": true,
   "scripts": {
     "dev": "next dev",
