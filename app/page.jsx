@@ -109,6 +109,7 @@ const TABS = [
   ['dailyReports', '데일리 리포트'],
   ['weeklyReports', '위클리 리포트'],
   ['ranking', '순공시간 랭킹보드'],
+  ['studentInfo', '학생 기본정보'],
   ['studentHistory', '학습 관리'],
   ['points', '상벌점 관리'],
   ['mentoring', '멘토링 시간표'],
@@ -123,6 +124,7 @@ const USER_PERMISSION_TABS = [
   ['dailyReports', '데일리 리포트'],
   ['weeklyReports', '위클리 리포트'],
   ['ranking', '순공시간 랭킹보드'],
+  ['studentInfo', '학생 기본정보'],
   ['studentHistory', '학습 관리'],
   ['points', '상벌점 관리'],
   ['mentoring', '멘토링 시간표'],
@@ -1951,6 +1953,7 @@ export default function Page() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [studentHistoryFocusStudentId, setStudentHistoryFocusStudentId] = useState('');
+  const [studentInfoFocusStudentId, setStudentInfoFocusStudentId] = useState('');
   const [mentorCommentFocusRequest, setMentorCommentFocusRequest] = useState(null);
   const [studentCareMentoringContext, setStudentCareMentoringContext] = useState(null);
   const [seats, setSeats] = useState(STATIC_SEATS);
@@ -2335,7 +2338,7 @@ export default function Page() {
   }, [isLoggedIn, activeTab, attendanceStudentFilter]);
 
   useEffect(() => {
-    if (isLoggedIn && activeTab === 'studentHistory') loadSurveys();
+    if (isLoggedIn && (activeTab === 'studentHistory' || activeTab === 'studentInfo')) loadSurveys();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn, activeTab]);
 
@@ -4231,6 +4234,34 @@ export default function Page() {
     setMessage('멘토링 시간표로 돌아왔습니다. 다음 학생을 선택해 코멘트를 이어서 입력하세요.');
   }
 
+  // 좌석배치도에서 선택한 학생을 각 메뉴로 바로 이동(PC 전용 빠른 이동 버튼)
+  function goToStudentInfoFromSeat(studentId) {
+    if (!studentId) return;
+    setStudentInfoFocusStudentId(String(studentId));
+    setActiveTab('studentInfo');
+  }
+
+  function goToScheduleFromSeat(studentId) {
+    if (!studentId) return;
+    setScheduleStudentFilter(String(studentId));
+    setActiveTab('schedules');
+  }
+
+  function goToStudentCareFromSeat(studentId) {
+    if (!studentId) return;
+    const sid = String(studentId);
+    const today = getKstDateString();
+    const range = { start: addDays(today, -6), end: today };
+    setActiveTab('studentHistory');
+    setAttendanceStudentFilter(sid);
+    setAttendanceStatusFilter('all');
+    setAttendanceSummaryCollapsed(false);
+    setStudentHistoryFocusStudentId(sid);
+    setAttendanceStart(range.start);
+    setAttendanceEnd(range.end);
+    loadAttendanceHistory(range.start, range.end, sid);
+  }
+
   function navigateMentoringCareStudent(studentId, nextContext = null) {
     if (!studentId) return;
     openStudentCareFromMentoring(
@@ -5125,6 +5156,18 @@ export default function Page() {
               externalStart: attendanceStart,
               externalEnd: attendanceEnd,
             }}
+          />
+        ) : null}
+
+        {isActiveTabAllowed && activeTab === 'studentInfo' ? (
+          <StudentInfoTab
+            students={students}
+            apiFetch={apiFetch}
+            currentUser={currentUser}
+            setMessage={setMessage}
+            focusStudentId={studentInfoFocusStudentId}
+            setFocusStudentId={setStudentInfoFocusStudentId}
+            onStudentUpdated={() => loadDashboard({ silent: true, suppressChangeNotice: true })}
             surveyProps={{
               surveys,
               uploading: surveyUploading,
@@ -5245,6 +5288,17 @@ export default function Page() {
           <button className="mobile-panel-close" onClick={closePanel} aria-label="좌석 상세 패널 닫기">닫기 ✕</button>
         </div>
         <div className="mobile-panel-focus-note">현장 조작 우선: 출결 요약과 상태 변경을 먼저 확인하세요.</div>
+
+        {form.name && form.studentId ? (
+          <div className="panel-quick-nav" role="group" aria-label="선택 학생 바로가기">
+            <span className="panel-quick-nav-label">바로가기</span>
+            <div className="panel-quick-nav-buttons">
+              <button type="button" onClick={() => goToScheduleFromSeat(form.studentId)}>시간표</button>
+              <button type="button" onClick={() => goToStudentCareFromSeat(form.studentId)}>학습관리</button>
+              <button type="button" onClick={() => goToStudentInfoFromSeat(form.studentId)}>학생 기본정보</button>
+            </div>
+          </div>
+        ) : null}
 
         <PanelSection title="학생 기본정보" defaultMobileOpen={false} className="readonly-student-card">
 {form.name ? (
@@ -12563,9 +12617,8 @@ function AttendanceTab({
 
 
 
-function StudentCareTab({ attendanceProps = {}, historyProps = {}, surveyProps = {} }) {
+function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
   const selectedStudentId = attendanceProps.studentFilter || historyProps.focusStudentId || '';
-  const selectedStudent = (attendanceProps.students || historyProps.students || []).find((student) => String(student.id) === String(selectedStudentId));
   const [historySummary, setHistorySummary] = useState(null);
 
   return (
@@ -12639,17 +12692,183 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {}, surveyProps =
           onSummaryChange={setHistorySummary}
         />
       </div>
+    </section>
+  );
+}
 
-      <div id="student-care-survey-section" className="student-care-section-block student-care-survey-section">
-        <div className="student-care-section-title survey-record-title">
-          <span>사전 설문</span>
-          <div>
-            <h3>학생·학부모 사전 설문</h3>
-            <p>구글폼 응답 엑셀(.xlsx)을 업로드하면 학생 이름으로 자동 매칭되어, 위에서 선택한 학생의 설문이 아래에 표시됩니다.</p>
-          </div>
+const STUDENT_STATUS_TEXT = { active: '활성', inactive: '비활성', paused: '일시정지', pending: '대기' };
+
+function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focusStudentId = '', setFocusStudentId, onStudentUpdated, surveyProps = {} }) {
+  const [selectedId, setSelectedId] = useState(String(focusStudentId || ''));
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [savedMeta, setSavedMeta] = useState(null);
+  const loadedNoteIdRef = useRef('');
+
+  // 좌석배치도 등에서 넘어온 학생 포커스 반영
+  useEffect(() => {
+    if (focusStudentId && String(focusStudentId) !== String(selectedId)) {
+      setSelectedId(String(focusStudentId));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusStudentId]);
+
+  const sortedStudents = useMemo(() => {
+    return [...(students || [])].sort((a, b) => {
+      const sa = a?.status === 'inactive' ? 1 : 0;
+      const sb = b?.status === 'inactive' ? 1 : 0;
+      if (sa !== sb) return sa - sb;
+      return String(a?.name || '').localeCompare(String(b?.name || ''), 'ko');
+    });
+  }, [students]);
+
+  const selectedStudent = useMemo(
+    () => (students || []).find((s) => String(s.id) === String(selectedId)) || null,
+    [students, selectedId]
+  );
+
+  // 선택 학생이 바뀌면 특이사항 초안을 저장된 값으로 초기화(타이핑 중 덮어쓰기 방지)
+  useEffect(() => {
+    if (!selectedStudent) { loadedNoteIdRef.current = ''; setNoteDraft(''); setSavedMeta(null); return; }
+    if (loadedNoteIdRef.current !== String(selectedStudent.id)) {
+      loadedNoteIdRef.current = String(selectedStudent.id);
+      setNoteDraft(selectedStudent.admin_note || '');
+      setSavedMeta(selectedStudent.admin_note_updated_at
+        ? { at: selectedStudent.admin_note_updated_at, by: selectedStudent.admin_note_updated_by }
+        : null);
+    }
+  }, [selectedStudent]);
+
+  const guardians = useMemo(() => {
+    if (!selectedStudent) return [];
+    return normalizeGuardiansForEditor(selectedStudent).filter((g) => g.isActive !== false && (g.phone || g.guardianName));
+  }, [selectedStudent]);
+
+  const noteDirty = selectedStudent ? String(noteDraft || '') !== String(selectedStudent.admin_note || '') : false;
+
+  async function saveNote() {
+    if (!selectedId || !apiFetch) return;
+    try {
+      setNoteSaving(true);
+      const data = await apiFetch('/api/student-note', {
+        method: 'POST',
+        body: JSON.stringify({ studentId: selectedId, note: noteDraft }),
+      });
+      setSavedMeta(data?.student?.admin_note_updated_at
+        ? { at: data.student.admin_note_updated_at, by: data.student.admin_note_updated_by }
+        : null);
+      setMessage?.('학생 특이사항을 저장했습니다.');
+      onStudentUpdated?.();
+    } catch (error) {
+      const msg = error?.message || '특이사항 저장에 실패했습니다.';
+      setMessage?.(msg);
+      alert(msg);
+    } finally {
+      setNoteSaving(false);
+    }
+  }
+
+  return (
+    <section className="sinfo-page">
+      <div className="content-card sinfo-picker">
+        <div className="sinfo-picker-head">
+          <strong>학생 선택</strong>
+          <span>학생을 선택하면 개인·학부모 정보, 관리자 특이사항, 사전 설문을 한 화면에서 확인·관리합니다. (설정 &gt; 학생 관리와는 별개 메뉴입니다)</span>
         </div>
-        <SurveyPanel surveyProps={surveyProps} selectedStudent={selectedStudent} selectedStudentId={selectedStudentId} />
+        <div className="field sinfo-picker-field">
+          <label>학생</label>
+          <select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setFocusStudentId?.(event.target.value); }}>
+            <option value="">학생을 선택하세요</option>
+            {sortedStudents.map((student) => (
+              <option key={student.id} value={student.id}>
+                {student.name}{student.status === 'inactive' ? ' (비활성)' : ''} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
+
+      {!selectedStudent ? (
+        <p className="sinfo-select-note">상단에서 학생을 선택하세요.</p>
+      ) : (
+        <>
+          <div className="sinfo-grid">
+            <div className="content-card sinfo-card">
+              <div className="sinfo-card-head"><h3>개인 신상 정보</h3></div>
+              <div className="sinfo-name-row">
+                <span className="sinfo-name">{selectedStudent.name}</span>
+                {selectedStudent.nickname ? <span className="sinfo-nickname">{selectedStudent.nickname}</span> : null}
+                <span className={`sinfo-status ${selectedStudent.status || 'active'}`}>{STUDENT_STATUS_TEXT[selectedStudent.status] || selectedStudent.status || '활성'}</span>
+              </div>
+              <dl className="sinfo-fields">
+                <div><dt>학교</dt><dd>{selectedStudent.school || '-'}</dd></div>
+                <div><dt>학년</dt><dd>{selectedStudent.grade || '-'}</dd></div>
+                <div><dt>학생 연락처</dt><dd>{selectedStudent.student_phone || '-'}</dd></div>
+                <div><dt>기본 좌석</dt><dd>{selectedStudent.default_seat_no ? `${String(selectedStudent.default_seat_no).padStart(2, '0')}번` : '미배정'}</dd></div>
+              </dl>
+              <p className="sinfo-hint">개인 신상 정보는 설정 &gt; 학생 관리에서 수정합니다.</p>
+            </div>
+
+            <div className="content-card sinfo-card">
+              <div className="sinfo-card-head"><h3>학부모 정보</h3></div>
+              {guardians.length ? (
+                <div className="sinfo-guardians">
+                  {guardians.map((g) => (
+                    <div key={g.id} className="sinfo-guardian-row">
+                      <span className={`sinfo-guardian-badge ${g.isPrimary ? 'primary' : ''}`}>{g.relationship || '보호자'}</span>
+                      <div className="sinfo-guardian-body">
+                        <div className="sinfo-guardian-line">
+                          {g.guardianName ? <strong>{g.guardianName}</strong> : null}
+                          <span className="sinfo-guardian-phone">{g.phone || '연락처 없음'}</span>
+                          {g.isPrimary ? <em className="sinfo-guardian-primary">대표</em> : null}
+                        </div>
+                        <div className="sinfo-guardian-tags">
+                          <span className={g.receiveDailyReport ? 'on' : 'off'}>데일리 {g.receiveDailyReport ? '수신' : '미수신'}</span>
+                          <span className={g.receiveWeeklyReport ? 'on' : 'off'}>위클리 {g.receiveWeeklyReport ? '수신' : '미수신'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="sinfo-empty">등록된 학부모 정보가 없습니다. 설정 &gt; 학생 관리에서 보호자를 추가하세요.</p>
+              )}
+              <p className="sinfo-hint">학부모 정보는 설정 &gt; 학생 관리에서 수정합니다.</p>
+            </div>
+          </div>
+
+          <div className="content-card sinfo-note-card">
+            <div className="sinfo-card-head">
+              <h3>관리자 특이사항</h3>
+              <span className="sinfo-note-meta">
+                {savedMeta?.at ? `최종 수정 ${formatSurveyDate(savedMeta.at)}${savedMeta.by ? ` · ${savedMeta.by}` : ''}` : '아직 작성된 특이사항이 없습니다.'}
+              </span>
+            </div>
+            <p className="sinfo-note-desc">상담·생활지도·학습태도 등 관리에 참고할 특이사항을 자유롭게 기재하세요. 이 학생을 선택한 관리자에게만 이 화면에서 보입니다.</p>
+            <textarea
+              className="sinfo-note-input"
+              rows={6}
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              placeholder="예) 수학 개념 부족으로 기초 보강 중 / 저녁 시간 집중도 낮음 / 학부모 요청: 주 2회 진도 확인 문자"
+            />
+            <div className="sinfo-note-actions">
+              {noteDirty ? <span className="sinfo-note-dirty">저장하지 않은 변경사항이 있습니다.</span> : <span />}
+              <button type="button" className="primary" onClick={saveNote} disabled={noteSaving || !noteDirty}>
+                {noteSaving ? '저장 중...' : '특이사항 저장'}
+              </button>
+            </div>
+          </div>
+
+          <div className="content-card sinfo-survey-card">
+            <div className="sinfo-card-head">
+              <h3>사전 설문</h3>
+              <span className="sinfo-note-meta">구글폼 응답 엑셀(.xlsx)을 업로드하면 학생 이름으로 자동 매칭됩니다.</span>
+            </div>
+            <SurveyPanel surveyProps={surveyProps} selectedStudent={selectedStudent} selectedStudentId={selectedId} />
+          </div>
+        </>
+      )}
     </section>
   );
 }

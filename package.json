@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-82-survey-order-align",
-  "version": "0.41.82",
+  "name": "beyond-os-v41-83-student-info-tab",
+  "version": "0.41.83",
   "private": true,
   "scripts": {
     "dev": "next dev",
