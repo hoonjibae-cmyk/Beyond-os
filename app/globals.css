@@ -18778,6 +18778,23 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .survey-schedule-row{ display:grid; grid-template-columns:26px 1fr; align-items:start; gap:9px; }
 .survey-dow{ display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:8px; background:#1d4ed8; color:#fff; font-size:12px; font-weight:900; }
 .survey-dow-value{ font-size:13.5px; color:#1d1d1f; line-height:1.55; white-space:pre-wrap; word-break:break-word; padding-top:2px; }
+/* v41-81: 학생 설문 성적/목표 성적표 */
+.survey-grade-wrap{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0 2px; }
+.survey-grade-col{ padding:12px 13px; border:1px solid #e6ebf5; border-radius:14px; background:#f7faff; display:flex; flex-direction:column; gap:10px; }
+.survey-grade-col.goal{ border-color:#d6f0e2; background:#f3fbf6; }
+.survey-grade-col-title{ font-size:12.5px; font-weight:900; color:#1d4ed8; letter-spacing:-.01em; }
+.survey-grade-col.goal .survey-grade-col-title{ color:#12813f; }
+.survey-grade-group{ display:flex; flex-direction:column; gap:5px; }
+.survey-grade-tag{ align-self:flex-start; font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; background:#e8f1fe; color:#1d4ed8; }
+.survey-grade-tag.mock{ background:#f1ebfb; color:#7d2fb0; }
+.survey-grade-col.goal .survey-grade-tag{ background:#e7f9ee; color:#12813f; }
+.survey-grade-col.goal .survey-grade-tag.mock{ background:#eafaf0; color:#0f766e; }
+.survey-grade-rows{ display:flex; flex-direction:column; gap:4px; }
+.survey-grade-row{ display:flex; align-items:baseline; gap:7px; font-size:13px; color:#1d1d1f; line-height:1.5; }
+.survey-subj{ flex:0 0 auto; min-width:34px; font-size:11.5px; font-weight:800; color:#3a3a3c; background:#eceef2; border-radius:7px; padding:2px 7px; text-align:center; }
+.survey-grade-val{ white-space:pre-wrap; word-break:break-word; }
+.survey-grade-empty{ margin:0; font-size:12px; color:#b0b4bd; }
+@media (max-width:900px){ .survey-grade-wrap{ grid-template-columns:1fr; } }
 @media (max-width:900px){
   .survey-card-grid{ grid-template-columns:1fr; }
   .survey-upload-actions{ grid-template-columns:1fr; }

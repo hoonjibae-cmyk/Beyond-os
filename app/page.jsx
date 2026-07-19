@@ -12671,6 +12671,13 @@ const SURVEY_WEEKDAYS = [
   { short: '일', full: '일요일' },
 ];
 
+// 학생 설문 성적/목표 표기에 쓰는 과목 키워드(긴 표기 우선)
+const SURVEY_SUBJECTS = ['생활과 윤리', '생활과윤리', '통합사회', '통합과학', '한국사', '제2외국어', '국어', '수학', '영어', '사회', '과학', '물리', '화학', '생명', '지구', '윤리', '역사', '지리', '경제', '정치', '한문', '탐구'];
+function surveySubjectOf(question) {
+  const q = String(question || '');
+  return SURVEY_SUBJECTS.find((s) => q.includes(s)) || '';
+}
+
 function SurveyCard({ survey }) {
   const answers = Array.isArray(survey.answers) ? survey.answers : [];
   const isParent = survey.survey_type === 'parent';
@@ -12697,23 +12704,56 @@ function SurveyCard({ survey }) {
     ];
   })() : [];
 
-  // 학생 설문: 기존 섹션 그룹 유지
+  // 학생 설문: 시설/환경 제외, 성적/목표는 별도 블록으로 재구성, 나머지는 섹션 유지
   const sections = [];
+  const grades = { currentNaesin: [], currentMock: [], goalNaesin: [], goalMock: [] };
   if (!isParent) {
     const sectionIndex = new Map();
     answers.forEach((item) => {
       const answer = String(item?.answer ?? '').trim();
       if (!answer) return;
       const question = String(item?.question ?? '').trim();
+      const section = String(item?.section ?? '').trim();
       if (/^(학생\s*이름|학교\s*\/?\s*학년|보호자\s*성함|타임스탬프)/.test(question)) return;
-      const section = String(item?.section ?? '').trim() || '기타';
-      if (!sectionIndex.has(section)) {
-        sectionIndex.set(section, sections.length);
-        sections.push({ section, items: [] });
+      // 1) 시설·환경 응답 제외
+      if (/시설|환경/.test(question) || /시설|환경/.test(section)) return;
+      // 2) 성적/목표(내신·모의고사)는 별도 성적표 블록으로
+      const isGoal = /목표/.test(question);
+      const isMock = /모의/.test(question);
+      const isNaesin = /내신|등급/.test(question);
+      if (isMock || isNaesin) {
+        const entry = { subject: surveySubjectOf(question), value: answer, question };
+        if (isGoal) (isMock ? grades.goalMock : grades.goalNaesin).push(entry);
+        else (isMock ? grades.currentMock : grades.currentNaesin).push(entry);
+        return;
       }
-      sections[sectionIndex.get(section)].items.push({ question, answer });
+      // 3) 나머지는 기존 섹션 그룹 유지
+      const sectionKey = section || '기타';
+      if (!sectionIndex.has(sectionKey)) {
+        sectionIndex.set(sectionKey, sections.length);
+        sections.push({ section: sectionKey, items: [] });
+      }
+      sections[sectionIndex.get(sectionKey)].items.push({ question, answer });
     });
   }
+  const hasGrades = !isParent && (grades.currentNaesin.length || grades.currentMock.length || grades.goalNaesin.length || grades.goalMock.length);
+
+  const renderGradeGroup = (label, rows, tone = '') => {
+    if (!rows.length) return null;
+    return (
+      <div className="survey-grade-group">
+        <span className={`survey-grade-tag ${tone}`}>{label}</span>
+        <div className="survey-grade-rows">
+          {rows.map((r, i) => (
+            <div key={i} className="survey-grade-row">
+              {r.subject ? <span className="survey-subj">{r.subject}</span> : null}
+              <span className="survey-grade-val">{r.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <article className={`survey-card ${isParent ? 'is-parent' : 'is-student'}`}>
@@ -12752,8 +12792,24 @@ function SurveyCard({ survey }) {
             );
           })}
         </div>
-      ) : sections.length ? (
+      ) : (hasGrades || sections.length) ? (
         <div className="survey-card-body">
+          {hasGrades ? (
+            <div className="survey-grade-wrap">
+              <div className="survey-grade-col current">
+                <div className="survey-grade-col-title">현재 성적 · 1학기</div>
+                {renderGradeGroup('내신', grades.currentNaesin)}
+                {renderGradeGroup('모의고사', grades.currentMock, 'mock')}
+                {(!grades.currentNaesin.length && !grades.currentMock.length) ? <p className="survey-grade-empty">응답 없음</p> : null}
+              </div>
+              <div className="survey-grade-col goal">
+                <div className="survey-grade-col-title">2학기 목표</div>
+                {renderGradeGroup('내신', grades.goalNaesin)}
+                {renderGradeGroup('모의고사', grades.goalMock, 'mock')}
+                {(!grades.goalNaesin.length && !grades.goalMock.length) ? <p className="survey-grade-empty">응답 없음</p> : null}
+              </div>
+            </div>
+          ) : null}
           {sections.map((group) => (
             <section key={group.section} className="survey-section">
               <h5>{group.section}</h5>
