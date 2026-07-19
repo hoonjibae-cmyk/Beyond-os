@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-91-parent-survey-special-detail",
-  "version": "0.41.91",
+  "name": "beyond-os-v41-92-mentoring-capacity-active-only",
+  "version": "0.41.92",
   "private": true,
   "scripts": {
     "dev": "next dev",

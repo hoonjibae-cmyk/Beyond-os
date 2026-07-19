@@ -1274,14 +1274,15 @@ async function moveDateAssignment(supabase, body) {
     return { moved: false, assignmentId: assignment.id, scheduleDate, targetDateSlotId };
   }
 
-  const { count, error: countError } = await supabase
+  const { data: moveSlotRows, error: countError } = await supabase
     .from('mentoring_date_assignments')
-    .select('id', { count: 'exact', head: true })
+    .select('id, students(status)')
     .eq('date_slot_id', targetDateSlotId)
     .eq('is_active', true)
     .neq('id', assignment.id);
   if (countError) throw countError;
-  if (Number(count || 0) >= Number(targetSlot.max_capacity || 4)) {
+  const activeMoveCount = (moveSlotRows || []).filter((row) => row.students?.status !== 'inactive').length;
+  if (activeMoveCount >= Number(targetSlot.max_capacity || 4)) {
     const error = new Error(`${scheduleDate} ${targetSlot.slot_label}은 최대 ${targetSlot.max_capacity || 4}명까지만 배정할 수 있습니다.`);
     error.status = 400;
     throw error;
@@ -1349,13 +1350,13 @@ async function assignDateStudents(supabase, body) {
   if (existingError) throw existingError;
   const existingByStudent = new Map((existingAssignments || []).map((item) => [String(item.student_id), item]));
 
-  const { count, error: countError } = await supabase
+  const { data: dateSlotRows, error: countError } = await supabase
     .from('mentoring_date_assignments')
-    .select('id', { count: 'exact', head: true })
+    .select('id, students(status)')
     .eq('date_slot_id', dateSlotId)
     .eq('is_active', true);
   if (countError) throw countError;
-  let slotCount = Number(count || 0);
+  let slotCount = (dateSlotRows || []).filter((row) => row.students?.status !== 'inactive').length;
 
   const inserts = [];
   const duplicateStudents = [];
@@ -1525,13 +1526,14 @@ async function assignStudents(supabase, body) {
   const duplicateWarnings = [];
   const slotCounts = {};
   for (const slot of targetSlots) {
-    const { count, error: countError } = await supabase
+    // 정원 계산 시 비활성 학생의 기존 배정은 제외합니다.(비활성화 이전에 남은 배정이 정원을 부풀리지 않도록)
+    const { data: slotRows, error: countError } = await supabase
       .from('mentoring_assignments')
-      .select('id', { count: 'exact', head: true })
+      .select('id, students(status)')
       .eq('slot_id', slot.id)
       .eq('is_active', true);
     if (countError) throw countError;
-    slotCounts[slot.id] = Number(count || 0);
+    slotCounts[slot.id] = (slotRows || []).filter((row) => row.students?.status !== 'inactive').length;
   }
 
   for (const slot of targetSlots) {
