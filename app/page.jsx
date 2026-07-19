@@ -12735,6 +12735,24 @@ function SurveyCard({ survey }) {
       }
       sections[sectionIndex.get(sectionKey)].items.push({ question, answer });
     });
+    // 강점·약점: '자신 없는 과목 → 그 과목이 어려운 이유 → 자신 있는 과목' 순으로 재배치
+    const strengthRank = (q) => {
+      if (/자신\s*없/.test(q)) return 0;
+      if (/어려운\s*이유|어려운\s*점|왜.*어렵/.test(q)) return 1;
+      if (/자신\s*있/.test(q)) return 2;
+      return -1;
+    };
+    sections.forEach((group) => {
+      const slots = [];
+      const picked = [];
+      group.items.forEach((it, i) => {
+        if (strengthRank(it.question) >= 0) { slots.push(i); picked.push(it); }
+      });
+      if (picked.length > 1) {
+        picked.sort((a, b) => strengthRank(a.question) - strengthRank(b.question));
+        slots.forEach((slotIdx, k) => { group.items[slotIdx] = picked[k]; });
+      }
+    });
   }
   const hasGrades = !isParent && (grades.currentNaesin.length || grades.currentMock.length || grades.goalNaesin.length || grades.goalMock.length);
 

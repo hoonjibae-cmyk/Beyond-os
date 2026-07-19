@@ -18745,7 +18745,8 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .survey-upload-status{ margin:10px 0 0; color:#0071e3; font-size:12.5px; font-weight:600; }
 .survey-select-note{ margin:0; padding:16px 18px; background:#f5f5f7; border:1px solid #ececef; border-radius:14px; color:#6e6e73; font-size:13px; line-height:1.55; }
 .survey-card-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); gap:14px; align-items:start; }
-.survey-card{ background:#fff; border:1px solid #e3e3e6; border-radius:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); overflow:hidden; }
+/* 학생/학부모 카드의 머리글·본문 시작 높이를 같은 행끼리 맞춤(서브그리드) */
+.survey-card{ background:#fff; border:1px solid #e3e3e6; border-radius:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); overflow:hidden; display:grid; grid-template-rows:subgrid; grid-row:span 2; }
 .survey-card-head{ padding:14px 16px 12px; border-bottom:1px solid #ededf0; background:#fafafd; }
 .survey-card.is-parent .survey-card-head{ background:#eef4fe; }
 .survey-card-title{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }

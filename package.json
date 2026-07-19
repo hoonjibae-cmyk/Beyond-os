@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-81-1-student-survey-2col",
-  "version": "0.41.81",
+  "name": "beyond-os-v41-82-survey-order-align",
+  "version": "0.41.82",
   "private": true,
   "scripts": {
     "dev": "next dev",
