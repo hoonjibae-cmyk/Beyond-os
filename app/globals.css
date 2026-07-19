@@ -6342,6 +6342,7 @@ button.danger {
     margin: 0 !important;
     font-size: 22px !important;
     line-height: 1.15 !important;
+    color: #fff !important;
   }
 
   .mobile-panel-close {
@@ -18370,6 +18371,8 @@ h1,h2,h3{ color:var(--ap-text); }
 .hint{ color:var(--ap-text-3) !important; }
 .readonly-main-name, .pname{ color:var(--ap-text) !important; }
 .panel-guardian-title{ color:var(--ap-text-3) !important; }
+/* 밝은 패널 배경에서 보호자 연락처(전화번호)가 흰색으로 표시되어 안 보이던 문제 수정 */
+.panel-guardian-row strong{ color:var(--ap-text) !important; }
 .history{ border-top:1px solid var(--ap-sep) !important; }
 .history-item{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-radius:12px !important; box-shadow:var(--ap-shadow-sm) !important; }
 
