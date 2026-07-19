@@ -306,6 +306,16 @@ export async function DELETE(request) {
 
       if (error) throw error;
 
+      // 비활성화 시 멘토링 연결(멘토별 담당학생 + 차시 템플릿 배정 + 오늘 이후 날짜별 배정)을 즉시 해제합니다.
+      // 앱의 다른 해제 로직과 동일하게 소프트 삭제(is_active=false)로 처리하며,
+      // 테이블이 아직 없거나 오류가 나도 비활성화 자체는 실패하지 않도록 무시합니다.
+      const detachToday = getKstDateString();
+      await Promise.allSettled([
+        supabase.from('mentoring_mentor_students').update({ is_active: false }).eq('student_id', studentId).eq('is_active', true),
+        supabase.from('mentoring_assignments').update({ is_active: false }).eq('student_id', studentId).eq('is_active', true),
+        supabase.from('mentoring_date_assignments').update({ is_active: false }).eq('student_id', studentId).eq('is_active', true).gte('schedule_date', detachToday),
+      ]);
+
       await writeUserActionLog(supabase, request, {
         actionType: 'student.deactivate',
         targetType: 'student',

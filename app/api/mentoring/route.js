@@ -770,12 +770,14 @@ async function loadAll(supabase, options = {}) {
     .order('start_time', { ascending: true });
   if (slotsError) throw slotsError;
 
-  const { data: assignments, error: assignmentsError } = await supabase
+  const { data: assignmentsRaw, error: assignmentsError } = await supabase
     .from('mentoring_assignments')
     .select('*, students(id, name, school, grade, default_seat_no, status), mentoring_mentors(*), mentoring_slots(*)')
     .eq('is_active', true)
     .order('created_at', { ascending: true });
   if (assignmentsError) throw assignmentsError;
+  // 비활성 학생의 배정은 표시/생성 대상에서 제외합니다.(비활성화 시 즉시 연결 해제와 동일한 취지)
+  const assignments = (assignmentsRaw || []).filter((item) => item.students?.status !== 'inactive');
 
   let mentorStudentLinks = [];
   let warning = '';
@@ -787,7 +789,7 @@ async function loadAll(supabase, options = {}) {
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
     if (mentorStudentError) throw mentorStudentError;
-    mentorStudentLinks = mentorStudentRows || [];
+    mentorStudentLinks = (mentorStudentRows || []).filter((row) => row.students?.status !== 'inactive');
   } catch (error) {
     warning = `담당학생 설정 테이블을 아직 읽지 못했습니다. v41-31.4 SQL 실행 후 사용할 수 있습니다: ${error.message || error}`;
   }
