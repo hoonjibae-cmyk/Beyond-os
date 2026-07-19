@@ -18812,13 +18812,15 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* ─────────────────────────────────────────────────────────────
    v41-83: 좌석 패널 빠른 이동(PC 전용) + 학생 기본정보 탭
    ───────────────────────────────────────────────────────────── */
-.panel-quick-nav{ display:flex; align-items:center; gap:10px; margin:0 0 12px; padding:10px 12px; background:#f5f7fb; border:1px solid #e6ebf5; border-radius:12px; }
-.panel-quick-nav-label{ flex:0 0 auto; font-size:12px; font-weight:800; color:#6e6e73; }
-.panel-quick-nav-buttons{ display:flex; gap:6px; flex-wrap:wrap; flex:1; }
-.panel-quick-nav-buttons button{ flex:1; min-width:64px; border:1px solid #d0d7e6; background:#fff; color:#0071e3; font-weight:700; font-size:12.5px; padding:8px 10px; border-radius:10px; cursor:pointer; white-space:nowrap; transition:background .15s, border-color .15s; }
-.panel-quick-nav-buttons button:hover{ background:#eef4fe; border-color:#0071e3; }
-/* 모바일에서는 빠른 이동 버튼을 노출하지 않습니다. */
-@media (max-width:760px){ .panel-quick-nav{ display:none; } }
+/* 좌석배치도 우상단: 선택 학생 빠른 이동(PC 전용) + 범례를 세로로 정렬 */
+.map-head-right{ display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
+.map-quick-nav{ display:flex; align-items:center; gap:9px; padding:7px 8px 7px 12px; background:#f5f7fb; border:1px solid #e6ebf5; border-radius:12px; }
+.map-quick-nav-name{ flex:0 0 auto; font-size:12.5px; font-weight:800; color:#1d1d1f; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.map-quick-nav-buttons{ display:flex; gap:6px; }
+.map-quick-nav-buttons button{ border:1px solid #d0d7e6; background:#fff; color:#0071e3; font-weight:700; font-size:12.5px; padding:7px 12px; border-radius:9px; cursor:pointer; white-space:nowrap; transition:background .15s, border-color .15s; }
+.map-quick-nav-buttons button:hover{ background:#eef4fe; border-color:#0071e3; }
+/* 모바일에서는 빠른 이동 버튼을 노출하지 않습니다(범례는 유지). */
+@media (max-width:760px){ .map-quick-nav{ display:none; } .map-head-right{ align-items:flex-start; } }
 
 .sinfo-page{ display:flex; flex-direction:column; gap:14px; }
 .sinfo-picker-head{ display:flex; flex-direction:column; gap:3px; margin-bottom:10px; }

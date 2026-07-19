@@ -5007,7 +5007,7 @@ export default function Page() {
         {isActiveTabAllowed && activeTab === 'dashboard' ? (
           <>
             <AlertCenter alerts={scheduleAlerts} nowTick={nowTick} onConfirm={confirmScheduleAlert} onNotifyParent={notifyParent} />
-            <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} checksBySession={checksBySession} defaultSchedule={defaultSchedule} todaySchedules={todaySchedules} todayScheduleBreaks={todayScheduleBreaks} sessions={sessions} />
+            <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} checksBySession={checksBySession} defaultSchedule={defaultSchedule} todaySchedules={todaySchedules} todayScheduleBreaks={todayScheduleBreaks} sessions={sessions} onGoSchedule={goToScheduleFromSeat} onGoStudentCare={goToStudentCareFromSeat} onGoStudentInfo={goToStudentInfoFromSeat} />
           </>
         ) : null}
 
@@ -5288,17 +5288,6 @@ export default function Page() {
           <button className="mobile-panel-close" onClick={closePanel} aria-label="좌석 상세 패널 닫기">닫기 ✕</button>
         </div>
         <div className="mobile-panel-focus-note">현장 조작 우선: 출결 요약과 상태 변경을 먼저 확인하세요.</div>
-
-        {form.name && form.studentId ? (
-          <div className="panel-quick-nav" role="group" aria-label="선택 학생 바로가기">
-            <span className="panel-quick-nav-label">바로가기</span>
-            <div className="panel-quick-nav-buttons">
-              <button type="button" onClick={() => goToScheduleFromSeat(form.studentId)}>시간표</button>
-              <button type="button" onClick={() => goToStudentCareFromSeat(form.studentId)}>학습관리</button>
-              <button type="button" onClick={() => goToStudentInfoFromSeat(form.studentId)}>학생 기본정보</button>
-            </div>
-          </div>
-        ) : null}
 
         <PanelSection title="학생 기본정보" defaultMobileOpen={false} className="readonly-student-card">
 {form.name ? (
@@ -6203,7 +6192,7 @@ function buildKioskHoldHistoryGroups(history = []) {
   }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedSeatNo, selectSeat, students, nowTick, apiFetch, loadDashboard, setMessage, currentUser, scheduleAlerts = [], onDismissFocusAlert, dismissedAlertMemos = {}, mentoringTodayAssignments = [], checksBySession = {}, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, todaySchedules = [], todayScheduleBreaks = [], sessions = [] }) {
+function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedSeatNo, selectSeat, students, nowTick, apiFetch, loadDashboard, setMessage, currentUser, scheduleAlerts = [], onDismissFocusAlert, dismissedAlertMemos = {}, mentoringTodayAssignments = [], checksBySession = {}, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, todaySchedules = [], todayScheduleBreaks = [], sessions = [], onGoSchedule, onGoStudentCare, onGoStudentInfo }) {
   const [seatFilter, setSeatFilter] = useState('all');
   const [seatSearch, setSeatSearch] = useState('');
   const [quickMode, setQuickMode] = useState(false);
@@ -6926,6 +6915,10 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
     .sort((a, b) => new Date(b.dismissedAt || 0) - new Date(a.dismissedAt || 0))
     .slice(0, 5);
 
+  const selectedNavSession = selectedSeatNo ? sessionBySeat[selectedSeatNo] : null;
+  const selectedNavSeat = selectedSeatNo ? seatsForDisplay.find((s) => Number(s.seat_no) === Number(selectedSeatNo)) : null;
+  const selectedNavStudent = selectedNavSession?.students || selectedNavSeat?.current_student || null;
+
   return (
     <>
       {(kioskHolds.length || kioskHoldHistory.length) ? (
@@ -7044,14 +7037,26 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
             <div className="brand">The Place 26</div>
             <div className="map-subtitle">좌석을 클릭하면 우측 패널에서 출결·학습상태를 바로 조정할 수 있습니다.{quickMode ? ' 순찰 모드에서는 입실 좌석을 여러 개 선택합니다.' : ''}</div>
           </div>
-          <div className="legend">
-            <span><i className="chip empty-chip"></i>미입실</span>
-            <span><i className="chip occupied-chip"></i>입실</span>
-            <span><i className="chip away-chip"></i>외출</span>
-            <span><i className="chip out-chip"></i>퇴실</span>
-            <span><i className="chip absent-chip"></i>결석</span>
-            <span><i className="chip warning-chip"></i>관리필요</span>
-            <span><i className="chip mentoring-chip"></i>멘토링 예정</span>
+          <div className="map-head-right">
+            {selectedNavStudent?.id ? (
+              <div className="map-quick-nav" role="group" aria-label="선택 학생 바로가기">
+                <span className="map-quick-nav-name">{selectedNavStudent.name}</span>
+                <div className="map-quick-nav-buttons">
+                  <button type="button" onClick={() => onGoSchedule?.(selectedNavStudent.id)}>시간표</button>
+                  <button type="button" onClick={() => onGoStudentCare?.(selectedNavStudent.id)}>학습관리</button>
+                  <button type="button" onClick={() => onGoStudentInfo?.(selectedNavStudent.id)}>학생 기본정보</button>
+                </div>
+              </div>
+            ) : null}
+            <div className="legend">
+              <span><i className="chip empty-chip"></i>미입실</span>
+              <span><i className="chip occupied-chip"></i>입실</span>
+              <span><i className="chip away-chip"></i>외출</span>
+              <span><i className="chip out-chip"></i>퇴실</span>
+              <span><i className="chip absent-chip"></i>결석</span>
+              <span><i className="chip warning-chip"></i>관리필요</span>
+              <span><i className="chip mentoring-chip"></i>멘토링 예정</span>
+            </div>
           </div>
         </div>
 

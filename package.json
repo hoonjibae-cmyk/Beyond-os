@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-85-week-absent-mark",
-  "version": "0.41.85",
+  "name": "beyond-os-v41-86-seatmap-quicknav",
+  "version": "0.41.86",
   "private": true,
   "scripts": {
     "dev": "next dev",
