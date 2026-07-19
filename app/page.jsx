@@ -12951,9 +12951,23 @@ function SurveyCard({ survey }) {
     };
     // 요일별 개별 질문이 없으면 '요일별 스케줄' 단일 질문으로 폴백
     const scheduleFallback = scheduleItems.length ? '' : single(/요일/);
+    // 특별 일정 / 특별 일정 상세 분리: '특별'이 들어간 질문 중 상세형(상세·자세·구체·내용·설명)을 별도로 표시
+    const trimmedAnswer = (a) => String(a?.answer ?? '').trim();
+    const detailRe = /상세|자세|구체|세부|내용|설명/;
+    const specialAll = answers.filter((a) => /특별/.test(String(a?.question || '')) && trimmedAnswer(a));
+    const specialMainItem = specialAll.find((a) => !detailRe.test(String(a.question))) || specialAll[0] || null;
+    let specialDetailItem = specialAll.find((a) => a !== specialMainItem && detailRe.test(String(a.question))) || null;
+    // '특별' 키워드 없이 특별 일정 바로 다음에 상세형 질문이 오는 설문도 보완
+    if (!specialDetailItem && specialMainItem) {
+      const nextItem = answers[answers.indexOf(specialMainItem) + 1];
+      if (nextItem && trimmedAnswer(nextItem) && detailRe.test(String(nextItem?.question || '')) && !/특이|당부|요일|시설|환경/.test(String(nextItem?.question || ''))) {
+        specialDetailItem = nextItem;
+      }
+    }
     return [
       { key: 'schedule', label: '요일별 스케줄', icon: '🗓️', items: scheduleItems, value: scheduleFallback },
-      { key: 'special', label: '특별 일정', icon: '📌', value: single(/특별/) },
+      { key: 'special', label: '특별 일정', icon: '📌', value: specialMainItem ? trimmedAnswer(specialMainItem) : '' },
+      { key: 'specialDetail', label: '특별 일정 상세', icon: '🗒️', value: specialDetailItem ? trimmedAnswer(specialDetailItem) : '' },
       { key: 'academic', label: '학업 특이사항', icon: '📖', value: single(/특이/) },
       { key: 'request', label: '센터 당부사항', icon: '💬', value: single(/당부/) },
     ];
