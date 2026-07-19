@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-83-student-info-tab",
-  "version": "0.41.83",
+  "name": "beyond-os-v41-84-month-absent-mark",
+  "version": "0.41.84",
   "private": true,
   "scripts": {
     "dev": "next dev",
