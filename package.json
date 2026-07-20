@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-92-mentoring-capacity-active-only",
-  "version": "0.41.92",
+  "name": "beyond-os-v41-93-ranking-mask-hearts",
+  "version": "0.41.93",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -8792,9 +8792,9 @@ function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, save
                   <label>게시 동의</label>
                   <label className="ranking-consent-switch">
                     <input type="checkbox" checked={Boolean(editor.rankingOptIn)} onChange={(e) => setEditor({ ...editor, rankingOptIn: e.target.checked })} />
-                    <span>{editor.rankingOptIn ? '닉네임으로 게시 동의' : '미동의 — XXX로 표기'}</span>
+                    <span>{editor.rankingOptIn ? '닉네임으로 게시 동의' : '미동의 — ♥♥♥로 표기'}</span>
                   </label>
-                  <div className="hint">동의 + 닉네임 입력 시 닉네임으로, 아니면 XXX로 표기됩니다.</div>
+                  <div className="hint">동의 + 닉네임 입력 시 닉네임으로, 아니면 ♥♥♥로 표기됩니다.</div>
                 </div>
               </div>
             </div>
@@ -12147,7 +12147,7 @@ function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRan
 // 게시용(TV) 랭킹보드 화면 정의: 로테이션 순서대로 8개.
 // singlePage=true(세로 TV)면 4위 이하를 한 화면에 전원 표시, 아니면 2페이지로 분할.
 function buildBroadcastBoards({ yesterday, week, month }, { singlePage = false } = {}) {
-  const displayName = (row) => (row.rankingOptIn && row.nickname ? row.nickname : 'XXX');
+  const displayName = (row) => (row.rankingOptIn && row.nickname ? row.nickname : '♥♥♥');
   const rankTop = (rows, { sortBy, dir = 'desc', filter, value }) => {
     const ranked = (rows || [])
       .filter(filter)
