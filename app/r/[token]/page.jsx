@@ -524,7 +524,8 @@ function parseDailyLearningPeriods(text = '') {
 
   const commit = () => {
     if (!current) return;
-    const contentLines = current.details.filter((line) => !line.startsWith('체크 '));
+    // '체크 ...' 줄과, v41-98 이전에 저장된 옛 '학습 내용 및 특이사항 미입력' 문구는 내용에서 제외합니다.
+    const contentLines = current.details.filter((line) => !line.startsWith('체크 ') && line.trim() !== '학습 내용 및 특이사항 미입력');
     const checkedLines = current.details.filter((line) => line.startsWith('체크 '));
     rows.push({
       ...current,
