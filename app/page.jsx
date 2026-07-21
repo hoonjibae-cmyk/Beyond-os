@@ -4064,7 +4064,9 @@ export default function Page() {
 
 
   async function generateAllReports() {
-    if (!reportReadySessions.length) {
+    // 당일 결석자는 리포트 생성 대상에서 제외합니다.
+    const generateTargets = reportReadySessions.filter((session) => session.seat_status !== 'absent');
+    if (!generateTargets.length) {
       alert('리포트 생성 대상 학생이 없습니다.');
       return;
     }
@@ -4073,7 +4075,7 @@ export default function Page() {
       setMessage('전체 리포트 생성 중...');
       const newReports = [];
 
-      for (const session of reportReadySessions) {
+      for (const session of generateTargets) {
         const data = await apiFetch('/api/report', {
           method: 'POST',
           body: JSON.stringify({
@@ -9647,6 +9649,8 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
 
   function getBlockingIssues(session) {
     const issues = [];
+    // 당일 결석자는 리포트 발송 대상에서 제외합니다.
+    if (session.seat_status === 'absent') issues.push({ key: 'absent', label: '당일 결석' });
     if (!getActiveGuardians(session.students, 'daily').length) issues.push({ key: 'missing_parent_phone', label: '수신 보호자 없음' });
     return issues;
   }
@@ -10144,9 +10148,11 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
   }
 
   async function bulkGenerateAll() {
-    if (!sessionsForReport.filter((session) => !session.is_virtual).length) return alert('리포트 생성 대상 학생이 없습니다.');
-    if (!confirm(`전체 ${sessionsForReport.length}명의 리포트를 생성할까요?`)) return;
-    for (const session of sessionsForReport.filter((item) => !item.is_virtual)) {
+    // 당일 결석자는 리포트 생성 대상에서 제외합니다.
+    const generateTargets = sessionsForReport.filter((item) => !item.is_virtual && item.seat_status !== 'absent');
+    if (!generateTargets.length) return alert('리포트 생성 대상 학생이 없습니다.');
+    if (!confirm(`전체 ${generateTargets.length}명의 리포트를 생성할까요? (당일 결석자 제외)`)) return;
+    for (const session of generateTargets) {
       await generateReport(session.id);
     }
     await loadDailyReportTargets(plannerDate);

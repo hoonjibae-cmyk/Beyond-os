@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-98-1-report-hide-empty-legacy",
-  "version": "0.41.98",
+  "name": "beyond-os-v41-99-absent-exclude-report",
+  "version": "0.41.99",
   "private": true,
   "scripts": {
     "dev": "next dev",
