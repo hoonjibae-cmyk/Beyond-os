@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-93-ranking-mask-hearts",
-  "version": "0.41.93",
+  "name": "beyond-os-v41-94-first-checkin-skip-hold",
+  "version": "0.41.94",
   "private": true,
   "scripts": {
     "dev": "next dev",

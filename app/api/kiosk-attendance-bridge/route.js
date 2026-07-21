@@ -1110,7 +1110,9 @@ export async function POST(request) {
     }
 
 
-    const breakHoldWindow = shouldHoldBreakSignal(parsed.eventType)
+    // 그 날 아직 출결 기록이 없는 학생의 첫 등원(입실)은 쉬는 시간이라도 HOLD로 보내지 않고 바로 반영합니다.
+    const isFirstCheckIn = parsed.eventType === 'check_in' && !currentSession?.check_in_at;
+    const breakHoldWindow = (shouldHoldBreakSignal(parsed.eventType) && !isFirstCheckIn)
       ? getBreakHoldWindow(receivedAt, defaultSchedule.studyWindows, bridgeSettings.breakHoldBufferMinutes)
       : null;
     if (breakHoldWindow) {
