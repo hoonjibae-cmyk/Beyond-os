@@ -43,6 +43,29 @@ function expandDates(start, repeat = 'none', until) {
   return dates.length ? dates : [start];
 }
 
+// v41-96: 이벤트별 개별 설정용 반복 확장. mode: none | daily | weekdays | custom(weekdays 배열, getDay 0~6)
+function expandDatesForEvent(start, mode = 'none', weekdays = [], until) {
+  const safeMode = mode || 'none';
+  const end = until || start;
+  const daySet = new Set((Array.isArray(weekdays) ? weekdays : []).map(Number));
+  const dates = [];
+  let cursor = start;
+  let guard = 0;
+  while (cursor <= end && guard < 366) {
+    const dow = new Date(`${cursor}T00:00:00`).getDay();
+    let include = false;
+    if (safeMode === 'none') include = cursor === start;
+    else if (safeMode === 'daily') include = true;
+    else if (safeMode === 'weekdays') include = dow >= 1 && dow <= 5;
+    else if (safeMode === 'custom') include = daySet.has(dow);
+    if (include) dates.push(cursor);
+    if (safeMode === 'none') break;
+    cursor = addDays(cursor, 1);
+    guard += 1;
+  }
+  return dates.length ? dates : [start];
+}
+
 function timeToMinutes(value) {
   if (!value) return null;
   const [h, m] = String(value).slice(0, 5).split(':').map(Number);
@@ -199,6 +222,94 @@ async function replaceBreaksForSchedule(supabase, scheduleId, breaks) {
   }
 }
 
+// v41-96: 이벤트별(등하원/외출/결석) 개별 저장.
+// 선택한 이벤트만 반복 날짜에 적용하고, 같은 날짜의 다른 이벤트 필드는 기존 값을 보존합니다.
+async function saveScopedEvent(supabase, request, body) {
+  const scope = body.eventScope;
+  const dates = expandDatesForEvent(body.scheduleDate, body.repeatMode || 'none', body.repeatWeekdays || [], body.repeatUntil || body.scheduleDate);
+
+  let absenceSupported = true;
+  try {
+    const { error: probeError } = await supabase
+      .from('student_daily_schedules')
+      .select('planned_absent')
+      .eq('student_id', body.studentId)
+      .limit(1);
+    if (probeError) throw probeError;
+  } catch {
+    absenceSupported = false;
+  }
+  if (scope === 'absent' && !absenceSupported) {
+    return Response.json({ error: '결석 일정 기능을 쓰려면 beyond-os-supabase-planned-absence-v41-73.sql을 먼저 실행하세요. (planned_absent 컬럼 없음)' }, { status: 400 });
+  }
+
+  let defaultSeatNo = null;
+  if (scope === 'absent') {
+    const { data: studentRow } = await supabase.from('students').select('default_seat_no').eq('id', body.studentId).maybeSingle();
+    defaultSeatNo = studentRow?.default_seat_no || null;
+  }
+
+  const saved = [];
+  for (const date of dates) {
+    const { data: existing } = await supabase
+      .from('student_daily_schedules')
+      .select('*')
+      .eq('student_id', body.studentId)
+      .eq('schedule_date', date)
+      .maybeSingle();
+
+    const payload = {
+      student_id: body.studentId,
+      schedule_date: date,
+      planned_check_in: existing?.planned_check_in || body.plannedCheckIn || '09:00',
+      planned_check_out: existing?.planned_check_out || body.plannedCheckOut || '22:00',
+      parent_confirmed: existing?.parent_confirmed ?? false,
+      confirmation_note: existing?.confirmation_note ?? null,
+      schedule_note: existing?.schedule_note ?? null,
+    };
+    if (absenceSupported) {
+      payload.planned_absent = existing?.planned_absent ?? false;
+      payload.absent_reason = existing?.absent_reason ?? null;
+    }
+
+    if (scope === 'commute') {
+      payload.planned_check_in = body.plannedCheckIn || payload.planned_check_in;
+      payload.planned_check_out = body.plannedCheckOut || payload.planned_check_out;
+      payload.parent_confirmed = Boolean(body.parentConfirmed);
+      payload.confirmation_note = body.confirmationNote || null;
+      payload.schedule_note = body.scheduleNote || null;
+    } else if (scope === 'absent') {
+      payload.planned_absent = true;
+      payload.absent_reason = body.absentReason || null;
+    }
+
+    const { data: schedule, error: scheduleError } = await supabase
+      .from('student_daily_schedules')
+      .upsert(payload, { onConflict: 'student_id,schedule_date' })
+      .select()
+      .single();
+    if (scheduleError) throw scheduleError;
+
+    if (scope === 'break') {
+      await replaceBreaksForSchedule(supabase, schedule.id, body.breaks || []);
+    }
+    if (scope === 'absent' && absenceSupported) {
+      await applyPlannedAbsentSession(supabase, { studentId: body.studentId, date, seatNo: defaultSeatNo, reason: body.absentReason || '' });
+    }
+    saved.push(schedule);
+  }
+
+  await writeUserActionLog(supabase, request, {
+    actionType: 'schedule.save',
+    targetType: 'student_schedule',
+    targetId: saved[0]?.id,
+    targetName: body.studentName || body.studentId,
+    payload: { studentId: body.studentId, eventScope: scope, affectedDates: dates, repeatMode: body.repeatMode || 'none', repeatWeekdays: body.repeatWeekdays || [] },
+  });
+
+  return Response.json({ schedules: saved, affectedDates: dates, eventScope: scope });
+}
+
 export async function GET(request) {
   if (!isAuthorized(request)) return unauthorizedResponse();
   try {
@@ -246,6 +357,11 @@ export async function POST(request) {
     const validationErrors = validateScheduleBody(body);
     if (validationErrors.length) {
       return Response.json({ error: validationErrors.join('\n') }, { status: 400 });
+    }
+
+    // v41-96: 이벤트별 개별 저장(등하원/외출/결석 중 하나만, 선택 이벤트만 반복 적용, 그 날 다른 이벤트는 보존)
+    if (body.eventScope) {
+      return await saveScopedEvent(supabase, request, body);
     }
 
     const commuteDates = expandDates(body.scheduleDate, body.commuteRepeat || 'none', body.commuteRepeatUntil || body.scheduleDate);

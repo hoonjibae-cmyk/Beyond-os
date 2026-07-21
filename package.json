@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-95-alert-parent-confirmed",
-  "version": "0.41.95",
+  "name": "beyond-os-v41-96-event-scoped-schedule",
+  "version": "0.41.96",
   "private": true,
   "scripts": {
     "dev": "next dev",

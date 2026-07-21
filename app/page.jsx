@@ -17,6 +17,17 @@ const REPEAT_OPTIONS = [
   ['monthly', '매월'],
 ];
 
+// v41-96: 이벤트(등하원/외출/결석)별 개별 설정 팝업용
+const EVENT_TYPE_LABELS = { commute: '등하원 조정', break: '외출', absent: '결석' };
+const EVENT_REPEAT_OPTIONS = [
+  ['none', '반복 없음'],
+  ['daily', '매일'],
+  ['weekdays', '평일'],
+  ['custom', '특정 요일'],
+];
+// 반복 요일 선택(다중) — 값은 JS getDay() 기준(일=0 ... 토=6)
+const EVENT_WEEKDAY_OPTIONS = [[1, '월'], [2, '화'], [3, '수'], [4, '목'], [5, '금'], [6, '토'], [0, '일']];
+
 const DEFAULT_SCHEDULE_SETTINGS = normalizeDefaultScheduleSettings(FALLBACK_DEFAULT_SCHEDULE_SETTINGS);
 const DEFAULT_SCHEDULE_CONFIG = normalizeDefaultScheduleConfig(FALLBACK_DEFAULT_SCHEDULE_SETTINGS);
 const DEFAULT_SCHEDULE_PERIODS = DEFAULT_SCHEDULE_SETTINGS.studyWindows;
@@ -4537,40 +4548,72 @@ export default function Page() {
 
   async function saveActivityPopup() {
     if (!activityPopup?.studentId) return alert('학생 정보가 없습니다.');
+    const scope = activityPopup.eventType;
+    if (!scope) return alert('설정할 일정 종류(등하원/외출/결석)를 먼저 선택하세요.');
+
+    const repeatMode = activityPopup.repeatMode || 'none';
+    const repeatWeekdays = activityPopup.repeatWeekdays || [];
+    if (repeatMode === 'custom' && !repeatWeekdays.length) {
+      return alert('특정 요일 반복은 요일을 하나 이상 선택하세요.');
+    }
+
+    // 이벤트별 유효성 검사
+    const errors = [];
+    if (scope === 'commute') {
+      if (!isFiveMinuteTime(activityPopup.plannedCheckIn || '09:00')) errors.push('예정 등원은 5분 단위로 입력하세요.');
+      if (!isFiveMinuteTime(activityPopup.plannedCheckOut || '22:00')) errors.push('예정 하원은 5분 단위로 입력하세요.');
+      const ci = timeToMinutes(activityPopup.plannedCheckIn || '09:00');
+      const co = timeToMinutes(activityPopup.plannedCheckOut || '22:00');
+      if (ci !== null && co !== null && co <= ci) errors.push('예정 하원은 예정 등원보다 늦어야 합니다.');
+    } else if (scope === 'break') {
+      const realBreaks = (activityPopup.breaks || []).filter((item) => item.leaveStart || item.returnTime || item.reasonDetail || item.breakNote);
+      if (!realBreaks.length) errors.push('외출 항목을 하나 이상 입력하세요.');
+      errors.push(...validateSchedulePayload({ plannedCheckIn: activityPopup.plannedCheckIn, plannedCheckOut: activityPopup.plannedCheckOut, breaks: activityPopup.breaks || [] }));
+    } else if (scope === 'absent') {
+      if (!String(activityPopup.absentReason || '').trim()) errors.push('결석 사유를 입력하세요.');
+    }
+    if (errors.length) { alert(errors.join('\n')); return; }
 
     const payload = {
       studentId: activityPopup.studentId,
+      studentName: activityPopup.studentName,
       scheduleDate: activityPopup.scheduleDate,
+      eventScope: scope,
+      repeatMode,
+      repeatWeekdays,
+      repeatUntil: repeatMode === 'none' ? activityPopup.scheduleDate : (activityPopup.repeatUntil || activityPopup.scheduleDate),
+      // 새 행 생성 시 기준 등하원 시간(기존 행이 있으면 서버에서 보존)
       plannedCheckIn: activityPopup.plannedCheckIn,
       plannedCheckOut: activityPopup.plannedCheckOut,
-      parentConfirmed: activityPopup.parentConfirmed,
-      confirmationNote: activityPopup.confirmationNote,
-      scheduleNote: activityPopup.scheduleNote,
-      breaks: activityPopup.breaks || [],
-      commuteRepeat: activityPopup.commuteRepeat || 'none',
-      commuteRepeatUntil: activityPopup.commuteRepeatUntil || activityPopup.scheduleDate,
-      breakRepeat: activityPopup.breakRepeat || 'none',
-      breakRepeatUntil: activityPopup.breakRepeatUntil || activityPopup.scheduleDate,
-      plannedAbsent: Boolean(activityPopup.plannedAbsent),
-      absentReason: activityPopup.absentReason || '',
-      absentRepeat: activityPopup.absentRepeat || 'none',
-      absentRepeatUntil: activityPopup.absentRepeatUntil || activityPopup.scheduleDate,
     };
-
-    const validationErrors = validateSchedulePayload(payload);
-    if (validationErrors.length) {
-      alert(validationErrors.join('\n'));
-      return;
+    if (scope === 'commute') {
+      payload.parentConfirmed = activityPopup.parentConfirmed;
+      payload.confirmationNote = activityPopup.confirmationNote;
+      payload.scheduleNote = activityPopup.scheduleNote;
+    } else if (scope === 'break') {
+      payload.breaks = activityPopup.breaks || [];
+    } else if (scope === 'absent') {
+      payload.plannedAbsent = true;
+      payload.absentReason = activityPopup.absentReason || '';
     }
 
-    const canSaveAfterMentoringCheck = await confirmMentoringConflictsBeforeScheduleSave(payload);
-    if (!canSaveAfterMentoringCheck) {
-      setMessage('액티비티 시간표 저장을 취소했습니다. 멘토링 시간표 또는 개인일정을 조정해 주세요.');
-      return;
+    if (scope !== 'absent') {
+      const canSaveAfterMentoringCheck = await confirmMentoringConflictsBeforeScheduleSave({
+        studentId: payload.studentId,
+        scheduleDate: payload.scheduleDate,
+        plannedCheckIn: payload.plannedCheckIn,
+        plannedCheckOut: payload.plannedCheckOut,
+        scheduleNote: payload.scheduleNote,
+        breaks: payload.breaks || [],
+      });
+      if (!canSaveAfterMentoringCheck) {
+        setMessage('일정 저장을 취소했습니다. 멘토링 시간표 또는 개인일정을 조정해 주세요.');
+        return;
+      }
     }
 
     try {
-      setMessage('액티비티 시간표 저장 중...');
+      setMessage('일정 저장 중...');
       await apiFetch('/api/schedules', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -4578,10 +4621,10 @@ export default function Page() {
       setActivityPopup(null);
       await loadSchedules();
       await loadDashboard({ silent: true, suppressChangeNotice: true });
-      setMessage('액티비티 시간표 저장 완료');
+      setMessage(`${EVENT_TYPE_LABELS[scope] || '일정'} 저장 완료`);
     } catch (error) {
       // 모달이 열린 상태에서는 하단 토스트가 가려질 수 있어 alert로도 즉시 표시합니다.
-      alert(error.message || '액티비티 시간표 저장에 실패했습니다.');
+      alert(error.message || '일정 저장에 실패했습니다.');
       setMessage(error.message);
     }
   }
@@ -5994,7 +6037,130 @@ function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent, onParentConfi
 
 function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBreak, removeBreak, deletePopupSchedule }) {
   if (!popup) return null;
-  return <div className="modal-backdrop" onClick={() => setPopup(null)}><div className="activity-popup" onClick={(event) => event.stopPropagation()}><div className="popup-head"><div><h2>액티비티 블록 수정</h2><p>{popup.studentName} / {popup.studentInfo || '학생 정보 없음'} / {popup.scheduleDate}</p></div><button onClick={() => setPopup(null)}>닫기</button></div><div className="activity-popup-grid"><section className="activity-popup-card"><h3>기본 등하원 조정</h3><div className="student-fixed-name"><span>학생</span><strong>{popup.studentName}</strong></div><div className="time-grid"><div className="field"><label>날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.scheduleDate} onChange={(e) => setPopup({ ...popup, scheduleDate: e.target.value })} /></div><div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setPopup({ ...popup, parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div><div className="field"><label>예정 등원</label><TimeSelect value={popup.plannedCheckIn} onChange={(value) => setPopup({ ...popup, plannedCheckIn: value })} /></div><div className="field"><label>예정 하원</label><TimeSelect value={popup.plannedCheckOut} onChange={(value) => setPopup({ ...popup, plannedCheckOut: value })} /></div></div><div className="repeat-box"><h4>등하원 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.commuteRepeat} onChange={(e) => setPopup({ ...popup, commuteRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.commuteRepeatUntil} onChange={(e) => setPopup({ ...popup, commuteRepeatUntil: e.target.value })} /></div></div></div><div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote} onChange={(e) => setPopup({ ...popup, confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div><div className="field"><label>일정 메모</label><textarea value={popup.scheduleNote} onChange={(e) => setPopup({ ...popup, scheduleNote: e.target.value })} placeholder="예: 학교 행사로 10시 등원" /></div></section><section className="activity-popup-card"><h3>외출 일정 입력</h3>{(popup.breaks || []).map((item, index) => <div className="break-row" key={index}><div className="time-grid"><div className="field"><label>외출 시작</label><TimeSelect value={item.leaveStart} onChange={(value) => updateBreak(index, 'leaveStart', value)} /></div><div className="field"><label>복귀 예정</label><TimeSelect value={item.returnTime} onChange={(value) => updateBreak(index, 'returnTime', value)} /></div><div className="field"><label>외출 사유</label><select value={item.reason} onChange={(e) => updateBreak(index, 'reason', e.target.value)}>{BREAK_REASON_OPTIONS.map((reason) => <option key={reason}>{reason}</option>)}</select></div><div className="field"><label>상세 사유</label><input value={item.reasonDetail} onChange={(e) => updateBreak(index, 'reasonDetail', e.target.value)} placeholder="예: 고수학 특강" /></div></div><div className="field"><label>외출 메모</label><input value={item.breakNote} onChange={(e) => updateBreak(index, 'breakNote', e.target.value)} placeholder="예: 학부모 확인 완료" /></div><button className="danger" onClick={() => removeBreak(index)}>외출 항목 삭제</button></div>)}<button className="secondary add-break-button" onClick={addBreak}>외출 항목 추가</button><div className="repeat-box"><h4>외출 반복 설정</h4><div className="time-grid"><div className="field"><label>반복</label><select value={popup.breakRepeat} onChange={(e) => setPopup({ ...popup, breakRepeat: e.target.value })}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.breakRepeatUntil} onChange={(e) => setPopup({ ...popup, breakRepeatUntil: e.target.value })} /></div></div></div><div className="repeat-box absent-box"><h4>결석 일정 입력</h4><div className="time-grid"><div className="field"><label>이 날 결석 처리</label><select value={popup.plannedAbsent ? 'yes' : 'no'} onChange={(e) => setPopup({ ...popup, plannedAbsent: e.target.value === 'yes' })}><option value="no">아니오</option><option value="yes">결석 처리</option></select></div><div className="field"><label>결석 사유</label><input value={popup.absentReason || ''} onChange={(e) => setPopup({ ...popup, absentReason: e.target.value })} placeholder="예: 병결, 가정 사유, 학교 일정" disabled={!popup.plannedAbsent} /></div></div><div className="time-grid"><div className="field"><label>결석 반복</label><select value={popup.absentRepeat || 'none'} onChange={(e) => setPopup({ ...popup, absentRepeat: e.target.value })} disabled={!popup.plannedAbsent}>{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.absentRepeatUntil || popup.scheduleDate} onChange={(e) => setPopup({ ...popup, absentRepeatUntil: e.target.value })} disabled={!popup.plannedAbsent} /></div></div><p className="absent-hint">결석 처리하면 저장 시 해당 날짜(반복 포함)의 출결이 자동으로 <b>결석</b>으로 입력됩니다. 이미 입실 기록이 있는 날은 덮어쓰지 않습니다.</p></div><div className="activity-preview"><strong>반영 후 액티비티 구조</strong><span>차시 구간은 설정 탭의 요일 유형별 기본 시간표 기준으로 표시되며, 외출과 겹치는 학습 구간은 자동으로 제외됩니다. 저장하면 이 날짜가 등원 예정으로 처리됩니다.</span></div></section></div><div className="popup-bottom-actions">{deletePopupSchedule ? <div className="delete-repeat-group"><select value={popup.deleteRepeat || 'none'} onChange={(e) => setPopup({ ...popup, deleteRepeat: e.target.value })} title="삭제 반복">{REPEAT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{value === 'none' ? '이 날짜만' : `${label} 삭제`}</option>)}</select>{(popup.deleteRepeat || 'none') !== 'none' ? <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.deleteRepeatUntil || popup.scheduleDate} onChange={(e) => setPopup({ ...popup, deleteRepeatUntil: e.target.value })} title="삭제 반복 종료일" /> : null}<button className="danger" onClick={deletePopupSchedule}>{(popup.deleteRepeat || 'none') !== 'none' ? '반복 삭제' : '이 날짜 삭제'}</button></div> : null}<button className="secondary" onClick={() => setPopup(null)}>취소</button><button className="primary" onClick={savePopup}>확인 및 시간표 반영</button></div></div></div>;
+  const step = popup.step || 'type';
+  const eventType = popup.eventType;
+  const repeatMode = popup.repeatMode || 'none';
+  const setField = (patch) => setPopup({ ...popup, ...patch });
+  const chooseType = (type) => setPopup({ ...popup, eventType: type, step: 'detail' });
+  const toggleWeekday = (dow) => {
+    const set = new Set(popup.repeatWeekdays || []);
+    if (set.has(dow)) set.delete(dow); else set.add(dow);
+    setField({ repeatWeekdays: Array.from(set).sort((a, b) => a - b) });
+  };
+
+  const repeatSection = (
+    <div className="repeat-box event-repeat-box">
+      <h4>반복 설정</h4>
+      <div className="event-repeat-modes">
+        {EVENT_REPEAT_OPTIONS.map(([value, label]) => (
+          <button type="button" key={value} className={`event-repeat-chip ${repeatMode === value ? 'active' : ''}`} onClick={() => setField({ repeatMode: value })}>{label}</button>
+        ))}
+      </div>
+      {repeatMode === 'custom' ? (
+        <div className="event-weekday-row">
+          {EVENT_WEEKDAY_OPTIONS.map(([dow, label]) => (
+            <button type="button" key={dow} className={`event-weekday-chip ${(popup.repeatWeekdays || []).includes(dow) ? 'active' : ''}`} onClick={() => toggleWeekday(dow)}>{label}</button>
+          ))}
+        </div>
+      ) : null}
+      {repeatMode !== 'none' ? (
+        <div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.repeatUntil || popup.scheduleDate} onChange={(e) => setField({ repeatUntil: e.target.value })} /></div>
+      ) : (
+        <p className="event-repeat-hint">이 날짜({popup.scheduleDate})에만 적용됩니다.</p>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="modal-backdrop" onClick={() => setPopup(null)}>
+      <div className="activity-popup event-scoped-popup" onClick={(event) => event.stopPropagation()}>
+        <div className="popup-head">
+          <div>
+            <h2>{step === 'type' ? '일정 추가 · 수정' : `${EVENT_TYPE_LABELS[eventType] || '일정'} 설정`}</h2>
+            <p>{popup.studentName} / {popup.studentInfo || '학생 정보 없음'} / {popup.scheduleDate}</p>
+          </div>
+          <button onClick={() => setPopup(null)}>닫기</button>
+        </div>
+
+        {step === 'type' ? (
+          <div className="event-type-choose">
+            <p className="event-type-hint">이 날짜에 설정할 일정을 선택하세요. 선택한 일정만 (반복 포함) 저장되며, 같은 날의 다른 일정은 그대로 유지됩니다.</p>
+            <div className="event-type-grid">
+              <button type="button" className="event-type-card commute" onClick={() => chooseType('commute')}>
+                <span className="event-type-emoji" aria-hidden="true">🕘</span>
+                <strong>등하원 조정</strong>
+                <em>등원·하원 시간 변경</em>
+              </button>
+              <button type="button" className="event-type-card break" onClick={() => chooseType('break')}>
+                <span className="event-type-emoji" aria-hidden="true">🚶</span>
+                <strong>외출</strong>
+                <em>외출 시작·복귀 예정</em>
+              </button>
+              <button type="button" className="event-type-card absent" onClick={() => chooseType('absent')}>
+                <span className="event-type-emoji" aria-hidden="true">🚫</span>
+                <strong>결석</strong>
+                <em>이 날 결석 처리</em>
+              </button>
+            </div>
+            {deletePopupSchedule ? (
+              <div className="event-type-delete">
+                <span>이 날짜의 개인 시간표 전체(등하원·외출·결석)를 지웁니다.</span>
+                <button type="button" className="danger" onClick={deletePopupSchedule}>이 날짜 개인 시간표 삭제</button>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="event-detail">
+            {eventType === 'commute' ? (
+              <section className="activity-popup-card">
+                <div className="time-grid">
+                  <div className="field"><label>예정 등원</label><TimeSelect value={popup.plannedCheckIn} onChange={(value) => setField({ plannedCheckIn: value })} /></div>
+                  <div className="field"><label>예정 하원</label><TimeSelect value={popup.plannedCheckOut} onChange={(value) => setField({ plannedCheckOut: value })} /></div>
+                  <div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setField({ parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div>
+                </div>
+                <div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote || ''} onChange={(e) => setField({ confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div>
+                <div className="field"><label>일정 메모</label><textarea value={popup.scheduleNote || ''} onChange={(e) => setField({ scheduleNote: e.target.value })} placeholder="예: 학교 행사로 10시 등원" /></div>
+              </section>
+            ) : null}
+
+            {eventType === 'break' ? (
+              <section className="activity-popup-card">
+                {(popup.breaks || []).length === 0 ? <p className="event-repeat-hint">아래 &lsquo;외출 항목 추가&rsquo;로 외출 일정을 입력하세요.</p> : null}
+                {(popup.breaks || []).map((item, index) => (
+                  <div className="break-row" key={index}>
+                    <div className="time-grid">
+                      <div className="field"><label>외출 시작</label><TimeSelect value={item.leaveStart} onChange={(value) => updateBreak(index, 'leaveStart', value)} /></div>
+                      <div className="field"><label>복귀 예정</label><TimeSelect value={item.returnTime} onChange={(value) => updateBreak(index, 'returnTime', value)} /></div>
+                      <div className="field"><label>외출 사유</label><select value={item.reason} onChange={(e) => updateBreak(index, 'reason', e.target.value)}>{BREAK_REASON_OPTIONS.map((reason) => <option key={reason}>{reason}</option>)}</select></div>
+                      <div className="field"><label>상세 사유</label><input value={item.reasonDetail} onChange={(e) => updateBreak(index, 'reasonDetail', e.target.value)} placeholder="예: 고수학 특강" /></div>
+                    </div>
+                    <div className="field"><label>외출 메모</label><input value={item.breakNote} onChange={(e) => updateBreak(index, 'breakNote', e.target.value)} placeholder="예: 학부모 확인 완료" /></div>
+                    <button className="danger" onClick={() => removeBreak(index)}>외출 항목 삭제</button>
+                  </div>
+                ))}
+                <button className="secondary add-break-button" onClick={addBreak}>외출 항목 추가</button>
+                <p className="absent-hint">외출과 겹치는 학습 구간은 좌석표·시간표에서 자동으로 제외됩니다.</p>
+              </section>
+            ) : null}
+
+            {eventType === 'absent' ? (
+              <section className="activity-popup-card">
+                <div className="field"><label>결석 사유</label><input value={popup.absentReason || ''} onChange={(e) => setField({ absentReason: e.target.value })} placeholder="예: 병결, 가정 사유, 학교 일정" /></div>
+                <p className="absent-hint">저장하면 선택한 날짜(반복 포함)의 출결이 자동으로 <b>결석</b>으로 입력됩니다. 이미 입실 기록이 있는 날은 덮어쓰지 않습니다.</p>
+              </section>
+            ) : null}
+
+            {repeatSection}
+
+            <div className="popup-bottom-actions">
+              <button className="secondary" onClick={() => setPopup({ ...popup, step: 'type' })}>◀ 이전</button>
+              <button className="primary" onClick={savePopup}>확인 및 시간표 반영</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 
@@ -9141,7 +9307,7 @@ function SchedulesTab(props) {
     const student = schedule.students;
     const dayDefaults = resolveForDate(schedule.schedule_date);
     const breaks = getBreaks(schedule).map((item) => ({ leaveStart: item.leave_start?.slice(0, 5) || '', returnTime: item.return_time?.slice(0, 5) || '', reason: item.reason || '기타', reasonDetail: item.reason_detail || '', breakNote: item.break_note || '' }));
-    setActivityPopup({ studentId: schedule.student_id, studentName: student?.name || '학생', studentInfo: [student?.school, student?.grade].filter(Boolean).join(' '), scheduleDate: schedule.schedule_date, plannedCheckIn: normalizeTime(schedule.planned_check_in) || dayDefaults.plannedCheckIn, plannedCheckOut: normalizeTime(schedule.planned_check_out) || dayDefaults.plannedCheckOut, parentConfirmed: Boolean(schedule.parent_confirmed), confirmationNote: schedule.confirmation_note || '', scheduleNote: schedule.schedule_note || '', breaks, commuteRepeat: 'none', commuteRepeatUntil: schedule.schedule_date, breakRepeat: 'none', breakRepeatUntil: schedule.schedule_date, plannedAbsent: Boolean(schedule.planned_absent), absentReason: schedule.absent_reason || '', absentRepeat: 'none', absentRepeatUntil: schedule.schedule_date });
+    setActivityPopup({ step: 'type', eventType: null, repeatMode: 'none', repeatWeekdays: [], repeatUntil: schedule.schedule_date, studentId: schedule.student_id, studentName: student?.name || '학생', studentInfo: [student?.school, student?.grade].filter(Boolean).join(' '), scheduleDate: schedule.schedule_date, plannedCheckIn: normalizeTime(schedule.planned_check_in) || dayDefaults.plannedCheckIn, plannedCheckOut: normalizeTime(schedule.planned_check_out) || dayDefaults.plannedCheckOut, parentConfirmed: Boolean(schedule.parent_confirmed), confirmationNote: schedule.confirmation_note || '', scheduleNote: schedule.schedule_note || '', breaks, plannedAbsent: Boolean(schedule.planned_absent), absentReason: schedule.absent_reason || '' });
   }
   function renderDayTimeline(date, student) {
     const schedule = getScheduleForStudentDate(student, date);
