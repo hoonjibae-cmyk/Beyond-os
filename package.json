@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-99-absent-exclude-report",
-  "version": "0.41.99",
+  "name": "beyond-os-v41-100-polling-cost-optimize",
+  "version": "0.41.100",
   "private": true,
   "scripts": {
     "dev": "next dev",

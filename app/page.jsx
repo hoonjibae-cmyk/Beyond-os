@@ -2329,7 +2329,14 @@ export default function Page() {
       }
     };
 
-    const interval = window.setInterval(syncDashboard, 3000);
+    // v41-100: 서버 비용(Vercel Fluid Active CPU) 절감.
+    // 실시간 좌석/알림이 필요한 '메인 대시보드' 탭에서만 3초 폴링을 유지하고,
+    // 다른 탭(시간표·학습관리·랭킹보드 등)에서는 30초로 완화합니다. (백그라운드 탭은 기존대로 요청 생략)
+    const isDashboardTab = activeTab === 'dashboard';
+    const intervalMs = isDashboardTab ? 3000 : 30000;
+    if (isDashboardTab) syncDashboard(); // 대시보드 진입 시 즉시 1회 동기화
+
+    const interval = window.setInterval(syncDashboard, intervalMs);
     const handleVisibilityChange = () => {
       if (!document.hidden) syncDashboard();
     };
@@ -2343,7 +2350,7 @@ export default function Page() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [isLoggedIn, adminPassword]);
+  }, [isLoggedIn, adminPassword, activeTab]);
 
   useEffect(() => {
     if (isLoggedIn && activeTab === 'schedules') loadSchedules();
