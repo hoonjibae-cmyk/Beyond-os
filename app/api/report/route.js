@@ -98,10 +98,14 @@ function formatChecksBySchedulePeriod(checks = [], defaultSchedule = {}) {
     .map((group, index) => {
       const sortedChecks = [...group.checks].sort((a, b) => new Date(a.checked_at || 0) - new Date(b.checked_at || 0));
       const statusSummary = [...new Set(sortedChecks.map((check) => [check.subject, check.study_status].filter(Boolean).join(' / ')).filter(Boolean))].join(' → ') || '학습 상태 미입력';
-      const contentSummary = [...new Set(sortedChecks.map((check) => String(check.study_content || '').trim()).filter(Boolean))].join(' / ') || '학습 내용 및 특이사항 미입력';
+      // 학습 내용 및 특이사항이 없으면 '미입력' 문구를 넣지 않고 해당 줄 자체를 생략합니다.
+      const contentSummary = [...new Set(sortedChecks.map((check) => String(check.study_content || '').trim()).filter(Boolean))].join(' / ');
       const checkedTimes = sortedChecks.map((check) => formatKstDateTime(check.checked_at)).filter((value) => value && value !== '-');
       const checkedNote = checkedTimes.length ? `체크 ${checkedTimes.join(', ')}` : '체크 시간 확인 불가';
-      return `${index + 1}. ${group.periodText} - ${statusSummary}\n  · ${contentSummary}\n  · ${checkedNote}`;
+      const lines = [`${index + 1}. ${group.periodText} - ${statusSummary}`];
+      if (contentSummary) lines.push(`  · ${contentSummary}`);
+      lines.push(`  · ${checkedNote}`);
+      return lines.join('\n');
     })
     .join('\n');
 }

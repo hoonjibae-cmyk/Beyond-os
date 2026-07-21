@@ -528,7 +528,7 @@ function parseDailyLearningPeriods(text = '') {
     const checkedLines = current.details.filter((line) => line.startsWith('체크 '));
     rows.push({
       ...current,
-      content: contentLines.join('\n') || '학습 내용 및 특이사항 미입력',
+      content: contentLines.join('\n'),
       checkedNote: checkedLines.join(' / '),
     });
     current = null;
@@ -881,7 +881,7 @@ export default async function PublicReportPage({ params }) {
                       {row.timeRange ? <strong>{row.timeRange}</strong> : null}
                     </div>
                     <div className="learning-period-status">{row.status}</div>
-                    <p>{row.content}</p>
+                    {row.content ? <p>{row.content}</p> : null}
                     {row.checkedNote ? <small>{row.checkedNote}</small> : null}
                   </article>
                 ))}

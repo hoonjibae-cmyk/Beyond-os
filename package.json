@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-97-away-overdue-alert",
-  "version": "0.41.97",
+  "name": "beyond-os-v41-98-report-hide-empty-content",
+  "version": "0.41.98",
   "private": true,
   "scripts": {
     "dev": "next dev",
