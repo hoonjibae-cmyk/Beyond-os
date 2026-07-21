@@ -5036,7 +5036,7 @@ export default function Page() {
 
         {isActiveTabAllowed && activeTab === 'dashboard' ? (
           <>
-            <AlertCenter alerts={scheduleAlerts} nowTick={nowTick} onConfirm={confirmScheduleAlert} onNotifyParent={notifyParent} />
+            <AlertCenter alerts={scheduleAlerts} nowTick={nowTick} onConfirm={confirmScheduleAlert} onNotifyParent={notifyParent} onParentConfirmed={(alert) => dismissFocusAlert(alert, '학부모 확인 완료')} />
             <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} checksBySession={checksBySession} defaultSchedule={defaultSchedule} todaySchedules={todaySchedules} todayScheduleBreaks={todayScheduleBreaks} sessions={sessions} onGoSchedule={goToScheduleFromSeat} onGoStudentCare={goToStudentCareFromSeat} onGoStudentInfo={goToStudentInfoFromSeat} />
           </>
         ) : null}
@@ -5956,7 +5956,7 @@ function ParentConfirmationAlertModal({ popup, setPopup, sendPopup, sendConfig }
   );
 }
 
-function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent }) {
+function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent, onParentConfirmed }) {
   return (
     <section className="alert-center">
       <div className="alert-center-head">
@@ -5978,6 +5978,7 @@ function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent }) {
                   <>
                     <button className="primary" onClick={() => onConfirm(alert)}>입실확인</button>
                     <button className="danger" onClick={() => onNotifyParent(alert)}>학부모 알림</button>
+                    {onParentConfirmed ? <button className="secondary" onClick={() => onParentConfirmed(alert)} title="학부모 확인이 끝난 건은 추가 처리 없이 알림만 지웁니다.">학부모 확인 완료</button> : null}
                   </>
                 )}
               </div>

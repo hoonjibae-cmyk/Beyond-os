@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-94-first-checkin-skip-hold",
-  "version": "0.41.94",
+  "name": "beyond-os-v41-95-alert-parent-confirmed",
+  "version": "0.41.95",
   "private": true,
   "scripts": {
     "dev": "next dev",
