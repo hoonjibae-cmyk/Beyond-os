@@ -1791,7 +1791,20 @@ function createPresenceMismatchAlert({ schedule, session, scheduleBreaks = [], s
   // v41-50: 외출(away) 상태는 '실제 차시(학습 인정 구간)' 시간에만 확인 알림을 띄웁니다.
   // 차시와 차시 사이의 쉬는 시간에 키오스크로 외출을 찍고 나간 경우는(정상 상황)
   // '출결상태 확인 필요' 알림 대상에서 제외합니다. (외출 예정·복귀 확인 알림은 별도 유지)
-  if (status === 'away' && !isWithinStudyWindow(nowMinutes, defaultSchedule)) return null;
+  // v41-97: 다만 쉬는 시간이라도 외출이 오래 지속되면(수동/임시 외출 포함) 확인 알림을 띄웁니다.
+  //   - 예정 복귀시간이 지난 스케줄 외출은 '복귀 확인 필요'(return_check)가 담당하므로 여기서는 제외
+  //   - 그 외 외출이 유예시간(기본 20분)을 넘겨 지속되면, 쉬는 시간이라도 미복귀로 보고 알림
+  if (status === 'away' && !isWithinStudyWindow(nowMinutes, defaultSchedule)) {
+    const hasPassedReturnBreak = (scheduleBreaks || []).some((item) => {
+      const ret = timeToMinutes(item.return_time || item.returnTime);
+      return ret !== null && nowMinutes >= ret;
+    });
+    const awayElapsedMinutes = session?.away_started_at
+      ? Math.floor((Date.now() - new Date(session.away_started_at).getTime()) / 60000)
+      : null;
+    const AWAY_ALERT_GRACE_MIN = 20;
+    if (hasPassedReturnBreak || awayElapsedMinutes === null || awayElapsedMinutes < AWAY_ALERT_GRACE_MIN) return null;
+  }
 
   const seatNo = seat.seat_no || student?.default_seat_no;
   const plannedRange = `${schedule.planned_check_in?.slice(0, 5) || '-'}~${schedule.planned_check_out?.slice(0, 5) || '-'}`;

@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-96-event-scoped-schedule",
-  "version": "0.41.96",
+  "name": "beyond-os-v41-97-away-overdue-alert",
+  "version": "0.41.97",
   "private": true,
   "scripts": {
     "dev": "next dev",
