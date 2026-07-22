@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-107-kiosk-hold-selective-notify",
-  "version": "0.41.107",
+  "name": "beyond-os-v41-108-daily-report-live-periods",
+  "version": "0.41.108",
   "private": true,
   "scripts": {
     "dev": "next dev",

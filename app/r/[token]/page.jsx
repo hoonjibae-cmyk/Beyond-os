@@ -557,6 +557,60 @@ function parseDailyLearningPeriods(text = '') {
   return rows.filter((row) => row.status || row.content);
 }
 
+// v41-108: 저장된 리포트 텍스트(스냅샷) 대신 study_checks 를 실시간으로 차시별로 묶어
+// { title, timeRange, status, content, checkedNote } 형태의 행으로 만듭니다.
+// 서버 /api/report 의 formatChecksBySchedulePeriod 와 같은 차시 매칭 규칙을 사용합니다.
+function buildDailyLearningPeriodsFromChecks(checks = [], defaultSchedule = {}) {
+  if (!Array.isArray(checks) || !checks.length) return [];
+  const windows = Array.isArray(defaultSchedule?.studyWindows) ? defaultSchedule.studyWindows : [];
+  const groups = new Map();
+
+  checks.forEach((check, index) => {
+    const checkedMinute = getKstMinutesFromIso(check.checked_at);
+    let meta = null;
+    if (checkedMinute !== null) {
+      const matched = windows
+        .map((item, windowIndex) => ({
+          ...item,
+          windowIndex,
+          startMinute: timeToMinutes(item.start),
+          endMinute: timeToMinutes(item.end),
+        }))
+        .find((item) => item.startMinute !== null && item.endMinute !== null && checkedMinute >= item.startMinute && checkedMinute < item.endMinute);
+      if (matched) {
+        meta = {
+          key: `${matched.label || matched.windowIndex}-${matched.start}-${matched.end}`,
+          sortMinute: matched.startMinute,
+          title: matched.label || `${matched.windowIndex + 1}차시`,
+          timeRange: `${matched.start}~${matched.end}`,
+        };
+      }
+    }
+    if (!meta) {
+      const fallbackTime = formatTime(check.checked_at);
+      meta = {
+        key: `check-${check.id || check.checked_at || index}`,
+        sortMinute: checkedMinute ?? 9999,
+        title: '순찰 체크',
+        timeRange: fallbackTime && fallbackTime !== '-' ? fallbackTime : '',
+      };
+    }
+    if (!groups.has(meta.key)) groups.set(meta.key, { ...meta, checks: [] });
+    groups.get(meta.key).checks.push(check);
+  });
+
+  return [...groups.values()]
+    .sort((a, b) => a.sortMinute - b.sortMinute)
+    .map((group) => {
+      const sorted = [...group.checks].sort((a, b) => new Date(a.checked_at || 0) - new Date(b.checked_at || 0));
+      const status = [...new Set(sorted.map((check) => [check.subject, check.study_status].filter(Boolean).join(' / ')).filter(Boolean))].join(' → ') || '학습 상태 미입력';
+      const content = [...new Set(sorted.map((check) => String(check.study_content || '').trim()).filter(Boolean))].join(' / ');
+      const times = sorted.map((check) => formatTime(check.checked_at)).filter((value) => value && value !== '-');
+      const checkedNote = times.length ? `체크 ${times.join(', ')}` : '';
+      return { title: group.title, timeRange: group.timeRange, status, content, checkedNote };
+    });
+}
+
 function ErrorPage({ title, message }) {
   return (
     <main className="public-report-page error-state-page">
@@ -672,6 +726,18 @@ async function loadReport(token) {
       events = eventRows || [];
     }
 
+    // v41-108: 차시별 학습 내용을 리포트 생성 시점의 스냅샷이 아니라 실시간 순찰 체크로 렌더링합니다.
+    // (링크 생성 이후에 기록/수정한 학습 내용도 학부모 링크에 즉시 반영됩니다.)
+    let checks = [];
+    if (session?.id) {
+      const { data: checkRows } = await supabase
+        .from('study_checks')
+        .select('id,subject,study_status,study_content,checked_at')
+        .eq('session_id', session.id)
+        .order('checked_at', { ascending: true });
+      checks = checkRows || [];
+    }
+
     const planner = await getPlannerImage(supabase, session);
     const reportDate = session?.session_date || report.report_date || null;
     const pointRows = await getStudentPointRows(supabase, session?.student_id || report.student_id, reportDate);
@@ -692,7 +758,7 @@ async function loadReport(token) {
     }
     const operatingRules = safePayload(report)?.dailyIssueRules || await getOperatingRules(supabase);
     const defaultSchedule = resolveScheduleForDate(scheduleConfig, reportDate);
-    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, pointRows, dailyPointRows, schedule, operatingRules, defaultSchedule };
+    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, checks, pointRows, dailyPointRows, schedule, operatingRules, defaultSchedule };
   }
 
   if (link.report_type === 'weekly') {
@@ -747,7 +813,7 @@ export default async function PublicReportPage({ params }) {
     return <ErrorPage title="리포트를 열 수 없습니다" message="링크가 만료되었거나 더 이상 사용 가능한 리포트가 아닙니다." />;
   }
 
-  const { reportType, report, session, student, link, planner, events = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
+  const { reportType, report, session, student, link, planner, events = [], checks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
   const studyWindows = defaultSchedule?.studyWindows;
   const variables = getTemplateVariables(report);
   const isWeekly = reportType === 'weekly';
@@ -763,7 +829,11 @@ export default async function PublicReportPage({ params }) {
   const weeklyDetailRows = savedWeeklyDetailRows.length ? savedWeeklyDetailRows : liveWeeklyRows;
   const dailyPlannerUrl = !isWeekly ? getPlannerUrl(report, planner || {}) : '';
   const dailyLearningText = !isWeekly ? extractDailyLearningText(report.report_text) : '';
-  const dailyLearningPeriods = !isWeekly ? parseDailyLearningPeriods(dailyLearningText) : [];
+  // v41-108: 실시간 순찰 체크를 우선 사용하고, 없을 때만 저장된 리포트 텍스트 스냅샷으로 폴백합니다.
+  const liveDailyPeriods = !isWeekly ? buildDailyLearningPeriodsFromChecks(checks, defaultSchedule) : [];
+  const dailyLearningPeriods = liveDailyPeriods.length
+    ? liveDailyPeriods
+    : (!isWeekly ? parseDailyLearningPeriods(dailyLearningText) : []);
   const dailyPureStudyDisplay = !isWeekly ? getPureStudyDisplay(session || {}, variables, events, studyWindows) : '';
   const dailyAwayDisplay = !isWeekly ? (calculateLiveAwayMinutes(session || {}) ? formatMinutesKo(calculateLiveAwayMinutes(session || {})) : '외출 없음') : '';
   const dailyCheckSummary = !isWeekly ? getDailyCheckSummary(session || {}, variables, events, dailyPointRows, schedule, operatingRules, studyWindows) : '';
