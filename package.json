@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-100-polling-cost-optimize",
-  "version": "0.41.100",
+  "name": "beyond-os-v41-101-delivery-history-clarity",
+  "version": "0.41.101",
   "private": true,
   "scripts": {
     "dev": "next dev",

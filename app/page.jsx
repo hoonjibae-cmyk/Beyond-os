@@ -302,8 +302,10 @@ function getReportActivityStatus(log = {}) {
   if (rawStatus === 'sent') return { label: '발송완료', className: 'done' };
   if (rawStatus === 'failed' || type.includes('failed') || type.includes('recipient_blocked')) return { label: '발송실패', className: 'failed' };
   if (type.includes('recipient_override')) return { label: '테스트 대체', className: 'test' };
-  if (['received', 'queued', 'accepted'].includes(rawStatus)) return { label: '발송요청 접수', className: 'pending' };
-  if (rawStatus === 'ready' || type.includes('prepare')) return { label: '발송대기', className: 'pending' };
+  // 알림톡은 SOLAPI가 'received'(요청 접수)를 반환하면 정상적으로 발송 처리된 것으로 봅니다.
+  // (최종 전달 상태는 별도 전송결과 웹훅이 있어야 확인 가능하지만, 접수=정상 발송으로 집계)
+  if (['received', 'queued', 'accepted'].includes(rawStatus)) return { label: '발송 완료', className: 'done' };
+  if (rawStatus === 'ready' || type.includes('prepare')) return { label: '발송 대기(미발송)', className: 'pending' };
   if (type.includes('webhook_test')) return rawStatus === 'failed' ? { label: '연결실패', className: 'failed' } : { label: '연결테스트', className: 'neutral' };
   if (type.includes('preview')) return { label: '미리보기', className: 'neutral' };
   if (type.includes('save')) return { label: '저장', className: 'neutral' };
@@ -334,8 +336,8 @@ function getReportActivitySummary(log = {}) {
 
 function getDeliveryStatusLabel(status = '') {
   const normalized = String(status || '').toLowerCase();
-  if (normalized === 'sent') return { label: '성공', className: 'done' };
-  if (normalized === 'received') return { label: '접수', className: 'pending' };
+  if (normalized === 'sent') return { label: '발송 완료', className: 'done' };
+  if (normalized === 'received') return { label: '발송 완료', className: 'done' };
   if (normalized === 'failed') return { label: '실패', className: 'failed' };
   return { label: normalized || '확인 필요', className: 'neutral' };
 }
@@ -13998,29 +14000,44 @@ function ReportActivityPanel({ title, logs = [], loading = false, onRefresh, onR
   const [open, setOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [retryingId, setRetryingId] = useState(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
+  // 발송 결과 로그(실제 발송)와 진단/내부 로그(웹훅·미리보기)를 분리해, 기본 화면은 발송 결과만 보여줍니다.
+  const isDiagnosticLog = (log) => {
+    const t = String(log.action_type || '');
+    return t.includes('webhook') || t.includes('preview');
+  };
+  const deliveryLogs = logs.filter((log) => !isDiagnosticLog(log));
+  const diagnosticLogs = logs.filter(isDiagnosticLog);
+
+  const classNameOf = (log) => getReportActivityStatus(log).className;
   const logsByStatus = {
-    all: logs,
-    done: logs.filter((log) => {
-      const label = getReportActivityStatus(log).label;
-      return label === '발송완료' || label === '수동 발송완료';
-    }),
-    partial: logs.filter((log) => getReportActivityStatus(log).label === '부분 성공'),
-    pending: logs.filter((log) => ['발송대기', '발송요청 접수'].includes(getReportActivityStatus(log).label)),
-    failed: logs.filter((log) => getReportActivityStatus(log).label === '발송실패'),
-    test: logs.filter((log) => ['테스트 대체', '연결테스트'].includes(getReportActivityStatus(log).label)),
+    all: deliveryLogs,
+    done: deliveryLogs.filter((log) => classNameOf(log) === 'done'),
+    partial: deliveryLogs.filter((log) => classNameOf(log) === 'partial'),
+    pending: deliveryLogs.filter((log) => classNameOf(log) === 'pending'),
+    failed: deliveryLogs.filter((log) => classNameOf(log) === 'failed'),
   };
 
-  const filteredLogs = logsByStatus[statusFilter] || logs;
-  const visibleLogs = open ? filteredLogs : filteredLogs.slice(0, 8);
+  const doneCount = logsByStatus.done.length + logsByStatus.partial.length;
+  const failedCount = logsByStatus.failed.length;
+  const pendingCount = logsByStatus.pending.length;
+  const verdict = failedCount > 0
+    ? { tone: 'failed', text: `발송 실패 ${failedCount}건 — 확인이 필요합니다.` }
+    : pendingCount > 0
+      ? { tone: 'pending', text: `발송 완료 ${doneCount}건 · 미발송(대기) ${pendingCount}건` }
+      : { tone: 'done', text: `모두 정상 발송되었습니다 (발송 완료 ${doneCount}건).` };
+
+  const filteredLogs = logsByStatus[statusFilter] || deliveryLogs;
+  const listSource = showDiagnostics ? [...filteredLogs, ...diagnosticLogs] : filteredLogs;
+  const visibleLogs = open ? listSource : listSource.slice(0, 8);
 
   const summaryCards = [
-    ['all', '전체 로그', logsByStatus.all.length, 'neutral'],
-    ['done', '성공', logsByStatus.done.length, 'done'],
-    ['partial', '부분 성공', logsByStatus.partial.length, 'partial'],
-    ['pending', '접수/대기', logsByStatus.pending.length, 'pending'],
-    ['failed', '실패', logsByStatus.failed.length, 'failed'],
-    ['test', '테스트/진단', logsByStatus.test.length, 'test'],
+    ['all', '전체', logsByStatus.all.length, 'neutral'],
+    ['done', '발송 완료', logsByStatus.done.length, 'done'],
+    ['failed', '발송 실패', logsByStatus.failed.length, 'failed'],
+    ['pending', '미발송(대기)', logsByStatus.pending.length, 'pending'],
+    ...(logsByStatus.partial.length ? [['partial', '부분 성공', logsByStatus.partial.length, 'partial']] : []),
   ];
 
   function changeStatusFilter(nextStatus) {
@@ -14047,12 +14064,17 @@ function ReportActivityPanel({ title, logs = [], loading = false, onRefresh, onR
       <div className="report-activity-head">
         <div>
           <strong>{title}</strong>
-          <span>최근 48시간 리포트 발송 흐름입니다. 보호자별 결과와 실패 사유를 확인하고 실패 건만 재발송 판단에 활용하세요.</span>
+          <span>최근 48시간 발송 결과입니다. 실패 건이 있으면 사유를 확인하고 실패 건만 다시 발송하세요.</span>
         </div>
         <div className="report-activity-actions">
-          <span className="report-activity-count">표시 {filteredLogs.length} / 전체 {logs.length}</span>
+          <span className="report-activity-count">발송 {deliveryLogs.length}건</span>
           <button className="secondary" onClick={onRefresh} disabled={loading}>{loading ? '조회 중...' : '새로고침'}</button>
         </div>
+      </div>
+
+      <div className={`delivery-verdict ${verdict.tone}`}>
+        <strong>{verdict.tone === 'done' ? '✅' : verdict.tone === 'failed' ? '⚠️' : '🕒'} {verdict.text}</strong>
+        <span>알림톡은 통신사에 정상 접수되면 &lsquo;발송 완료&rsquo;로 표시됩니다. 실패 0건이면 모두 정상 발송된 것입니다.</span>
       </div>
 
       <div className="report-activity-summary interactive delivery-summary-grid">
@@ -14069,7 +14091,7 @@ function ReportActivityPanel({ title, logs = [], loading = false, onRefresh, onR
         ))}
       </div>
 
-      {filteredLogs.length ? (
+      {listSource.length ? (
         <div className="report-activity-list">
           {visibleLogs.map((log) => {
             const status = getReportActivityStatus(log);
@@ -14147,9 +14169,16 @@ function ReportActivityPanel({ title, logs = [], loading = false, onRefresh, onR
         <div className="all-clear">{statusFilter === 'all' ? '최근 48시간 내 리포트 발송/저장 관련 기록이 없습니다.' : '선택한 상태의 발송 이력이 없습니다.'}</div>
       )}
 
-      {filteredLogs.length > 8 ? (
-        <button className="secondary report-activity-more" onClick={() => setOpen(!open)}>{open ? '간단히 보기' : `전체 ${filteredLogs.length}건 보기`}</button>
-      ) : null}
+      <div className="report-activity-footer-actions">
+        {listSource.length > 8 ? (
+          <button className="secondary report-activity-more" onClick={() => setOpen(!open)}>{open ? '간단히 보기' : `전체 ${listSource.length}건 보기`}</button>
+        ) : null}
+        {diagnosticLogs.length ? (
+          <button className="text-mini-button" onClick={() => setShowDiagnostics((prev) => !prev)}>
+            {showDiagnostics ? '진단·시스템 로그 숨기기' : `진단·시스템 로그 보기 (${diagnosticLogs.length})`}
+          </button>
+        ) : null}
+      </div>
     </section>
   );
 }

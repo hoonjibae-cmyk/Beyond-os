@@ -9490,6 +9490,26 @@ button.danger {
   line-height: 1;
 }
 
+/* v41-101: 발송 결과 한눈에 보기 배너 */
+.delivery-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 15px;
+  border-radius: 14px;
+  margin: 0 0 12px;
+  border: 1px solid transparent;
+}
+.delivery-verdict strong { font-size: 15.5px; font-weight: 900; }
+.delivery-verdict span { font-size: 12px; line-height: 1.5; color: #6e6e73; }
+.delivery-verdict.done { background: #e7f9ee; border-color: rgba(18,129,63,.22); }
+.delivery-verdict.done strong { color: #12813f; }
+.delivery-verdict.failed { background: #ffece9; border-color: rgba(196,39,29,.25); }
+.delivery-verdict.failed strong { color: #c4271d; }
+.delivery-verdict.pending { background: #fff8e0; border-color: rgba(122,92,0,.22); }
+.delivery-verdict.pending strong { color: #7a5c00; }
+.report-activity-footer-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+
 .report-activity-list {
   display: grid;
   gap: 8px;
