@@ -3253,8 +3253,8 @@ export default function Page() {
     }
 
     if (currentStatus === 'out' && seatStatus === 'occupied') {
-      const ok = confirm(`현재 이 학생은 퇴실 상태입니다.\n\n입실로 다시 변경하면 기존 퇴실 시각은 외출 시작으로 전환되고, 지금 시간은 복귀/재입실로 기록됩니다.\n\n계속 진행할까요?`);
-      if (!ok) return null;
+      // 하루 두 번째 등원(퇴실 후 재입실)은 확인창 없이 자동으로 재입실 처리합니다.
+      // (기존 퇴실 시각은 외출 시작으로 전환되고, 지금 시각이 복귀/재입실로 기록됩니다.)
       return { transitionAction: 'reentry_from_out' };
     }
 

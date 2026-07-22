@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-103-break-delete-save",
-  "version": "0.41.103",
+  "name": "beyond-os-v41-104-auto-reentry-no-popup",
+  "version": "0.41.104",
   "private": true,
   "scripts": {
     "dev": "next dev",
