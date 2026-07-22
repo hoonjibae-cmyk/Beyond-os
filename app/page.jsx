@@ -2849,10 +2849,14 @@ export default function Page() {
       formData.append('uploadedBy', currentUser?.displayName || '관리자');
       formData.append('file', uploadFile);
 
+      // apiFetch와 동일한 인증 헤더를 모두 실어야, 관리자 비밀번호가 아닌 '개인 계정'으로 로그인한
+      // 직원 기기에서도 업로드가 인증됩니다. (기존에는 x-admin-password만 보내 개인 계정에서 401로 조용히 실패)
       const response = await fetch('/api/planner', {
         method: 'POST',
         headers: {
-          'x-admin-password': adminPassword,
+          ...(adminPassword ? { 'x-admin-password': adminPassword } : {}),
+          ...(appSessionToken ? { 'x-app-session-token': appSessionToken } : {}),
+          ...(clientIdRef.current ? { 'x-beyond-client-id': clientIdRef.current } : {}),
         },
         body: formData,
       });
@@ -2867,7 +2871,9 @@ export default function Page() {
       setMessage('플래너 업로드 완료');
       return data.planner;
     } catch (error) {
+      // 모바일에서는 하단 메시지가 잘 안 보일 수 있어 alert로도 즉시 알립니다.
       setMessage(error.message);
+      alert(error.message || '플래너 업로드에 실패했습니다.');
     }
   }
 

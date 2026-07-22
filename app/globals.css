@@ -45,7 +45,8 @@ button { cursor: pointer; }
   display: grid;
   /* 대화면 정리: 가운데 작업영역을 상한선까지만 넓히고 전체를 중앙 정렬합니다.
      (minmax의 min을 0으로 두어 1261~1360px 구간의 가로 넘침/우측 패널 잘림도 방지) */
-  grid-template-columns: 220px minmax(0, 1200px) 420px;
+  /* 우측 패널을 360~420px 범위로 유연화해 좁은 모니터에서 가운데 작업영역(좌석배치도)에 폭을 더 내줍니다. */
+  grid-template-columns: 220px minmax(0, 1200px) minmax(360px, 420px);
   justify-content: center;
   min-height: 100vh;
 }
@@ -175,11 +176,16 @@ h1 { margin: 0; font-size: 28px; letter-spacing: -0.6px; }
 .absent-chip { background: #ffe4e6; border-color: #e45b6a; }
 .warning-chip { background: #fff1bf; border-color: #f2b600; }
 
+/* v41-102: 좌석은 고정 px 위치라 지도가 일정 폭 아래로 줄면 좌석이 잘립니다.
+   화면 폭과 무관하게 좌우 스크롤을 항상 허용하고, 지도에 최소 폭·고정 높이를 줘
+   어떤 모니터에서도(좁은 화면이면 스크롤로) 좌석 전체가 보이도록 통일합니다. */
+.seat-map-wrap { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
 .seat-map {
   position: relative;
   width: 100%;
   max-width: 920px;
-  aspect-ratio: 920 / 620;
+  min-width: 760px;
+  height: 600px;
   background:
     linear-gradient(90deg, rgba(0,0,0,.035) 1px, transparent 1px),
     linear-gradient(rgba(0,0,0,.035) 1px, transparent 1px);

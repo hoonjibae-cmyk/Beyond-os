@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-101-1-delivery-sent-detect",
-  "version": "0.41.101",
+  "name": "beyond-os-v41-102-seatmap-scroll-planner-auth",
+  "version": "0.41.102",
   "private": true,
   "scripts": {
     "dev": "next dev",
