@@ -297,15 +297,18 @@ function getReportActivityStatus(log = {}) {
   const rawStatus = String(payload.status || '').toLowerCase();
   const stats = getReportActivityRecipientStats(log);
 
-  if (type.includes('manual_sent')) return { label: '수동 발송완료', className: 'done' };
+  // 명시적 실패가 최우선
+  if (rawStatus === 'failed' || type.includes('failed') || type.includes('recipient_blocked')) return { label: '발송 실패', className: 'failed' };
   if (payload.partialSuccess || stats.partialSuccess) return { label: '부분 성공', className: 'partial' };
-  if (rawStatus === 'sent') return { label: '발송완료', className: 'done' };
-  if (rawStatus === 'failed' || type.includes('failed') || type.includes('recipient_blocked')) return { label: '발송실패', className: 'failed' };
   if (type.includes('recipient_override')) return { label: '테스트 대체', className: 'test' };
-  // 알림톡은 SOLAPI가 'received'(요청 접수)를 반환하면 정상적으로 발송 처리된 것으로 봅니다.
-  // (최종 전달 상태는 별도 전송결과 웹훅이 있어야 확인 가능하지만, 접수=정상 발송으로 집계)
-  if (['received', 'queued', 'accepted'].includes(rawStatus)) return { label: '발송 완료', className: 'done' };
-  if (rawStatus === 'ready' || type.includes('prepare')) return { label: '발송 대기(미발송)', className: 'pending' };
+  // 핵심: 실제 발송 여부는 action_type로 판정합니다.
+  //  - '*.send' / '*.manual_sent' = 통신사에 실제 발송된(접수된) 건 → '발송 완료'
+  //    (서버가 SOLAPI 'received'를 내부적으로 status:'ready'로 저장하지만, action_type이 .send면 이미 발송된 것)
+  //  - '*.prepare' = 발송 서버 미연결 등으로 저장만 된 진짜 미발송 초안 → '발송 대기(미발송)'
+  if (type.includes('manual_sent')) return { label: '발송 완료', className: 'done' };
+  if (/(^|[._])send$/.test(type) || type.includes('report.send')) return { label: '발송 완료', className: 'done' };
+  if (rawStatus === 'sent' || ['received', 'queued', 'accepted'].includes(rawStatus)) return { label: '발송 완료', className: 'done' };
+  if (type.includes('prepare') || rawStatus === 'ready') return { label: '발송 대기(미발송)', className: 'pending' };
   if (type.includes('webhook_test')) return rawStatus === 'failed' ? { label: '연결실패', className: 'failed' } : { label: '연결테스트', className: 'neutral' };
   if (type.includes('preview')) return { label: '미리보기', className: 'neutral' };
   if (type.includes('save')) return { label: '저장', className: 'neutral' };
@@ -346,7 +349,7 @@ function canRetryReportActivity(log = {}) {
   const payload = log.payload || {};
   const type = String(log.action_type || '');
   const status = getReportActivityStatus(log).label;
-  if (!['발송실패', '부분 성공'].includes(status)) return false;
+  if (!['발송 실패', '발송실패', '부분 성공'].includes(status)) return false;
   if (type.startsWith('daily_report') && payload.sessionId) return true;
   if (type.startsWith('weekly_report') && (log.target_id || payload.weeklyReportId || payload.reportId)) return true;
   return false;
