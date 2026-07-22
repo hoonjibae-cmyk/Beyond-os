@@ -18272,6 +18272,37 @@ textarea,
 @media(max-width:1000px){.kiosk-hold-period-head{grid-template-columns:28px minmax(0,1fr)}.kiosk-hold-period-summary{grid-column:1/-1;justify-content:flex-start;padding-left:40px}.kiosk-hold-student-group{grid-template-columns:28px minmax(0,1fr)}.kiosk-hold-student-group .kiosk-hold-actions{grid-column:1/-1}.kiosk-hold-history-item{grid-template-columns:1fr}.kiosk-hold-history-actions{justify-content:flex-end}}
 @media(max-width:700px){.kiosk-hold-period-summary{padding-left:0}.kiosk-hold-period-summary button{width:100%}.kiosk-hold-student-group .kiosk-hold-actions button{flex:1}.kiosk-hold-history-actions{justify-content:flex-start}}
 
+/* v41-107: 실제 출결 반영 취사선택 팝업 */
+.kiosk-hold-apply-modal{max-width:560px;width:100%}
+.kiosk-hold-apply-body{display:flex;flex-direction:column;gap:16px;padding:4px 2px}
+.kiosk-hold-apply-hint{font-size:13px;line-height:1.5;color:#6b6355;background:#faf5ea;border:1px solid #ece1cc;border-radius:12px;padding:10px 13px}
+.kiosk-hold-apply-hint b{color:#c67d10}
+.kiosk-hold-apply-signals{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.kiosk-hold-apply-signal{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:11px 13px;border:1px solid #e8e0d2;border-radius:14px;background:#fff;transition:border-color .15s,background .15s}
+.kiosk-hold-apply-signal.mode-apply_notify{border-color:#2f9e6b;background:#f2fbf6;box-shadow:inset 3px 0 0 #2f9e6b}
+.kiosk-hold-apply-signal.mode-discard{border-color:#c9c2b4;background:#f6f4ef;opacity:.72;box-shadow:inset 3px 0 0 #b6ada0}
+.kiosk-hold-apply-signal-info{display:flex;align-items:center;gap:10px;min-width:0}
+.kiosk-hold-apply-signal-info strong{font-size:15px;font-variant-numeric:tabular-nums;color:#2b2b2b}
+.kiosk-hold-apply-badge{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;background:#eef2f7;color:#40506a}
+.kiosk-hold-apply-badge.ev-away,.kiosk-hold-apply-badge.ev-check_out{background:#fde7e0;color:#c1552a}
+.kiosk-hold-apply-badge.ev-check_in,.kiosk-hold-apply-badge.ev-return{background:#e4f3ea;color:#2f7d54}
+.kiosk-hold-apply-modes{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.kiosk-hold-apply-modes label{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;padding:5px 10px;border:1px solid #dcd4c5;border-radius:999px;background:#fbfaf7;color:#6b6355;cursor:pointer;white-space:nowrap}
+.kiosk-hold-apply-modes label.active{border-color:#c67d10;background:#fff4dd;color:#8a5a08;font-weight:700}
+.kiosk-hold-apply-modes input{accent-color:#c67d10;margin:0}
+.kiosk-hold-manual{border:1px dashed #d6cdbc;border-radius:14px;padding:12px 14px;background:#fcfbf8}
+.kiosk-hold-manual.is-open{border-style:solid;border-color:#c9b78e;background:#fffdf7}
+.kiosk-hold-manual-toggle{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:600;color:#4a4335;cursor:pointer}
+.kiosk-hold-manual-toggle input{accent-color:#c67d10;width:17px;height:17px}
+.kiosk-hold-manual-body{display:flex;flex-direction:column;gap:11px;margin-top:12px}
+.kiosk-hold-manual-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kiosk-hold-manual-body label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:#6b6355}
+.kiosk-hold-manual-body select,.kiosk-hold-manual-body input[type=text],.kiosk-hold-manual-body input[type=time]{padding:8px 10px;border:1px solid #d8cfbe;border-radius:10px;font-size:14px;background:#fff;color:#2b2b2b}
+.kiosk-hold-manual-notify{flex-direction:row!important;align-items:center;gap:8px!important;font-weight:600;color:#4a4335}
+.kiosk-hold-manual-notify input{accent-color:#c67d10;width:16px;height:16px}
+.kiosk-hold-manual-note{margin:0;font-size:12px;line-height:1.5;color:#8a8272}
+@media(max-width:560px){.kiosk-hold-apply-signal{grid-template-columns:1fr}.kiosk-hold-apply-modes{justify-content:flex-start}.kiosk-hold-manual-row{grid-template-columns:1fr}}
+
 
 /* ============================================================
    Beyond OS · Apple-style theme layer (v41-38, Light)

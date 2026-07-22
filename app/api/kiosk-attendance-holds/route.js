@@ -52,10 +52,23 @@ function buildNextSession(existingSession, eventType, nowIso) {
   return { awayTotalMinutes, awayStartedAt, checkInAt, checkOutAt, seatStatus };
 }
 
-async function applyHeldEvent({ supabase, hold, request, actorName }) {
-  const student = hold.students;
+// 세션 상태에 출결 이벤트 1건을 반영하고, notify=true 인 경우에만 학부모 알림을 발송합니다.
+async function applySessionEvent({
+  supabase,
+  request,
+  student,
+  seatNo,
+  eventType,
+  eventAt,
+  memo,
+  sourceType = 'kiosk',
+  sourceLabel = '키오스크 HOLD 관리자 승인',
+  actorName,
+  notify = true,
+  importEventId = null,
+}) {
   if (!student?.id) throw new Error('학생 정보를 찾을 수 없습니다.');
-  const sessionDate = getKstDateString(new Date(hold.event_at));
+  const sessionDate = getKstDateString(new Date(eventAt));
   const { data: existingSession, error: existingError } = await supabase
     .from('daily_sessions')
     .select('*')
@@ -64,20 +77,20 @@ async function applyHeldEvent({ supabase, hold, request, actorName }) {
     .maybeSingle();
   if (existingError) throw existingError;
 
-  const next = buildNextSession(existingSession, hold.event_type, hold.event_at);
+  const next = buildNextSession(existingSession, eventType, eventAt);
   const defaultSchedule = await getDefaultScheduleSettings(supabase, sessionDate);
   const pureStudyMinutes = calculateScheduledPureStudyMinutes({
     check_in_at: next.checkInAt,
     check_out_at: next.checkOutAt,
     away_started_at: next.awayStartedAt,
     away_total_minutes: next.awayTotalMinutes,
-  }, { nowIso: hold.event_at, studyWindows: defaultSchedule.studyWindows });
+  }, { nowIso: eventAt, studyWindows: defaultSchedule.studyWindows });
 
   const { data: session, error: sessionError } = await supabase
     .from('daily_sessions')
     .upsert({
       student_id: student.id,
-      seat_no: hold.seat_no || existingSession?.seat_no || student.default_seat_no,
+      seat_no: seatNo || existingSession?.seat_no || student.default_seat_no,
       session_date: sessionDate,
       seat_status: next.seatStatus,
       check_in_at: next.checkInAt,
@@ -100,35 +113,56 @@ async function applyHeldEvent({ supabase, hold, request, actorName }) {
       session_id: session.id,
       student_id: student.id,
       seat_no: session.seat_no,
-      event_type: hold.event_type,
-      event_at: hold.event_at,
-      memo: hold.parsed_reason || `쉬는 시간 HOLD에서 관리자 승인 (${actorName})`,
+      event_type: eventType,
+      event_at: eventAt,
+      memo: memo || `쉬는 시간 HOLD에서 관리자 승인 (${actorName})`,
       created_by: actorName,
-      source_type: 'kiosk',
-      source_label: '키오스크 HOLD 관리자 승인',
-      import_event_id: hold.import_event_id,
+      source_type: sourceType,
+      source_label: sourceLabel,
+      import_event_id: importEventId,
     })
     .select()
     .single();
   if (eventError) throw eventError;
 
   let notification = null;
-  try {
-    notification = await sendAttendanceNotification({
-      supabase,
-      request,
-      attendanceEvent,
-      session,
-      student,
-      sourceType: 'kiosk',
-      sourceLabel: '키오스크 HOLD 관리자 승인',
-      createdBy: actorName,
-    });
-  } catch (error) {
-    notification = { ok: false, error: error.message || '출결 알림 처리 실패' };
+  if (notify) {
+    try {
+      notification = await sendAttendanceNotification({
+        supabase,
+        request,
+        attendanceEvent,
+        session,
+        student,
+        sourceType,
+        sourceLabel,
+        createdBy: actorName,
+      });
+    } catch (error) {
+      notification = { ok: false, error: error.message || '출결 알림 처리 실패' };
+    }
   }
 
   return { session, attendanceEvent, notification };
+}
+
+async function applyHeldEvent({ supabase, hold, request, actorName, notify = true }) {
+  const student = hold.students;
+  if (!student?.id) throw new Error('학생 정보를 찾을 수 없습니다.');
+  return applySessionEvent({
+    supabase,
+    request,
+    student,
+    seatNo: hold.seat_no,
+    eventType: hold.event_type,
+    eventAt: hold.event_at,
+    memo: hold.parsed_reason || `쉬는 시간 HOLD에서 관리자 승인 (${actorName})`,
+    sourceType: 'kiosk',
+    sourceLabel: '키오스크 HOLD 관리자 승인',
+    actorName,
+    notify,
+    importEventId: hold.import_event_id,
+  });
 }
 
 async function recordHoldAction(supabase, {
@@ -226,10 +260,12 @@ async function discardHold({ supabase, hold, actorName, memo, batchId }) {
   return { holdId: hold.id, action };
 }
 
-async function applyHold({ supabase, hold, request, actorName, memo, batchId }) {
-  const applied = await applyHeldEvent({ supabase, hold, request, actorName });
+async function applyHold({ supabase, hold, request, actorName, memo, batchId, notify = true }) {
+  const applied = await applyHeldEvent({ supabase, hold, request, actorName, notify });
   const nowIso = new Date().toISOString();
-  const actionMemo = memo || '관리자 판단으로 실제 출결 반영';
+  const actionMemo = memo || (notify
+    ? '관리자 판단으로 실제 출결 반영 (알림 발송)'
+    : '관리자 판단으로 실제 출결 반영 (알림 미발송)');
   const { error: updateError } = await supabase
     .from('kiosk_attendance_holds')
     .update({
@@ -255,9 +291,68 @@ async function applyHold({ supabase, hold, request, actorName, memo, batchId }) 
     memo: actionMemo,
     attendanceEventId: applied.attendanceEvent.id,
     batchId,
-    payload: { session_id: applied.session.id, notification: applied.notification || null },
+    payload: { session_id: applied.session.id, notified: Boolean(notify), notification: applied.notification || null },
   });
   return { holdId: hold.id, action, applied };
+}
+
+// 키오스크 신호가 불완전한 경우, 관리자가 최종 출결 상태를 직접 지정합니다.
+async function applyManualFinalStatus({ supabase, request, actorName, holds, manual, batchId }) {
+  const eventType = String(manual?.eventType || '').trim();
+  const ALLOWED = ['check_in', 'away', 'return', 'check_out'];
+  if (!ALLOWED.includes(eventType)) throw new Error('수동 지정할 최종 출결 상태를 선택하세요.');
+
+  const anchor = holds[0];
+  const student = anchor?.students;
+  if (!student?.id) throw new Error('수동 지정 대상 학생 정보를 찾을 수 없습니다.');
+
+  const sessionDate = getKstDateString(new Date(anchor.event_at));
+  const rawTime = String(manual?.time || '').trim();
+  let eventAt;
+  if (/^\d{2}:\d{2}$/.test(rawTime)) {
+    eventAt = new Date(`${sessionDate}T${rawTime}:00+09:00`).toISOString();
+  } else {
+    eventAt = new Date().toISOString();
+  }
+
+  const notify = manual?.notify !== false;
+  const memo = String(manual?.memo || '').trim() || `관리자 최종 출결 수동 지정 (${actorName})`;
+
+  const applied = await applySessionEvent({
+    supabase,
+    request,
+    student,
+    seatNo: anchor.seat_no,
+    eventType,
+    eventAt,
+    memo,
+    sourceType: 'manual',
+    sourceLabel: '키오스크 HOLD 최종 출결 수동 지정',
+    actorName,
+    notify,
+    importEventId: null,
+  });
+
+  const action = await recordHoldAction(supabase, {
+    hold: anchor,
+    actionType: 'manual_apply',
+    previousStatus: anchor.status || 'pending',
+    nextStatus: anchor.status || 'pending',
+    actorName,
+    memo,
+    attendanceEventId: applied.attendanceEvent.id,
+    batchId,
+    payload: {
+      manual: true,
+      event_type: eventType,
+      event_at: eventAt,
+      notified: Boolean(notify),
+      session_id: applied.session.id,
+      notification: applied.notification || null,
+    },
+  });
+
+  return { holdId: anchor.id, action, applied };
 }
 
 async function loadPendingHolds(supabase, ids) {
@@ -554,6 +649,47 @@ export async function POST(request) {
         appliedCount: results.length,
         results,
         message: `${results.length}건을 실제 출결로 반영했습니다.`,
+      });
+    }
+
+    // v41-107: 실제 출결 반영 취사선택 — 신호별로 (반영+알림 / 반영만 / 제외) 를 지정하고,
+    // 키오스크 기록이 불완전하면 관리자가 최종 출결 상태를 직접 수동 지정할 수 있습니다.
+    if (action === 'apply_selective') {
+      const signalModes = (body.signalModes && typeof body.signalModes === 'object') ? body.signalModes : {};
+      const orderedHolds = [...holds].sort((a, b) => new Date(a.event_at) - new Date(b.event_at));
+      const applied = [];
+      const notified = [];
+      const discarded = [];
+      for (const hold of orderedHolds) {
+        const mode = signalModes[hold.id] || 'apply_silent';
+        if (mode === 'discard') {
+          const result = await discardHold({ supabase, hold, actorName, memo: body.memo, batchId });
+          discarded.push(result);
+        } else {
+          const notify = mode === 'apply_notify';
+          const result = await applyHold({ supabase, hold, request, actorName, memo: body.memo, batchId, notify });
+          applied.push(result);
+          if (notify) notified.push(result);
+        }
+      }
+
+      let manualResult = null;
+      if (body.manual && String(body.manual.eventType || '').trim()) {
+        manualResult = await applyManualFinalStatus({ supabase, request, actorName, holds: orderedHolds, manual: body.manual, batchId });
+      }
+
+      const parts = [];
+      if (applied.length) parts.push(`반영 ${applied.length}건`);
+      if (notified.length) parts.push(`알림 ${notified.length}건`);
+      if (discarded.length) parts.push(`쉬는 시간 처리 ${discarded.length}건`);
+      if (manualResult) parts.push('최종 상태 수동 지정 1건');
+      return Response.json({
+        ok: true,
+        appliedCount: applied.length,
+        notifiedCount: notified.length + (manualResult && manualResult.action?.action_payload?.notified ? 1 : 0),
+        discardedCount: discarded.length,
+        manual: Boolean(manualResult),
+        message: parts.length ? `${parts.join(' · ')} 처리했습니다.` : '처리할 항목이 없습니다.',
       });
     }
 

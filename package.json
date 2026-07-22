@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-106-restgap-next-period-away-suppress",
-  "version": "0.41.106",
+  "name": "beyond-os-v41-107-kiosk-hold-selective-notify",
+  "version": "0.41.107",
   "private": true,
   "scripts": {
     "dev": "next dev",

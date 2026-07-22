@@ -6468,6 +6468,11 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
   useEffect(() => {
     setKioskHoldOpen((kioskHolds || []).length > 0);
   }, [kioskHolds.length]);
+  // v41-107: 실제 출결 반영 취사선택 팝업
+  const [kioskHoldApplyModal, setKioskHoldApplyModal] = useState(null);
+  const [kioskHoldApplyModes, setKioskHoldApplyModes] = useState({});
+  const [kioskHoldManual, setKioskHoldManual] = useState({ enabled: false, eventType: '', time: '', memo: '', notify: true });
+  const [kioskHoldApplySaving, setKioskHoldApplySaving] = useState(false);
 
   useEffect(() => {
     try {
@@ -6560,6 +6565,55 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
       setMessage?.(error.message || `HOLD ${actionLabel}에 실패했습니다.`);
     } finally {
       setKioskHoldLoading(false);
+    }
+  }
+
+  function openKioskHoldApply(group, period) {
+    const signals = [...(group?.signals || [])].sort((a, b) => new Date(a.event_at) - new Date(b.event_at));
+    if (!signals.length) return;
+    const modes = {};
+    signals.forEach((signal, index) => {
+      modes[signal.id] = index === signals.length - 1 ? 'apply_notify' : 'apply_silent';
+    });
+    setKioskHoldApplyModes(modes);
+    setKioskHoldManual({ enabled: false, eventType: '', time: '', memo: '', notify: true });
+    setKioskHoldApplyModal({ group: { ...group, signals }, period });
+  }
+
+  async function submitKioskHoldApply() {
+    const modal = kioskHoldApplyModal;
+    if (!modal) return;
+    const signals = modal.group?.signals || [];
+    const ids = signals.map((signal) => signal.id).filter(Boolean);
+    if (!ids.length) return;
+    const manual = kioskHoldManual.enabled && kioskHoldManual.eventType
+      ? {
+        eventType: kioskHoldManual.eventType,
+        time: kioskHoldManual.time || '',
+        memo: kioskHoldManual.memo || '',
+        notify: kioskHoldManual.notify !== false,
+      }
+      : null;
+    if (kioskHoldManual.enabled && !kioskHoldManual.eventType) {
+      setMessage?.('수동 지정할 최종 출결 상태를 선택하세요.');
+      return;
+    }
+    const notifyCount = ids.filter((id) => kioskHoldApplyModes[id] === 'apply_notify').length + (manual && manual.notify ? 1 : 0);
+    if (notifyCount === 0 && !window.confirm('학부모 알림 없이 출결만 반영합니다. 계속할까요?')) return;
+    setKioskHoldApplySaving(true);
+    try {
+      const data = await apiFetch('/api/kiosk-attendance-holds', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'apply_selective', ids, signalModes: kioskHoldApplyModes, manual }),
+      });
+      setMessage?.(data.message || '실제 출결 반영을 처리했습니다.');
+      setKioskHoldApplyModal(null);
+      setSelectedKioskHoldIds((prev) => prev.filter((id) => !ids.includes(id)));
+      await Promise.all([loadKioskHolds({ silent: true }), loadDashboard?.({ silent: true, suppressChangeNotice: true })]);
+    } catch (error) {
+      setMessage?.(error.message || '실제 출결 반영 처리에 실패했습니다.');
+    } finally {
+      setKioskHoldApplySaving(false);
     }
   }
 
@@ -7241,7 +7295,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
                                 <small className={`kiosk-hold-pair-status ${group.status}`}>{statusText}</small>
                               </div>
                               <div className="kiosk-hold-actions">
-                                <button type="button" className="primary" onClick={() => runKioskHoldGroupAction(group, 'apply_group')} disabled={kioskHoldLoading}>실제 출결 반영</button>
+                                <button type="button" className="primary" onClick={() => openKioskHoldApply(group, period)} disabled={kioskHoldLoading}>실제 출결 반영</button>
                                 <button type="button" className="secondary" onClick={() => runKioskHoldGroupAction(group, 'discard_group')} disabled={kioskHoldLoading}>쉬는 시간 처리</button>
                               </div>
                             </div>
@@ -7257,7 +7311,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
             kioskHoldHistoryGroups.length ? (
               <div className="kiosk-hold-history-list">
                 {kioskHoldHistoryGroups.map((group) => {
-                  const actionLabel = ({ apply: '실제 출결 반영', discard: '쉬는 시간 처리', undo_apply: '실제 출결 반영 되돌림', undo_discard: '쉬는 시간 처리 되돌림' })[group.actionType] || group.actionType;
+                  const actionLabel = ({ apply: '실제 출결 반영', discard: '쉬는 시간 처리', manual_apply: '최종 출결 수동 지정', undo_apply: '실제 출결 반영 되돌림', undo_discard: '쉬는 시간 처리 되돌림' })[group.actionType] || group.actionType;
                   const isUndo = group.actionType.startsWith('undo_');
                   return (
                     <div key={group.key} className={`kiosk-hold-history-item ${group.actionType}`}>
@@ -7280,6 +7334,95 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
           )) : null}
         </section>
       ) : null}
+      {kioskHoldApplyModal ? (() => {
+        const group = kioskHoldApplyModal.group;
+        const period = kioskHoldApplyModal.period || {};
+        const signals = group?.signals || [];
+        const modeOptions = [['apply_notify', '반영 + 알림'], ['apply_silent', '반영만'], ['discard', '제외']];
+        return (
+          <div className="modal-backdrop kiosk-hold-apply-backdrop" onClick={() => { if (!kioskHoldApplySaving) setKioskHoldApplyModal(null); }}>
+            <div className="modal-card kiosk-hold-apply-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <div>
+                  <h3>실제 출결 반영 · 알림 취사선택</h3>
+                  <p>{group?.student?.name || '학생'} {group?.seatNo ? `· ${group.seatNo}번 좌석` : ''} · {period.date || ''} {period.label || '쉬는 시간'}</p>
+                </div>
+                <button type="button" className="modal-close" onClick={() => setKioskHoldApplyModal(null)} disabled={kioskHoldApplySaving}>×</button>
+              </div>
+              <div className="kiosk-hold-apply-body">
+                <div className="kiosk-hold-apply-hint">쉬는 시간에 기록된 키오스크 신호입니다. 신호별로 처리 방식을 정하고, 학부모에게 알림을 보낼 항목만 <b>반영 + 알림</b>으로 선택하세요.</div>
+                <ul className="kiosk-hold-apply-signals">
+                  {signals.map((signal) => {
+                    const mode = kioskHoldApplyModes[signal.id] || 'apply_silent';
+                    return (
+                      <li key={signal.id} className={`kiosk-hold-apply-signal mode-${mode}`}>
+                        <div className="kiosk-hold-apply-signal-info">
+                          <strong>{formatKstTime(signal.event_at)}</strong>
+                          <span className={`kiosk-hold-apply-badge ev-${signal.event_type}`}>{getKioskEventLabel(signal.event_type)}</span>
+                        </div>
+                        <div className="kiosk-hold-apply-modes">
+                          {modeOptions.map(([val, label]) => (
+                            <label key={val} className={mode === val ? 'active' : ''}>
+                              <input
+                                type="radio"
+                                name={`kiosk-hold-mode-${signal.id}`}
+                                checked={mode === val}
+                                onChange={() => setKioskHoldApplyModes((prev) => ({ ...prev, [signal.id]: val }))}
+                              />
+                              <span>{label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <div className={`kiosk-hold-manual ${kioskHoldManual.enabled ? 'is-open' : ''}`}>
+                  <label className="kiosk-hold-manual-toggle">
+                    <input
+                      type="checkbox"
+                      checked={kioskHoldManual.enabled}
+                      onChange={(e) => setKioskHoldManual((prev) => ({ ...prev, enabled: e.target.checked }))}
+                    />
+                    <span>키오스크 기록이 불완전한 경우 · 최종 출결 상태를 직접 지정</span>
+                  </label>
+                  {kioskHoldManual.enabled ? (
+                    <div className="kiosk-hold-manual-body">
+                      <div className="kiosk-hold-manual-row">
+                        <label>최종 상태
+                          <select value={kioskHoldManual.eventType} onChange={(e) => setKioskHoldManual((prev) => ({ ...prev, eventType: e.target.value }))}>
+                            <option value="">선택하세요</option>
+                            <option value="check_in">입실</option>
+                            <option value="away">외출</option>
+                            <option value="return">복귀</option>
+                            <option value="check_out">퇴실</option>
+                          </select>
+                        </label>
+                        <label>시각
+                          <input type="time" value={kioskHoldManual.time} onChange={(e) => setKioskHoldManual((prev) => ({ ...prev, time: e.target.value }))} />
+                        </label>
+                      </div>
+                      <label className="kiosk-hold-manual-memo">메모(선택)
+                        <input type="text" value={kioskHoldManual.memo} placeholder="예: 외출 신호 누락, 실제로는 외출 중" onChange={(e) => setKioskHoldManual((prev) => ({ ...prev, memo: e.target.value }))} />
+                      </label>
+                      <label className="kiosk-hold-manual-notify">
+                        <input type="checkbox" checked={kioskHoldManual.notify} onChange={(e) => setKioskHoldManual((prev) => ({ ...prev, notify: e.target.checked }))} />
+                        <span>이 최종 상태를 학부모 알림으로 발송</span>
+                      </label>
+                      <p className="kiosk-hold-manual-note">지정한 최종 상태가 현재 출결 현황에 반영됩니다. 시각을 비우면 지금 시각으로 기록됩니다.</p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="secondary" onClick={() => setKioskHoldApplyModal(null)} disabled={kioskHoldApplySaving}>취소</button>
+                <button type="button" className="primary" onClick={submitKioskHoldApply} disabled={kioskHoldApplySaving}>{kioskHoldApplySaving ? '처리 중...' : '출결 반영 실행'}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })() : null}
       <div className={`patrol-shell ${quickMode ? 'is-patrol' : ''}`}>
       <div className="patrol-topbar">
         <strong>순찰 모드</strong>
