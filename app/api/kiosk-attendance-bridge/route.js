@@ -723,10 +723,17 @@ function buildSessionStateForEvent({ existingSession, eventType, nowIso }) {
   let seatStatus = eventTypeToSeatStatus(eventType);
 
   if (eventType === 'check_in') {
+    const previousCheckout = checkOutAt;
     if (!checkInAt) checkInAt = nowIso;
     if (awayStartedAt) {
       awayTotalMinutes += diffMinutes(awayStartedAt, nowIso);
       awayStartedAt = null;
+    }
+    // 퇴실 후 재입실(하루 두 번째 등원): 퇴실~재입실 기간을 외출(자리비움)로 산정합니다.
+    // (수동 재입실과 동일하게 순공시간에서 제외)
+    if (previousCheckout) {
+      awayTotalMinutes += diffMinutes(previousCheckout, nowIso);
+      eventMemo = '퇴실 후 재입실 처리';
     }
     checkOutAt = null;
   }
@@ -811,7 +818,7 @@ async function applyAttendanceEvent({ supabase, student, seatNo, eventType, nowI
     seat_no: seatNo,
     event_type: eventType,
     event_at: nowIso,
-    memo: memo || null,
+    memo: memo || next.eventMemo || null,
     created_by: KIOSK_ACTOR,
     source_type: KIOSK_SOURCE_TYPE,
     source_label: KIOSK_SOURCE_LABEL,
