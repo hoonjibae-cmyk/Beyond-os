@@ -1793,6 +1793,25 @@ function createPresenceMismatchAlert({ schedule, session, scheduleBreaks = [], s
   const status = session?.seat_status || 'not_arrived';
   if (status === 'occupied' || status === 'absent') return null;
 
+  // v41-106: 쉬는 시간(차시 사이)에 외출/퇴실을 찍었는데, 바로 다음 차시가 이미 '외출 예정'이거나
+  // '그 차시 전에 퇴실(하원) 예정'이면 확인 알림을 띄우지 않습니다.
+  // 예) 저녁 쉬는 시간(18~19시)에 나가고, 다음 차시(19시~)부터 외출/조퇴가 개인 시간표에 잡혀 있는 경우.
+  if ((status === 'away' || status === 'out') && !isWithinStudyWindow(nowMinutes, defaultSchedule)) {
+    const windows = normalizeDefaultScheduleSettings(defaultSchedule).studyWindows || [];
+    const nextStudyStart = windows
+      .map((w) => timeToMinutes(w.start))
+      .filter((s) => s !== null && s > nowMinutes)
+      .sort((a, b) => a - b)[0] ?? null;
+    if (nextStudyStart === null) return null; // 오늘 남은 차시가 없으면 외출/퇴실은 정상 → 제외
+    const nextCoveredByBreak = (scheduleBreaks || []).some((item) => {
+      const leave = timeToMinutes(item.leave_start || item.leaveStart);
+      const ret = timeToMinutes(item.return_time || item.returnTime);
+      return leave !== null && ret !== null && leave <= nextStudyStart && ret > nextStudyStart;
+    });
+    const leavesBeforeNextStudy = checkOut !== null && checkOut <= nextStudyStart; // 다음 차시 전(=이하)에 하원 예정
+    if (nextCoveredByBreak || leavesBeforeNextStudy) return null;
+  }
+
   // v41-50: 외출(away) 상태는 '실제 차시(학습 인정 구간)' 시간에만 확인 알림을 띄웁니다.
   // 차시와 차시 사이의 쉬는 시간에 키오스크로 외출을 찍고 나간 경우는(정상 상황)
   // '출결상태 확인 필요' 알림 대상에서 제외합니다. (외출 예정·복귀 확인 알림은 별도 유지)

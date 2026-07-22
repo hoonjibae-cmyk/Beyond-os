@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-105-kiosk-reentry-away",
-  "version": "0.41.105",
+  "name": "beyond-os-v41-106-restgap-next-period-away-suppress",
+  "version": "0.41.106",
   "private": true,
   "scripts": {
     "dev": "next dev",
