@@ -4600,8 +4600,13 @@ export default function Page() {
       if (ci !== null && co !== null && co <= ci) errors.push('예정 하원은 예정 등원보다 늦어야 합니다.');
     } else if (scope === 'break') {
       const realBreaks = (activityPopup.breaks || []).filter((item) => item.leaveStart || item.returnTime || item.reasonDetail || item.breakNote);
-      if (!realBreaks.length) errors.push('외출 항목을 하나 이상 입력하세요.');
-      errors.push(...validateSchedulePayload({ plannedCheckIn: activityPopup.plannedCheckIn, plannedCheckOut: activityPopup.plannedCheckOut, breaks: activityPopup.breaks || [] }));
+      if (!realBreaks.length) {
+        // 외출 항목이 없으면 = 이 날짜(반복 포함)의 외출 일정을 삭제(정리)하는 것으로 처리
+        const ok = confirm('입력된 외출 항목이 없습니다.\n선택한 날짜(반복 포함)의 외출 일정을 모두 삭제(정리)할까요?');
+        if (!ok) return;
+      } else {
+        errors.push(...validateSchedulePayload({ plannedCheckIn: activityPopup.plannedCheckIn, plannedCheckOut: activityPopup.plannedCheckOut, breaks: activityPopup.breaks || [] }));
+      }
     } else if (scope === 'absent') {
       if (!String(activityPopup.absentReason || '').trim()) errors.push('결석 사유를 입력하세요.');
     }

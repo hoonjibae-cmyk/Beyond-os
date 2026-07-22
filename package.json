@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-102-seatmap-scroll-planner-auth",
-  "version": "0.41.102",
+  "name": "beyond-os-v41-103-break-delete-save",
+  "version": "0.41.103",
   "private": true,
   "scripts": {
     "dev": "next dev",

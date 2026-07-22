@@ -249,6 +249,8 @@ async function saveScopedEvent(supabase, request, body) {
     defaultSeatNo = studentRow?.default_seat_no || null;
   }
 
+  const validBreakCount = (Array.isArray(body.breaks) ? body.breaks : []).filter((item) => item.leaveStart).length;
+
   const saved = [];
   for (const date of dates) {
     const { data: existing } = await supabase
@@ -257,6 +259,9 @@ async function saveScopedEvent(supabase, request, body) {
       .eq('student_id', body.studentId)
       .eq('schedule_date', date)
       .maybeSingle();
+
+    // 외출 삭제(외출 항목 0개)인데 해당 날짜에 개인 시간표가 없으면, 빈 시간표를 새로 만들지 않고 건너뜁니다.
+    if (scope === 'break' && validBreakCount === 0 && !existing) continue;
 
     const payload = {
       student_id: body.studentId,
