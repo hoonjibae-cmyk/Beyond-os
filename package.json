@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-108-daily-report-live-periods",
-  "version": "0.41.108",
+  "name": "beyond-os-v41-109-checkout-reentry-away-return",
+  "version": "0.41.109",
   "private": true,
   "scripts": {
     "dev": "next dev",

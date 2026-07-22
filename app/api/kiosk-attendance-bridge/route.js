@@ -667,14 +667,16 @@ function validateKioskTransition(existingSession, eventType) {
 
   if (eventType === 'away') {
     if (!hasCheckIn) return { ok: false, status: 'failed', error: '입실 기록이 없어 외출을 자동반영할 수 없습니다.' };
-    if (hasCheckOut) return { ok: false, status: 'failed', error: '이미 퇴실한 학생은 외출로 자동반영할 수 없습니다.' };
+    // 퇴실 후 다시 키오스크를 찍은 외출 신호는 재입실 후 외출로 허용합니다.(퇴실~지금은 외출로 산정)
+    if (hasCheckOut) return { ok: true };
     if (isAway) return { ok: false, duplicate: true, status: 'duplicate', error: '이미 외출 상태입니다. 중복 외출 문자로 판단해 자동반영을 무시했습니다.' };
     return { ok: true };
   }
 
   if (eventType === 'return') {
     if (!hasCheckIn) return { ok: false, status: 'failed', error: '입실 기록이 없어 복귀를 자동반영할 수 없습니다.' };
-    if (hasCheckOut) return { ok: false, status: 'failed', error: '이미 퇴실한 학생은 복귀로 자동반영할 수 없습니다.' };
+    // 퇴실 후 다시 돌아온 복귀 신호는 재입실로 허용합니다.(퇴실~복귀는 외출로 산정)
+    if (hasCheckOut) return { ok: true };
     if (!isAway) return { ok: false, status: 'failed', error: '현재 외출 상태가 아니므로 복귀를 자동반영할 수 없습니다.' };
     return { ok: true };
   }
@@ -739,16 +741,27 @@ function buildSessionStateForEvent({ existingSession, eventType, nowIso }) {
   }
 
   if (eventType === 'away') {
+    const previousCheckout = checkOutAt;
     if (!checkInAt) checkInAt = nowIso;
+    // 퇴실 후 재입실 → 외출: 퇴실~지금 기간을 외출(자리비움)로 산정한 뒤 지금부터 다시 외출 처리
+    if (previousCheckout) {
+      awayTotalMinutes += diffMinutes(previousCheckout, nowIso);
+      eventMemo = '퇴실 후 재입실 외출 처리';
+    }
     if (!awayStartedAt) awayStartedAt = nowIso;
     checkOutAt = null;
   }
 
   if (eventType === 'return') {
+    const previousCheckout = checkOutAt;
     if (!checkInAt) checkInAt = nowIso;
     if (awayStartedAt) {
       awayTotalMinutes += diffMinutes(awayStartedAt, nowIso);
       awayStartedAt = null;
+    } else if (previousCheckout) {
+      // 퇴실 후 복귀(재입실): 퇴실~복귀 기간을 외출(자리비움)로 산정하고 재입실 처리
+      awayTotalMinutes += diffMinutes(previousCheckout, nowIso);
+      eventMemo = '퇴실 후 복귀(재입실) 처리';
     }
     checkOutAt = null;
     seatStatus = 'occupied';
