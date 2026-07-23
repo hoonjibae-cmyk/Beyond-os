@@ -282,12 +282,18 @@ function stripAttendanceReasonPrefix(value, label = '') {
   return raw;
 }
 
+// 시스템이 자동으로 남긴 처리 메모(퇴실 후 재입실 등)는 학부모용 사유로 보지 않습니다.
+function isSystemProcessingMemo(value = '') {
+  return /재입실|재등원|자동|퇴실\s*후/.test(String(value || ''));
+}
+
 function getEventReason(events = [], eventType = '', label = '') {
   const rows = (events || [])
     .filter((event) => event?.event_type === eventType && String(event.memo || '').trim())
     .sort((a, b) => new Date(b.event_at || b.created_at || 0) - new Date(a.event_at || a.created_at || 0));
 
-  return stripAttendanceReasonPrefix(rows[0]?.memo || '', label);
+  const reason = stripAttendanceReasonPrefix(rows[0]?.memo || '', label);
+  return isSystemProcessingMemo(reason) ? '' : reason;
 }
 
 function formatIssueWithReason(label, reason) {
@@ -904,6 +910,9 @@ export default async function PublicReportPage({ params }) {
   const dailyPureStudyDisplay = !isWeekly ? getPureStudyDisplay(session || {}, variables, events, studyWindows) : '';
   const dailyAwayDisplay = !isWeekly ? (calculateLiveAwayMinutes(session || {}) ? formatMinutesKo(calculateLiveAwayMinutes(session || {})) : '외출 없음') : '';
   const dailyAwayIntervals = !isWeekly ? buildAwayIntervalsFromEvents(events, scheduleBreaks) : [];
+  // v41-113: 10분을 넘지 않는 짧은 외출은 "주요 외출 내역"에서 제외(횟수 산정에서도 제외).
+  // 총 외출 시간(dailyAwayDisplay)에는 그대로 반영됩니다.
+  const dailyMajorAwayIntervals = dailyAwayIntervals.filter((item) => !item.end || diffMinutesIso(item.start, item.end) > 10);
   const dailyCheckSummary = !isWeekly ? getDailyCheckSummary(session || {}, variables, events, dailyPointRows, schedule, operatingRules, studyWindows) : '';
   const dailyPointSummary = !isWeekly ? summarizePointRows(pointRows) : { reward: 0, penalty: 0, net: 0, count: 0 };
 
@@ -1009,11 +1018,11 @@ export default async function PublicReportPage({ params }) {
             <MetricCard label="주요 확인사항" value={dailyCheckSummary} tone={dailyCheckSummary === '특이사항 없음' ? 'good' : 'warn'} />
           </div>
 
-          {dailyAwayIntervals.length ? (
-            <Card title="외출 내역">
-              <p className="card-subtitle">외출 시각과 사유입니다. (총 {dailyAwayIntervals.length}회 · {dailyAwayDisplay})</p>
+          {dailyMajorAwayIntervals.length ? (
+            <Card title="주요 외출 내역">
+              <p className="card-subtitle">10분을 초과한 외출의 시각과 사유입니다. (총 {dailyMajorAwayIntervals.length}회 · 전체 외출 {dailyAwayDisplay})</p>
               <div className="away-interval-list">
-                {dailyAwayIntervals.map((item, index) => (
+                {dailyMajorAwayIntervals.map((item, index) => (
                   <div key={`away-${index}`} className="away-interval-row">
                     <strong>{formatTime(item.start)} ~ {item.end ? formatTime(item.end) : '미복귀'}</strong>
                     <span>{item.reason ? item.reason : '사유 미기재'}</span>

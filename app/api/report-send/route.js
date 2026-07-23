@@ -221,12 +221,18 @@ function stripAttendanceReasonPrefix(value, label = '') {
   return raw;
 }
 
+// 시스템 자동 처리 메모(퇴실 후 재입실 등)는 학부모용 사유로 보지 않습니다.
+function isSystemProcessingMemo(value = '') {
+  return /재입실|재등원|자동|퇴실\s*후/.test(String(value || ''));
+}
+
 function getEventReason(events = [], eventType = '', label = '') {
   const rows = (events || [])
     .filter((event) => event?.event_type === eventType && String(event.memo || '').trim())
     .sort((a, b) => new Date(b.event_at || b.created_at || 0) - new Date(a.event_at || a.created_at || 0));
 
-  return stripAttendanceReasonPrefix(rows[0]?.memo || '', label);
+  const reason = stripAttendanceReasonPrefix(rows[0]?.memo || '', label);
+  return isSystemProcessingMemo(reason) ? '' : reason;
 }
 
 function formatIssueWithReason(label, reason) {

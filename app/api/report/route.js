@@ -207,15 +207,17 @@ function buildAwayIntervals(events = [], scheduleBreaks = []) {
 function buildAwayLine(session, events, scheduleBreaks = []) {
   const totalLabel = formatMinutes(calculateTotalAwayMinutes(session));
   const intervals = buildAwayIntervals(events, scheduleBreaks);
-  const count = intervals.length;
+  // v41-113: 10분을 넘지 않는 짧은 외출은 목록/횟수에서 제외(총 외출 시간에는 반영).
+  const major = intervals.filter((item) => !item.end || diffMinutes(item.start, item.end) > 10);
+  const count = major.length;
   if (!count) return `외출: 총 ${totalLabel}, 0회`;
-  const lines = intervals.map((item) => {
+  const lines = major.map((item) => {
     const start = formatKstDateTime(item.start);
     const end = item.end ? formatKstDateTime(item.end) : '미복귀';
     const reason = item.reason ? ` · 사유: ${item.reason}` : '';
     return `  · ${start}~${end}${reason}`;
   });
-  return [`외출: 총 ${totalLabel}, ${count}회`, ...lines].join('\n');
+  return [`외출: 총 ${totalLabel}, ${count}회(10분 초과)`, ...lines].join('\n');
 }
 
 async function getStudentPoints(supabase, studentId, startDate, endDate = startDate) {
