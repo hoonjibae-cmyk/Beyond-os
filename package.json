@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-113-1-system-memo-filter-expand",
-  "version": "0.41.1131",
+  "name": "beyond-os-v41-114-away-no-return-as-checkout",
+  "version": "0.41.114",
   "private": true,
   "scripts": {
     "dev": "next dev",

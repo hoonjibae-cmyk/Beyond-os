@@ -191,12 +191,16 @@ function findOverlappingBreakReason(startIso, endIso, scheduleBreaks = []) {
 
 // away 이벤트를 시간 순으로 훑어 (외출~복귀) 구간과 사유를 만듭니다.
 // 사유 우선순위: ① 외출 이벤트 메모 → ② 겹치는 개인 시간표 외출 → ③ 공란
-function buildAwayIntervals(events = [], scheduleBreaks = []) {
+// isClosed(퇴실 완료)인데 복귀 기록이 없는 외출은 "퇴실"로 간주해 외출 내역에서 제외합니다.
+function buildAwayIntervals(events = [], scheduleBreaks = [], isClosed = false) {
   const sorted = [...(events || [])].filter((event) => event.event_at).sort((a, b) => new Date(a.event_at) - new Date(b.event_at));
   const intervals = [];
   sorted.forEach((event, index) => {
     if (event.event_type !== 'away') return;
-    const end = sorted.slice(index + 1).find((item) => ['return', 'check_in', 'check_out'].includes(item.event_type));
+    const rest = sorted.slice(index + 1);
+    const hasReturn = rest.some((item) => ['return', 'check_in'].includes(item.event_type));
+    if (!hasReturn && isClosed) return;
+    const end = rest.find((item) => ['return', 'check_in', 'check_out'].includes(item.event_type));
     const endAt = end?.event_at || null;
     const reason = cleanAwayReason(event.memo) || findOverlappingBreakReason(event.event_at, endAt, scheduleBreaks);
     intervals.push({ start: event.event_at, end: endAt, reason });
@@ -206,7 +210,7 @@ function buildAwayIntervals(events = [], scheduleBreaks = []) {
 
 function buildAwayLine(session, events, scheduleBreaks = []) {
   const totalLabel = formatMinutes(calculateTotalAwayMinutes(session));
-  const intervals = buildAwayIntervals(events, scheduleBreaks);
+  const intervals = buildAwayIntervals(events, scheduleBreaks, Boolean(session?.check_out_at));
   // v41-113: 10분을 넘지 않는 짧은 외출은 목록/횟수에서 제외(총 외출 시간에는 반영).
   const major = intervals.filter((item) => !item.end || diffMinutes(item.start, item.end) > 10);
   const count = major.length;

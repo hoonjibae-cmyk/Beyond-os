@@ -63,10 +63,17 @@ async function runAutoCheckout() {
   const updated = [];
 
   for (const session of sessions || []) {
-    const checkoutIso = midnightAfter(session.session_date);
-    const extraAway = session.away_started_at ? diffMinutes(session.away_started_at, checkoutIso) : 0;
+    // 외출 후 복귀 없이 하루가 끝난 경우: 자정이 아니라 "외출 시작 시각"을 실제 퇴실로 봅니다.
+    // (18:59에 나가서 안 돌아왔으면 18:59 퇴실이지, 자정까지 외출 5시간이 아님)
+    const leftWithoutReturn = session.seat_status === 'away' && Boolean(session.away_started_at);
+    const checkoutIso = leftWithoutReturn ? session.away_started_at : midnightAfter(session.session_date);
+    const extraAway = (!leftWithoutReturn && session.away_started_at)
+      ? diffMinutes(session.away_started_at, checkoutIso)
+      : 0;
     const awayTotal = Number(session.away_total_minutes || 0) + extraAway;
-    const pureStudyMinutes = calculatePureStudyMinutes(session, checkoutIso, defaultSchedule.studyWindows);
+    // 순공시간 계산에도 마지막 외출 구간이 더해지지 않도록 정리된 세션 값을 사용합니다.
+    const checkoutSession = { ...session, away_started_at: null, away_total_minutes: awayTotal, check_out_at: checkoutIso };
+    const pureStudyMinutes = calculatePureStudyMinutes(checkoutSession, checkoutIso, defaultSchedule.studyWindows);
 
     const { data: saved, error: updateError } = await supabase
       .from('daily_sessions')
@@ -90,7 +97,7 @@ async function runAutoCheckout() {
       seat_no: session.seat_no,
       event_type: 'check_out',
       event_at: checkoutIso,
-      memo: '시스템 자동 자정 퇴실',
+      memo: leftWithoutReturn ? '시스템 자동 퇴실(외출 후 미복귀 · 외출 시작 시각 기준)' : '시스템 자동 자정 퇴실',
       created_by: 'system',
     });
 
