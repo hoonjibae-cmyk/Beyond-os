@@ -154,7 +154,7 @@ function cleanAwayReasonText(memo) {
   }
   if (!raw) return '';
   if (['외출', '외출함', '잠시 외출', '자리비움', '외출 처리'].includes(raw)) return '';
-  if (/재입실|재등원|자동|처리$/.test(raw)) return '';
+  if (/재입실|재등원|자동|퇴실\s*후|HOLD|관리자\s*승인|쉬는\s*시간|수동\s*지정|승인\s*\(|처리$/i.test(raw)) return '';
   return raw;
 }
 
@@ -282,9 +282,10 @@ function stripAttendanceReasonPrefix(value, label = '') {
   return raw;
 }
 
-// 시스템이 자동으로 남긴 처리 메모(퇴실 후 재입실 등)는 학부모용 사유로 보지 않습니다.
+// 시스템이 자동으로 남긴 처리 메모(퇴실 후 재입실, 키오스크 HOLD 승인/수동 지정 등)는
+// 학부모용 사유로 보지 않습니다.
 function isSystemProcessingMemo(value = '') {
-  return /재입실|재등원|자동|퇴실\s*후/.test(String(value || ''));
+  return /재입실|재등원|자동|퇴실\s*후|HOLD|관리자\s*승인|쉬는\s*시간|수동\s*지정|승인\s*\(|처리$/i.test(String(value || ''));
 }
 
 function getEventReason(events = [], eventType = '', label = '') {
@@ -411,7 +412,12 @@ function getDailyCheckSummary(session = {}, variables = {}, events = [], dailyPo
   if (earlyLeaveIssue) upsertAttendanceIssue(issues, formatIssueWithReason(earlyLeaveIssue, getEventReason(events, 'check_out', '조퇴')));
 
   for (const pointIssue of createDailyPointIssueLabels(dailyPointRows)) pushUnique(issues, pointIssue);
-  return formatDailyIssues(issues);
+  // 저장된 요약 문구 등에 시스템 자동 처리 문구가 괄호로 붙어 있으면 학부모용으로 제거합니다.
+  const cleanedIssues = issues.map((label) => {
+    const match = String(label || '').match(/^(.*?)\((.*)\)$/);
+    return match && isSystemProcessingMemo(match[2]) ? match[1].trim() : label;
+  });
+  return formatDailyIssues(cleanedIssues);
 }
 
 function getPlannerUrl(report = {}, planner = {}) {

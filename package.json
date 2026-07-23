@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-113-report-parent-readability",
-  "version": "0.41.113",
+  "name": "beyond-os-v41-113-1-system-memo-filter-expand",
+  "version": "0.41.1131",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -155,7 +155,7 @@ function cleanAwayReason(memo) {
   const raw = stripAttendanceReasonPrefix(String(memo || '').trim(), '외출');
   if (!raw) return '';
   if (['외출', '외출함', '잠시 외출', '자리비움', '외출 처리'].includes(raw)) return '';
-  if (/재입실|재등원|자동|처리$/.test(raw)) return '';
+  if (/재입실|재등원|자동|퇴실\s*후|HOLD|관리자\s*승인|쉬는\s*시간|수동\s*지정|승인\s*\(|처리$/i.test(raw)) return '';
   return raw;
 }
 
