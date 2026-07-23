@@ -356,7 +356,10 @@ function getDailyCheckSummary(session = {}, variables = {}, events = [], dailyPo
 
 function getPlannerUrl(report = {}, planner = {}) {
   const payload = safePayload(report);
-  return payload.plannerImageUrl || planner.signedUrl || '';
+  // v41-110: 매 요청마다 새로 발급한 서명 URL을 우선 사용합니다.
+  // 리포트 생성 시 저장된 서명 URL(plannerImageUrl)은 유효기간이 지나면 깨지므로,
+  // 지난 날짜 리포트를 다시 열 때 이미지가 안 뜨던 문제를 방지합니다.
+  return planner.signedUrl || payload.plannerImageUrl || '';
 }
 
 function cleanText(value) {
