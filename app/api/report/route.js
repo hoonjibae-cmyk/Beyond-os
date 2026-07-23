@@ -159,25 +159,54 @@ function cleanAwayReason(memo) {
   return raw;
 }
 
+// 개인 시간표 외출(student_schedule_breaks)에서 학부모용 사유 문구를 만듭니다.
+function formatScheduleBreakReason(breakRow = {}) {
+  const detail = String(breakRow.reason_detail || '').trim();
+  const reason = String(breakRow.reason || '').trim();
+  if (detail) return reason && reason !== '기타' ? `${reason}(${detail})` : detail;
+  if (reason) return reason;
+  return '';
+}
+
+// away 구간과 겹치는 개인 시간표 외출을 찾아(겹침이 가장 큰 것) 사유를 끌어옵니다.
+function findOverlappingBreakReason(startIso, endIso, scheduleBreaks = []) {
+  const startMin = getKstMinutesFromIso(startIso);
+  if (startMin === null) return '';
+  const endMin = endIso ? (getKstMinutesFromIso(endIso) ?? startMin + 1) : startMin + 1;
+  let best = null;
+  let bestOverlap = 0;
+  for (const item of scheduleBreaks || []) {
+    const leave = timeToMinutes(item.leave_start);
+    if (leave === null) continue;
+    const ret = timeToMinutes(item.return_time);
+    const breakEnd = ret === null ? 1440 : ret;
+    const overlap = Math.max(0, Math.min(endMin, breakEnd) - Math.max(startMin, leave));
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      best = item;
+    }
+  }
+  return best ? formatScheduleBreakReason(best) : '';
+}
+
 // away 이벤트를 시간 순으로 훑어 (외출~복귀) 구간과 사유를 만듭니다.
-function buildAwayIntervals(events = []) {
+// 사유 우선순위: ① 외출 이벤트 메모 → ② 겹치는 개인 시간표 외출 → ③ 공란
+function buildAwayIntervals(events = [], scheduleBreaks = []) {
   const sorted = [...(events || [])].filter((event) => event.event_at).sort((a, b) => new Date(a.event_at) - new Date(b.event_at));
   const intervals = [];
   sorted.forEach((event, index) => {
     if (event.event_type !== 'away') return;
     const end = sorted.slice(index + 1).find((item) => ['return', 'check_in', 'check_out'].includes(item.event_type));
-    intervals.push({
-      start: event.event_at,
-      end: end?.event_at || null,
-      reason: cleanAwayReason(event.memo),
-    });
+    const endAt = end?.event_at || null;
+    const reason = cleanAwayReason(event.memo) || findOverlappingBreakReason(event.event_at, endAt, scheduleBreaks);
+    intervals.push({ start: event.event_at, end: endAt, reason });
   });
   return intervals;
 }
 
-function buildAwayLine(session, events) {
+function buildAwayLine(session, events, scheduleBreaks = []) {
   const totalLabel = formatMinutes(calculateTotalAwayMinutes(session));
-  const intervals = buildAwayIntervals(events);
+  const intervals = buildAwayIntervals(events, scheduleBreaks);
   const count = intervals.length;
   if (!count) return `외출: 총 ${totalLabel}, 0회`;
   const lines = intervals.map((item) => {
@@ -297,7 +326,29 @@ export async function POST(request) {
     }
 
     const student = session.students;
-    const awayLine = buildAwayLine(session, events);
+
+    // 개인 시간표에 등록된 외출(사유 폴백용)을 조회합니다.
+    let scheduleBreaks = [];
+    try {
+      const { data: scheduleRow } = await supabase
+        .from('student_daily_schedules')
+        .select('id')
+        .eq('student_id', session.student_id)
+        .eq('schedule_date', session.session_date || getKstDateString())
+        .maybeSingle();
+      if (scheduleRow?.id) {
+        const { data: breakRows } = await supabase
+          .from('student_schedule_breaks')
+          .select('leave_start, return_time, reason, reason_detail')
+          .eq('schedule_id', scheduleRow.id)
+          .order('leave_start', { ascending: true });
+        scheduleBreaks = breakRows || [];
+      }
+    } catch {
+      scheduleBreaks = [];
+    }
+
+    const awayLine = buildAwayLine(session, events, scheduleBreaks);
 
     const { data: existingReport } = await supabase
       .from('daily_reports')

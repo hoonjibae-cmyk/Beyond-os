@@ -158,17 +158,44 @@ function cleanAwayReasonText(memo) {
   return raw;
 }
 
-function buildAwayIntervalsFromEvents(events = []) {
+function formatScheduleBreakReasonText(breakRow = {}) {
+  const detail = String(breakRow.reason_detail || '').trim();
+  const reason = String(breakRow.reason || '').trim();
+  if (detail) return reason && reason !== '기타' ? `${reason}(${detail})` : detail;
+  if (reason) return reason;
+  return '';
+}
+
+function findOverlappingBreakReasonText(startIso, endIso, scheduleBreaks = []) {
+  const startMin = getKstMinutesFromIso(startIso);
+  if (startMin === null) return '';
+  const endMin = endIso ? (getKstMinutesFromIso(endIso) ?? startMin + 1) : startMin + 1;
+  let best = null;
+  let bestOverlap = 0;
+  for (const item of scheduleBreaks || []) {
+    const leave = timeToMinutes(item.leave_start);
+    if (leave === null) continue;
+    const ret = timeToMinutes(item.return_time);
+    const breakEnd = ret === null ? 1440 : ret;
+    const overlap = Math.max(0, Math.min(endMin, breakEnd) - Math.max(startMin, leave));
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      best = item;
+    }
+  }
+  return best ? formatScheduleBreakReasonText(best) : '';
+}
+
+// 사유 우선순위: ① 외출 이벤트 메모 → ② 겹치는 개인 시간표 외출 → ③ 공란
+function buildAwayIntervalsFromEvents(events = [], scheduleBreaks = []) {
   const sorted = [...(events || [])].filter((event) => event.event_at).sort((a, b) => new Date(a.event_at) - new Date(b.event_at));
   const intervals = [];
   sorted.forEach((event, index) => {
     if (event.event_type !== 'away') return;
     const end = sorted.slice(index + 1).find((item) => ['return', 'check_in', 'check_out'].includes(item.event_type));
-    intervals.push({
-      start: event.event_at,
-      end: end?.event_at || null,
-      reason: cleanAwayReasonText(event.memo),
-    });
+    const endAt = end?.event_at || null;
+    const reason = cleanAwayReasonText(event.memo) || findOverlappingBreakReasonText(event.event_at, endAt, scheduleBreaks);
+    intervals.push({ start: event.event_at, end: endAt, reason });
   });
   return intervals;
 }
@@ -773,6 +800,8 @@ async function loadReport(token) {
     const pointRows = await getStudentPointRows(supabase, session?.student_id || report.student_id, reportDate);
     const dailyPointRows = reportDate ? pointRows.filter((row) => row.point_date === reportDate) : [];
     let schedule = normalizeDailySchedule(safePayload(report)?.scheduleSnapshot || null);
+    // v41-112: 외출 사유 폴백용으로 개인 시간표 외출(student_schedule_breaks)을 함께 조회합니다.
+    let scheduleBreaks = [];
     if (session?.student_id && reportDate) {
       try {
         const { data: scheduleRow } = await supabase
@@ -782,13 +811,21 @@ async function loadReport(token) {
           .eq('schedule_date', reportDate)
           .maybeSingle();
         schedule = normalizeDailySchedule(scheduleRow || schedule);
+        if (scheduleRow?.id) {
+          const { data: breakRows } = await supabase
+            .from('student_schedule_breaks')
+            .select('leave_start, return_time, reason, reason_detail')
+            .eq('schedule_id', scheduleRow.id)
+            .order('leave_start', { ascending: true });
+          scheduleBreaks = breakRows || [];
+        }
       } catch {
         schedule = normalizeDailySchedule(schedule);
       }
     }
     const operatingRules = safePayload(report)?.dailyIssueRules || await getOperatingRules(supabase);
     const defaultSchedule = resolveScheduleForDate(scheduleConfig, reportDate);
-    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, checks, pointRows, dailyPointRows, schedule, operatingRules, defaultSchedule };
+    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, checks, scheduleBreaks, pointRows, dailyPointRows, schedule, operatingRules, defaultSchedule };
   }
 
   if (link.report_type === 'weekly') {
@@ -843,7 +880,7 @@ export default async function PublicReportPage({ params }) {
     return <ErrorPage title="리포트를 열 수 없습니다" message="링크가 만료되었거나 더 이상 사용 가능한 리포트가 아닙니다." />;
   }
 
-  const { reportType, report, session, student, link, planner, events = [], checks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
+  const { reportType, report, session, student, link, planner, events = [], checks = [], scheduleBreaks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
   const studyWindows = defaultSchedule?.studyWindows;
   const variables = getTemplateVariables(report);
   const isWeekly = reportType === 'weekly';
@@ -866,7 +903,7 @@ export default async function PublicReportPage({ params }) {
     : (!isWeekly ? parseDailyLearningPeriods(dailyLearningText) : []);
   const dailyPureStudyDisplay = !isWeekly ? getPureStudyDisplay(session || {}, variables, events, studyWindows) : '';
   const dailyAwayDisplay = !isWeekly ? (calculateLiveAwayMinutes(session || {}) ? formatMinutesKo(calculateLiveAwayMinutes(session || {})) : '외출 없음') : '';
-  const dailyAwayIntervals = !isWeekly ? buildAwayIntervalsFromEvents(events) : [];
+  const dailyAwayIntervals = !isWeekly ? buildAwayIntervalsFromEvents(events, scheduleBreaks) : [];
   const dailyCheckSummary = !isWeekly ? getDailyCheckSummary(session || {}, variables, events, dailyPointRows, schedule, operatingRules, studyWindows) : '';
   const dailyPointSummary = !isWeekly ? summarizePointRows(pointRows) : { reward: 0, penalty: 0, net: 0, count: 0 };
 

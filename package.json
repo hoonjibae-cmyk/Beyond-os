@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-111-report-away-intervals",
-  "version": "0.41.111",
+  "name": "beyond-os-v41-112-away-reason-fallback-schedule",
+  "version": "0.41.112",
   "private": true,
   "scripts": {
     "dev": "next dev",
