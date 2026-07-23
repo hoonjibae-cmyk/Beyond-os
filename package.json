@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-116-report-live-update-notice",
-  "version": "0.41.116",
+  "name": "beyond-os-v41-117-bulk-send-progress-select",
+  "version": "0.41.117",
   "private": true,
   "scripts": {
     "dev": "next dev",

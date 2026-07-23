@@ -9657,6 +9657,14 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
   const [dailyShareLinksByReportId, setDailyShareLinksByReportId] = useState({});
   const [shareLinkWorking, setShareLinkWorking] = useState(false);
 
+  // 전체 발송 진행 중에는 새로고침/창 닫기 시 경고를 띄워 중단을 막습니다.
+  useEffect(() => {
+    if (bulkSendRun?.status !== 'running') return undefined;
+    const handler = (event) => { event.preventDefault(); event.returnValue = ''; return ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [bulkSendRun?.status]);
+
   const dailyChecksBySession = useMemo(() => groupBySession(targetChecks), [targetChecks]);
   const dailyEventsBySession = useMemo(() => groupBySession(targetEvents), [targetEvents]);
   const dailyReportsBySession = useMemo(() => {
@@ -10212,10 +10220,25 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
       excludedCount: sessionsForReport.filter((session) => isExcluded(session)).length,
       recipientRows,
       recipientCount: getRecipientPreviewCount(recipientRows),
+      selectedIds: targets.map((session) => String(session.id)),
       safety,
       acknowledged: !safety.requiresAcknowledgement,
       confirmPhrase: '',
     });
+  }
+
+  function toggleConfirmSendTarget(id) {
+    const key = String(id);
+    setConfirmSend((prev) => {
+      if (!prev) return prev;
+      const current = new Set(prev.selectedIds || []);
+      if (current.has(key)) current.delete(key); else current.add(key);
+      return { ...prev, selectedIds: Array.from(current) };
+    });
+  }
+
+  function setAllConfirmSendTargets(select) {
+    setConfirmSend((prev) => prev ? { ...prev, selectedIds: select ? (prev.targets || []).map((session) => String(session.id)) : [] } : prev);
   }
 
   function getBulkSendResultStatus(data) {
@@ -10317,8 +10340,14 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
       return;
     }
     const { targets, title, mode } = confirmSend;
+    const selectedSet = new Set(confirmSend.selectedIds || []);
+    const selectedTargets = (targets || []).filter((session) => selectedSet.has(String(session.id)));
+    if (!selectedTargets.length) {
+      alert('발송할 학생을 한 명 이상 선택하세요.');
+      return;
+    }
     setConfirmSend(null);
-    await runBulkSendBatch(targets, title, mode);
+    await runBulkSendBatch(selectedTargets, title, mode);
   }
 
   async function retryBulkFailedResults() {
@@ -10418,6 +10447,9 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
 
   const confirmSafety = confirmSend?.safety || null;
   const confirmRecipientRows = confirmSend?.recipientRows || [];
+  const confirmSelectedSet = new Set(confirmSend?.selectedIds || []);
+  const confirmSelectedCount = confirmSend ? (confirmSend.targets || []).filter((session) => confirmSelectedSet.has(String(session.id))).length : 0;
+  const confirmAllSelected = confirmSend ? confirmSelectedCount === (confirmSend.targets || []).length && confirmSelectedCount > 0 : false;
   async function retryDailyActivityLog(log) {
     const sessionId = log?.payload?.sessionId;
     if (!sessionId) {
@@ -10541,11 +10573,15 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
 
         {bulkSendRun ? (
           <div className={`bulk-send-progress-card ${bulkSendRun.status}`}>
+            {bulkSendRun.status === 'running' ? (
+              <div className="bulk-send-running-banner">⚠ 발송이 진행 중입니다. 완료될 때까지 이 창을 닫거나 새로고침하지 마세요.</div>
+            ) : null}
             <div className="bulk-send-progress-head">
               <div>
                 <strong>{bulkSendRun.title}</strong>
-                <span>{bulkSendRun.status === 'running' ? '발송 진행 중입니다. 화면을 닫지 말고 완료 결과를 확인하세요.' : '마감 발송 결과가 정리되었습니다.'}</span>
+                <span>{bulkSendRun.status === 'running' ? `${bulkSendRun.completed} / ${bulkSendRun.total}명 처리 중… 창을 닫으면 남은 발송이 중단됩니다.` : '전체 발송 결과가 정리되었습니다.'}</span>
               </div>
+              <div className="bulk-send-progress-percent">{bulkSendRun.total ? Math.round((bulkSendRun.completed / bulkSendRun.total) * 100) : 0}%</div>
               <button className="secondary" onClick={() => setBulkSendRun(null)} disabled={bulkSendRun.status === 'running'}>{bulkSendRun.status === 'running' ? '진행 중' : '결과 닫기'}</button>
             </div>
             <div className="bulk-progress-bar"><span style={{ width: `${bulkSendRun.total ? Math.round((bulkSendRun.completed / bulkSendRun.total) * 100) : 0}%` }} /></div>
@@ -10810,7 +10846,7 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
             </div>
 
             <div className="send-confirm-summary-grid v40-95-summary">
-              <div><strong>{confirmSend.targets.length}</strong><span>발송 대상 학생</span></div>
+              <div><strong>{confirmSelectedCount}/{confirmSend.targets.length}</strong><span>발송 선택/대상</span></div>
               <div><strong>{confirmSend.recipientCount || 0}</strong><span>예상 수신 보호자</span></div>
               <div><strong>{confirmSend.warningCount || 0}</strong><span>확인 필요</span></div>
               <div><strong>{confirmSend.excludedCount}</strong><span>발송 제외</span></div>
@@ -10836,17 +10872,32 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
 
             <RecipientPolicyProjectionCard projection={getRecipientPolicyProjection(sendConfig, confirmSend.recipientCount || 0)} />
 
-            <div className="send-recipient-preview-box">
-              <strong>발송 대상 보호자 확인</strong>
-              <p>개인정보 보호를 위해 전화번호는 일부만 표시됩니다. 실제 수신자는 보호자 수신 설정과 테스트/Allowlist 정책에 따라 결정됩니다.</p>
-              <div className="recipient-preview-list">
-                {confirmRecipientRows.slice(0, confirmPreviewLimit).map((row) => (
-                  <div key={row.id}>
-                    <b>{row.name}</b>
-                    <span>{row.recipients.length ? row.recipients.join(' / ') : '수신 보호자 없음'}</span>
-                  </div>
-                ))}
-                {confirmRecipientRows.length > confirmPreviewLimit ? <div>외 {confirmRecipientRows.length - confirmPreviewLimit}명</div> : null}
+            <div className="send-recipient-preview-box send-recipient-select-box">
+              <div className="send-recipient-select-head">
+                <div>
+                  <strong>발송 대상 선택 ({confirmSelectedCount}/{confirmSend.targets.length}명)</strong>
+                  <p>이미 발송된 학부모는 체크를 해제하면 이번 발송에서 제외됩니다. 기본값은 전체 선택입니다.</p>
+                </div>
+                <div className="send-recipient-select-actions">
+                  <button type="button" className="secondary mini" onClick={() => setAllConfirmSendTargets(true)} disabled={confirmAllSelected}>전체 선택</button>
+                  <button type="button" className="secondary mini" onClick={() => setAllConfirmSendTargets(false)} disabled={confirmSelectedCount === 0}>전체 해제</button>
+                </div>
+              </div>
+              <div className="recipient-select-list">
+                {(confirmSend.targets || []).map((session) => {
+                  const row = confirmRecipientRows.find((item) => String(item.id) === String(session.id)) || {};
+                  const key = String(session.id);
+                  const checked = confirmSelectedSet.has(key);
+                  const sendStatus = reportsBySessionForReport[session.id]?.send_status;
+                  const statusLabel = ['ready', 'sent'].includes(sendStatus) ? getSendStatusLabel(sendStatus) : '';
+                  return (
+                    <label key={key} className={`recipient-select-row ${checked ? 'checked' : ''}`}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleConfirmSendTarget(session.id)} />
+                      <span className="recipient-select-name">{row.name || session.students?.name || '학생'}{statusLabel ? <em className="recipient-select-status">{statusLabel}</em> : null}</span>
+                      <span className="recipient-select-guardians">{row.recipients?.length ? row.recipients.join(' / ') : '수신 보호자 없음'}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 
@@ -10891,7 +10942,7 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
 
             <div className="popup-bottom-actions">
               <button className="secondary" onClick={() => setConfirmSend(null)}>취소</button>
-              <button className="primary send-final-button" onClick={executeConfirmSend} disabled={confirmFinalDisabled}>{confirmFinalDisabled ? '확인 필요' : confirmSend.warningRows.length ? "확인 후 발송" : "바로 발송"}</button>
+              <button className="primary send-final-button" onClick={executeConfirmSend} disabled={confirmFinalDisabled || confirmSelectedCount === 0}>{confirmFinalDisabled ? '확인 필요' : confirmSelectedCount === 0 ? '대상 선택 필요' : `선택 ${confirmSelectedCount}명 발송`}</button>
             </div>
           </div>
         </div>
@@ -10931,6 +10982,14 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   const [weeklyBulkLoading, setWeeklyBulkLoading] = useState(false);
   const [weeklyBulkNotice, setWeeklyBulkNotice] = useState(null);
   const [weeklyBulkResult, setWeeklyBulkResult] = useState(null);
+  const [weeklyBulkSendConfirm, setWeeklyBulkSendConfirm] = useState(null);
+  const [weeklyBulkSendRun, setWeeklyBulkSendRun] = useState(null);
+  useEffect(() => {
+    if (weeklyBulkSendRun?.status !== 'running') return undefined;
+    const handler = (event) => { event.preventDefault(); event.returnValue = ''; return ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [weeklyBulkSendRun?.status]);
   const [historyStart, setHistoryStart] = useState(initialRange.start);
   const [historyEnd, setHistoryEnd] = useState(initialRange.end);
   const [historyStudentFilter, setHistoryStudentFilter] = useState('all');
@@ -11745,6 +11804,140 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
     }
   }
 
+  // ── 위클리 리포트 전체 발송 ──
+  function getWeeklyBulkResultStatus(data) {
+    if (!data || data.ok === false) return 'failed';
+    const status = String(data.report?.send_status || data.status || '').toLowerCase();
+    if (status === 'failed' || status === 'error') return 'failed';
+    if (status === 'ready' || status === 'queued' || status === 'accepted') return 'ready';
+    return 'sent';
+  }
+  function getWeeklyBulkResultLabel(status) {
+    if (status === 'sent') return '발송완료';
+    if (status === 'ready') return '발송대기';
+    if (status === 'failed') return '발송실패';
+    return status || '처리됨';
+  }
+
+  async function openWeeklyBulkSend() {
+    try {
+      setWeeklyBulkLoading(true);
+      const params = new URLSearchParams({ mode: 'history', start, end });
+      const data = await apiFetch(`/api/weekly-report?${params.toString()}`);
+      const reports = (data.reports || []).filter((report) => String(report.report_text || '').trim());
+      const targets = reports
+        .map((report) => ({ report, student: report.student || studentLookup[report.student_id] || null }))
+        .filter(({ student }) => student && student.status !== 'inactive' && getActiveGuardians(student, 'weekly').length);
+      if (!targets.length) {
+        alert('이번 기간에 발송할 저장된 위클리 리포트가 없습니다. 먼저 "자동 구성"으로 리포트를 만든 뒤 다시 시도하세요.');
+        return;
+      }
+      const safety = getReportSendSafetySummary(sendConfig);
+      const recipientRows = targets.map(({ report, student }) => {
+        const guardians = getActiveGuardians(student, 'weekly');
+        return {
+          id: String(report.id),
+          name: student?.name || '학생',
+          recipients: guardians.map((guardian) => `${guardian.relationship || guardian.displayName || '보호자'} ${maskPhoneForDisplay(guardian.phone)}`),
+          recipientCount: guardians.length,
+          sendStatus: report.send_status,
+        };
+      });
+      setWeeklyBulkSendConfirm({
+        targets,
+        selectedIds: targets.map(({ report }) => String(report.id)),
+        recipientRows,
+        recipientCount: recipientRows.reduce((sum, row) => sum + row.recipientCount, 0),
+        safety,
+        acknowledged: !safety.requiresAcknowledgement,
+        confirmPhrase: '',
+      });
+    } catch (error) {
+      alert(error.message || '위클리 발송 대상 조회에 실패했습니다.');
+    } finally {
+      setWeeklyBulkLoading(false);
+    }
+  }
+
+  function toggleWeeklyBulkTarget(id) {
+    const key = String(id);
+    setWeeklyBulkSendConfirm((prev) => {
+      if (!prev) return prev;
+      const current = new Set(prev.selectedIds || []);
+      if (current.has(key)) current.delete(key); else current.add(key);
+      return { ...prev, selectedIds: Array.from(current) };
+    });
+  }
+  function setAllWeeklyBulkTargets(select) {
+    setWeeklyBulkSendConfirm((prev) => prev ? { ...prev, selectedIds: select ? (prev.targets || []).map(({ report }) => String(report.id)) : [] } : prev);
+  }
+
+  async function runWeeklyBulkSendBatch(targets, title = '위클리 리포트 전체 발송', mode = 'bulk') {
+    const safeTargets = (targets || []).filter(Boolean);
+    if (!safeTargets.length) return;
+    const runId = `${Date.now()}-weekly-${mode}`;
+    setWeeklyBulkSendRun({
+      id: runId, title, mode, status: 'running',
+      total: safeTargets.length, completed: 0, sent: 0, ready: 0, failed: 0,
+      results: [], srcTargets: safeTargets,
+    });
+    for (const item of safeTargets) {
+      const { report, student } = item;
+      const rowBase = { reportId: report.id, studentId: report.student_id, name: student?.name || '학생' };
+      let row;
+      try {
+        const data = await apiFetch('/api/weekly-report-send', {
+          method: 'POST',
+          body: JSON.stringify({ reportId: report.id, action: 'send', adminName: currentUser?.displayName || '관리자' }),
+        });
+        const status = getWeeklyBulkResultStatus(data);
+        row = { ...rowBase, status, label: getWeeklyBulkResultLabel(status), message: data?.message || data?.error || '' };
+      } catch (error) {
+        row = { ...rowBase, status: 'failed', label: '발송실패', message: error.message || '발송 중 오류가 발생했습니다.' };
+      }
+      setWeeklyBulkSendRun((prev) => {
+        if (!prev || prev.id !== runId) return prev;
+        const nextResults = [...(prev.results || []), row];
+        return {
+          ...prev,
+          completed: nextResults.length,
+          sent: nextResults.filter((r) => r.status === 'sent').length,
+          ready: nextResults.filter((r) => r.status === 'ready').length,
+          failed: nextResults.filter((r) => r.status === 'failed').length,
+          results: nextResults,
+        };
+      });
+    }
+    await loadWeeklyHistory(historyStart, historyEnd).catch(() => {});
+    await loadWeeklyStatus(start, end).catch(() => {});
+    await loadWeeklyActivity(start, end).catch(() => {});
+    setWeeklyBulkSendRun((prev) => prev && prev.id === runId ? { ...prev, status: 'done' } : prev);
+  }
+
+  async function executeWeeklyBulkSend() {
+    const confirmState = weeklyBulkSendConfirm;
+    if (!confirmState) return;
+    const safety = confirmState.safety || getReportSendSafetySummary(sendConfig);
+    if (safety.requiresAcknowledgement && !confirmState.acknowledged) { alert('발송 전 확인 체크를 완료해야 합니다.'); return; }
+    if (safety.requiresTypedConfirmation && String(confirmState.confirmPhrase || '').trim() !== safety.confirmPhrase) {
+      alert(`실전 발송 확인 문구로 "${safety.confirmPhrase}"를 입력해야 합니다.`);
+      return;
+    }
+    const selected = new Set(confirmState.selectedIds || []);
+    const targets = (confirmState.targets || []).filter(({ report }) => selected.has(String(report.id)));
+    if (!targets.length) { alert('발송할 학생을 한 명 이상 선택하세요.'); return; }
+    setWeeklyBulkSendConfirm(null);
+    await runWeeklyBulkSendBatch(targets);
+  }
+
+  async function retryWeeklyBulkFailed() {
+    const failedIds = new Set((weeklyBulkSendRun?.results || []).filter((r) => r.status === 'failed').map((r) => String(r.reportId)));
+    const targets = (weeklyBulkSendRun?.srcTargets || []).filter(({ report }) => failedIds.has(String(report.id)));
+    if (!targets.length) return alert('재발송할 실패 대상이 없습니다.');
+    if (!confirm(`실패한 위클리 리포트 ${targets.length}건을 다시 발송할까요?\n\n중복 수신 방지를 위해 실제 수신 결과를 확인한 뒤 진행하세요.`)) return;
+    await runWeeklyBulkSendBatch(targets, '위클리 실패 건 재발송', 'retry_failed');
+  }
+
   async function retryWeeklyActivityLog(log) {
     const reportId = log?.target_id || log?.payload?.weeklyReportId || log?.payload?.reportId;
     if (!reportId) {
@@ -11785,6 +11978,15 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   const weeklyConfirmFinalDisabled = Boolean(weeklySendConfirm && weeklyConfirmSafety && (
     (weeklyConfirmSafety.requiresAcknowledgement && !weeklySendConfirm.acknowledged)
     || (weeklyConfirmSafety.requiresTypedConfirmation && String(weeklySendConfirm.confirmPhrase || '').trim() !== weeklyConfirmSafety.confirmPhrase)
+  ));
+
+  const weeklyBulkSafety = weeklyBulkSendConfirm?.safety || null;
+  const weeklyBulkSelectedSet = new Set(weeklyBulkSendConfirm?.selectedIds || []);
+  const weeklyBulkSelectedCount = weeklyBulkSendConfirm ? (weeklyBulkSendConfirm.targets || []).filter(({ report }) => weeklyBulkSelectedSet.has(String(report.id))).length : 0;
+  const weeklyBulkAllSelected = weeklyBulkSendConfirm ? weeklyBulkSelectedCount === (weeklyBulkSendConfirm.targets || []).length && weeklyBulkSelectedCount > 0 : false;
+  const weeklyBulkFinalDisabled = Boolean(weeklyBulkSendConfirm && weeklyBulkSafety && (
+    (weeklyBulkSafety.requiresAcknowledgement && !weeklyBulkSendConfirm.acknowledged)
+    || (weeklyBulkSafety.requiresTypedConfirmation && String(weeklyBulkSendConfirm.confirmPhrase || '').trim() !== weeklyBulkSafety.confirmPhrase)
   ));
 
   return (
@@ -11952,13 +12154,55 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
           </div>
           <div className="weekly-auto-compose-actions">
             <button className="secondary section-action" onClick={() => runWeeklyBulkCompose('missing')} disabled={weeklyBulkLoading}>{weeklyBulkLoading ? '구성 중...' : '미작성 자동 구성'}</button>
-            <button className="primary section-action" onClick={() => runWeeklyBulkCompose('all')} disabled={weeklyBulkLoading}>{weeklyBulkLoading ? '구성 중...' : '전체 갱신 구성'}</button>
+            <button className="secondary section-action" onClick={() => runWeeklyBulkCompose('all')} disabled={weeklyBulkLoading}>{weeklyBulkLoading ? '구성 중...' : '전체 갱신 구성'}</button>
+            <button className="primary section-action" onClick={openWeeklyBulkSend} disabled={weeklyBulkLoading || weeklyBulkSendRun?.status === 'running'}>{weeklyBulkSendRun?.status === 'running' ? '발송 중...' : '학부모 전체 발송'}</button>
           </div>
         </div>
         <div className="weekly-auto-compose-guide">
           <span>미작성 자동 구성은 기존 저장 리포트를 보존합니다.</span>
           <span>전체 갱신 구성은 저장된 면담/최종 코멘트는 유지하되, 주간 요약과 본문을 최신 데이터로 다시 정리합니다.</span>
+          <span>학부모 전체 발송은 이번 기간에 저장된 위클리 리포트를 대상으로 한 번에 발송합니다. 발송 창에서 학생을 취사선택할 수 있습니다.</span>
         </div>
+
+        {weeklyBulkSendRun ? (
+          <div className={`bulk-send-progress-card ${weeklyBulkSendRun.status}`}>
+            {weeklyBulkSendRun.status === 'running' ? (
+              <div className="bulk-send-running-banner">⚠ 발송이 진행 중입니다. 완료될 때까지 이 창을 닫거나 새로고침하지 마세요.</div>
+            ) : null}
+            <div className="bulk-send-progress-head">
+              <div>
+                <strong>{weeklyBulkSendRun.title}</strong>
+                <span>{weeklyBulkSendRun.status === 'running' ? `${weeklyBulkSendRun.completed} / ${weeklyBulkSendRun.total}명 처리 중… 창을 닫으면 남은 발송이 중단됩니다.` : '전체 발송 결과가 정리되었습니다.'}</span>
+              </div>
+              <div className="bulk-send-progress-percent">{weeklyBulkSendRun.total ? Math.round((weeklyBulkSendRun.completed / weeklyBulkSendRun.total) * 100) : 0}%</div>
+              <button className="secondary" onClick={() => setWeeklyBulkSendRun(null)} disabled={weeklyBulkSendRun.status === 'running'}>{weeklyBulkSendRun.status === 'running' ? '진행 중' : '결과 닫기'}</button>
+            </div>
+            <div className="bulk-progress-bar"><span style={{ width: `${weeklyBulkSendRun.total ? Math.round((weeklyBulkSendRun.completed / weeklyBulkSendRun.total) * 100) : 0}%` }} /></div>
+            <div className="bulk-send-summary">
+              <div><strong>{weeklyBulkSendRun.completed}</strong><span>처리 / {weeklyBulkSendRun.total}</span></div>
+              <div><strong>{weeklyBulkSendRun.sent}</strong><span>발송완료</span></div>
+              <div><strong>{weeklyBulkSendRun.ready}</strong><span>발송대기</span></div>
+              <div><strong>{weeklyBulkSendRun.failed}</strong><span>발송실패</span></div>
+            </div>
+            {weeklyBulkSendRun.results?.length ? (
+              <div className="bulk-result-list">
+                {weeklyBulkSendRun.results.slice(-12).map((row) => (
+                  <div key={`${weeklyBulkSendRun.id}-${row.reportId}`} className={`bulk-result-row ${row.status}`}>
+                    <b>{row.name}</b>
+                    <span>{row.label}</span>
+                    <small>{row.message || ''}</small>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {weeklyBulkSendRun.status === 'done' && weeklyBulkSendRun.failed > 0 ? (
+              <div className="bulk-retry-bar">
+                <span>실패 학생만 다시 발송할 수 있습니다. 중복 수신 가능성을 확인한 뒤 실행하세요.</span>
+                <button className="secondary" onClick={retryWeeklyBulkFailed}>실패 건 재발송</button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {weeklyBulkNotice ? (
           <div className={`send-action-feedback weekly-bulk-feedback ${weeklyBulkNotice.type || 'neutral'} ${weeklyBulkLoading ? 'loading' : ''}`}>
             <strong>{weeklyBulkNotice.title}</strong>
@@ -12270,6 +12514,92 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
             <div className="popup-bottom-actions">
               <button className="secondary" onClick={() => setWeeklySendConfirm(null)}>취소</button>
               <button className="primary send-final-button" onClick={executeWeeklySendConfirm} disabled={weeklyConfirmFinalDisabled}>{weeklyConfirmFinalDisabled ? '확인 필요' : '위클리 발송'}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {weeklyBulkSendConfirm ? (
+        <div className="modal-backdrop" onClick={() => setWeeklyBulkSendConfirm(null)}>
+          <div className="send-preview-modal compact-send-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="popup-head">
+              <div>
+                <h2>위클리 리포트 전체 발송</h2>
+                <p>이번 기간에 저장된 위클리 리포트를 학부모에게 발송합니다. 이미 발송된 학생은 체크를 해제하세요.</p>
+              </div>
+              <button onClick={() => setWeeklyBulkSendConfirm(null)}>닫기</button>
+            </div>
+
+            <div className={`send-live-safety-card ${weeklyBulkSafety?.className || 'safe'}`}>
+              <div>
+                <strong>{weeklyBulkSafety?.title || '발송 상태 확인'}</strong>
+                <span>{weeklyBulkSafety?.description || '발송 전 현재 제공자/수신번호 제한 상태를 확인하세요.'}</span>
+              </div>
+              <em>{weeklyBulkSafety?.badge || '확인 필요'}</em>
+            </div>
+
+            <div className="send-confirm-summary-grid v40-95-summary">
+              <div><strong>{weeklyBulkSelectedCount}/{weeklyBulkSendConfirm.targets.length}</strong><span>발송 선택/대상</span></div>
+              <div><strong>{weeklyBulkSendConfirm.recipientCount || 0}</strong><span>예상 수신 보호자</span></div>
+            </div>
+
+            <div className="send-recipient-preview-box send-recipient-select-box">
+              <div className="send-recipient-select-head">
+                <div>
+                  <strong>발송 대상 선택 ({weeklyBulkSelectedCount}/{weeklyBulkSendConfirm.targets.length}명)</strong>
+                  <p>이미 발송된 학부모는 체크를 해제하면 이번 발송에서 제외됩니다. 기본값은 전체 선택입니다.</p>
+                </div>
+                <div className="send-recipient-select-actions">
+                  <button type="button" className="secondary mini" onClick={() => setAllWeeklyBulkTargets(true)} disabled={weeklyBulkAllSelected}>전체 선택</button>
+                  <button type="button" className="secondary mini" onClick={() => setAllWeeklyBulkTargets(false)} disabled={weeklyBulkSelectedCount === 0}>전체 해제</button>
+                </div>
+              </div>
+              <div className="recipient-select-list">
+                {(weeklyBulkSendConfirm.targets || []).map(({ report, student }) => {
+                  const row = (weeklyBulkSendConfirm.recipientRows || []).find((item) => String(item.id) === String(report.id)) || {};
+                  const key = String(report.id);
+                  const checked = weeklyBulkSelectedSet.has(key);
+                  const statusLabel = ['ready', 'sent'].includes(report.send_status) ? getWeeklySendStatus(report, student).label : '';
+                  return (
+                    <label key={key} className={`recipient-select-row ${checked ? 'checked' : ''}`}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleWeeklyBulkTarget(report.id)} />
+                      <span className="recipient-select-name">{row.name || student?.name || '학생'}{statusLabel ? <em className="recipient-select-status">{statusLabel}</em> : null}</span>
+                      <span className="recipient-select-guardians">{row.recipients?.length ? row.recipients.join(' / ') : '수신 보호자 없음'}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <RecipientPolicyProjectionCard projection={getRecipientPolicyProjection(sendConfig, weeklyBulkSendConfirm.recipientCount || 0)} />
+
+            {weeklyBulkSafety?.requiresAcknowledgement ? (
+              <div className="send-acknowledgement-box">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(weeklyBulkSendConfirm.acknowledged)}
+                    onChange={(event) => setWeeklyBulkSendConfirm((prev) => prev ? { ...prev, acknowledged: event.target.checked } : prev)}
+                  />
+                  <span>{weeklyBulkSafety.level === 'live-unrestricted' ? '테스트 모드/Allowlist 없이 실제 보호자에게 발송되는 것을 확인했습니다.' : '현재 발송 제한/테스트 정책을 확인했습니다.'}</span>
+                </label>
+                {weeklyBulkSafety.requiresTypedConfirmation ? (
+                  <div className="field confirm-phrase-field">
+                    <label>실전 발송 확인 문구</label>
+                    <input
+                      value={weeklyBulkSendConfirm.confirmPhrase || ''}
+                      onChange={(event) => setWeeklyBulkSendConfirm((prev) => prev ? { ...prev, confirmPhrase: event.target.value } : prev)}
+                      placeholder={`${weeklyBulkSafety.confirmPhrase} 입력`}
+                    />
+                    <small>전체 실전 발송 모드에서는 오발송 방지를 위해 <b>{weeklyBulkSafety.confirmPhrase}</b> 입력이 필요합니다.</small>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="popup-bottom-actions">
+              <button className="secondary" onClick={() => setWeeklyBulkSendConfirm(null)}>취소</button>
+              <button className="primary send-final-button" onClick={executeWeeklyBulkSend} disabled={weeklyBulkFinalDisabled || weeklyBulkSelectedCount === 0}>{weeklyBulkFinalDisabled ? '확인 필요' : weeklyBulkSelectedCount === 0 ? '대상 선택 필요' : `선택 ${weeklyBulkSelectedCount}명 발송`}</button>
             </div>
           </div>
         </div>

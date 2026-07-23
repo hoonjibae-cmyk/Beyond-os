@@ -11910,6 +11910,68 @@ textarea {
   word-break: keep-all;
 }
 
+.send-recipient-select-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.send-recipient-select-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.recipient-select-list {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 2px;
+}
+.recipient-select-row {
+  display: grid;
+  grid-template-columns: 20px 130px 1fr;
+  gap: 9px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #ece3d4;
+  border-radius: 12px;
+  background: #fbfaf7;
+  font-size: 13px;
+  cursor: pointer;
+}
+.recipient-select-row.checked {
+  border-color: #c9b78e;
+  background: #fffdf7;
+}
+.recipient-select-row input { width: 17px; height: 17px; accent-color: #c67d10; margin: 0; }
+.recipient-select-name {
+  font-weight: 700;
+  color: #2b2b2b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recipient-select-status {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #b5761a;
+  font-style: normal;
+}
+.recipient-select-guardians {
+  color: #7a6f64;
+  word-break: keep-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .recipient-select-row { grid-template-columns: 20px 1fr; }
+  .recipient-select-guardians { grid-column: 2 / -1; }
+}
 .send-acknowledgement-box label {
   display: flex;
   align-items: flex-start;
@@ -14144,6 +14206,30 @@ textarea,
   border-color: #cab58b;
   box-shadow: 0 10px 24px rgba(126, 93, 27, .08);
 }
+.bulk-send-running-banner {
+  background: #fff3d6;
+  border: 1px solid #f0c96b;
+  color: #8a5a08;
+  font-weight: 800;
+  font-size: 13.5px;
+  border-radius: 12px;
+  padding: 10px 13px;
+  margin-bottom: 12px;
+}
+.bulk-send-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.bulk-send-progress-head > div:first-child { flex: 1; min-width: 0; }
+.bulk-send-progress-percent {
+  flex: none;
+  font-size: 26px;
+  font-weight: 900;
+  color: #2b261f;
+  font-variant-numeric: tabular-nums;
+}
+.bulk-send-progress-card.done .bulk-send-progress-percent { color: #2f7d54; }
 .bulk-send-progress-head strong {
   display: block;
   font-size: 17px;
