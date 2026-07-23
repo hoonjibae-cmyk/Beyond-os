@@ -149,6 +149,46 @@ function formatIssueWithReason(label, reason) {
   return cleanReason ? `${cleanLabel}(${cleanReason})` : cleanLabel;
 }
 
+// 외출 이벤트 메모에서 학부모에게 보여줄 사유만 추립니다.
+// 일반적인 '외출'/시스템 처리 문구(퇴실 후 재입실 등)는 사유로 보지 않습니다.
+function cleanAwayReason(memo) {
+  const raw = stripAttendanceReasonPrefix(String(memo || '').trim(), '외출');
+  if (!raw) return '';
+  if (['외출', '외출함', '잠시 외출', '자리비움', '외출 처리'].includes(raw)) return '';
+  if (/재입실|재등원|자동|처리$/.test(raw)) return '';
+  return raw;
+}
+
+// away 이벤트를 시간 순으로 훑어 (외출~복귀) 구간과 사유를 만듭니다.
+function buildAwayIntervals(events = []) {
+  const sorted = [...(events || [])].filter((event) => event.event_at).sort((a, b) => new Date(a.event_at) - new Date(b.event_at));
+  const intervals = [];
+  sorted.forEach((event, index) => {
+    if (event.event_type !== 'away') return;
+    const end = sorted.slice(index + 1).find((item) => ['return', 'check_in', 'check_out'].includes(item.event_type));
+    intervals.push({
+      start: event.event_at,
+      end: end?.event_at || null,
+      reason: cleanAwayReason(event.memo),
+    });
+  });
+  return intervals;
+}
+
+function buildAwayLine(session, events) {
+  const totalLabel = formatMinutes(calculateTotalAwayMinutes(session));
+  const intervals = buildAwayIntervals(events);
+  const count = intervals.length;
+  if (!count) return `외출: 총 ${totalLabel}, 0회`;
+  const lines = intervals.map((item) => {
+    const start = formatKstDateTime(item.start);
+    const end = item.end ? formatKstDateTime(item.end) : '미복귀';
+    const reason = item.reason ? ` · 사유: ${item.reason}` : '';
+    return `  · ${start}~${end}${reason}`;
+  });
+  return [`외출: 총 ${totalLabel}, ${count}회`, ...lines].join('\n');
+}
+
 async function getStudentPoints(supabase, studentId, startDate, endDate = startDate) {
   try {
     const { data } = await supabase
@@ -257,12 +297,7 @@ export async function POST(request) {
     }
 
     const student = session.students;
-    const awayEvents = (events || []).filter((event) => event.event_type === 'away');
-    const awayCount = awayEvents.length;
-    const awayDetails = [...new Set(awayEvents.map((event) => String(event.memo || '').trim()).filter(Boolean))];
-    const awayLine = awayDetails.length
-      ? `외출: 총 ${formatMinutes(calculateTotalAwayMinutes(session))}, ${awayCount}회, ${awayDetails.join(', ')}`
-      : `외출: 총 ${formatMinutes(calculateTotalAwayMinutes(session))}, ${awayCount}회`;
+    const awayLine = buildAwayLine(session, events);
 
     const { data: existingReport } = await supabase
       .from('daily_reports')

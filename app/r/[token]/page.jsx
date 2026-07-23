@@ -146,6 +146,33 @@ function calculateLiveAwayMinutes(session = {}) {
   return Math.max(0, Number(session.away_total_minutes || 0) + calculateCurrentAwayMinutes(session));
 }
 
+// v41-111: 외출 사유 정리 + (외출~복귀) 구간 산출 — 학부모 링크에도 시간/사유를 보여줍니다.
+function cleanAwayReasonText(memo) {
+  let raw = String(memo || '').trim();
+  for (const prefix of ['외출 사유:', '외출 사유：']) {
+    if (raw.startsWith(prefix)) { raw = raw.slice(prefix.length).trim(); break; }
+  }
+  if (!raw) return '';
+  if (['외출', '외출함', '잠시 외출', '자리비움', '외출 처리'].includes(raw)) return '';
+  if (/재입실|재등원|자동|처리$/.test(raw)) return '';
+  return raw;
+}
+
+function buildAwayIntervalsFromEvents(events = []) {
+  const sorted = [...(events || [])].filter((event) => event.event_at).sort((a, b) => new Date(a.event_at) - new Date(b.event_at));
+  const intervals = [];
+  sorted.forEach((event, index) => {
+    if (event.event_type !== 'away') return;
+    const end = sorted.slice(index + 1).find((item) => ['return', 'check_in', 'check_out'].includes(item.event_type));
+    intervals.push({
+      start: event.event_at,
+      end: end?.event_at || null,
+      reason: cleanAwayReasonText(event.memo),
+    });
+  });
+  return intervals;
+}
+
 function calculateLivePureStudyMinutes(session = {}, events = [], studyWindows = undefined) {
   return calculateScheduledPureStudyMinutes(session, { events, studyWindows });
 }
@@ -839,6 +866,7 @@ export default async function PublicReportPage({ params }) {
     : (!isWeekly ? parseDailyLearningPeriods(dailyLearningText) : []);
   const dailyPureStudyDisplay = !isWeekly ? getPureStudyDisplay(session || {}, variables, events, studyWindows) : '';
   const dailyAwayDisplay = !isWeekly ? (calculateLiveAwayMinutes(session || {}) ? formatMinutesKo(calculateLiveAwayMinutes(session || {})) : '외출 없음') : '';
+  const dailyAwayIntervals = !isWeekly ? buildAwayIntervalsFromEvents(events) : [];
   const dailyCheckSummary = !isWeekly ? getDailyCheckSummary(session || {}, variables, events, dailyPointRows, schedule, operatingRules, studyWindows) : '';
   const dailyPointSummary = !isWeekly ? summarizePointRows(pointRows) : { reward: 0, penalty: 0, net: 0, count: 0 };
 
@@ -943,6 +971,20 @@ export default async function PublicReportPage({ params }) {
             <MetricCard label="외출" value={dailyAwayDisplay} />
             <MetricCard label="주요 확인사항" value={dailyCheckSummary} tone={dailyCheckSummary === '특이사항 없음' ? 'good' : 'warn'} />
           </div>
+
+          {dailyAwayIntervals.length ? (
+            <Card title="외출 내역">
+              <p className="card-subtitle">외출 시각과 사유입니다. (총 {dailyAwayIntervals.length}회 · {dailyAwayDisplay})</p>
+              <div className="away-interval-list">
+                {dailyAwayIntervals.map((item, index) => (
+                  <div key={`away-${index}`} className="away-interval-row">
+                    <strong>{formatTime(item.start)} ~ {item.end ? formatTime(item.end) : '미복귀'}</strong>
+                    <span>{item.reason ? item.reason : '사유 미기재'}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
 
           <Card title="차시별 학습 내용">
             <p className="card-subtitle">순찰 체크가 속한 차시 전체 구간을 기준으로 정리했습니다.</p>
@@ -1104,6 +1146,31 @@ const styles = `
     color: #6e6e73;
     font-size: 14px !important;
     font-weight: 600;
+  }
+  .away-interval-list {
+    display: grid;
+    gap: 8px;
+  }
+  .away-interval-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid #e3e3e6;
+    border-radius: 14px;
+    background: #fbfbfd;
+  }
+  .away-interval-row strong {
+    color: #1d1d1f;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .away-interval-row span {
+    color: #6e6e73;
+    font-size: 14px;
+    text-align: right;
   }
   .learning-period-list {
     display: grid;

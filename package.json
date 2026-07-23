@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-110-planner-image-signed-url-fresh",
-  "version": "0.41.110",
+  "name": "beyond-os-v41-111-report-away-intervals",
+  "version": "0.41.111",
   "private": true,
   "scripts": {
     "dev": "next dev",
