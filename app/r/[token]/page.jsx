@@ -394,11 +394,13 @@ function getEarlyLeaveIssueLabel(session = {}, schedule = null, rules = DEFAULT_
 }
 
 function getDailyCheckSummary(session = {}, variables = {}, events = [], dailyPointRows = [], schedule = null, rules = DEFAULT_OPERATING_RULES, studyWindows = undefined) {
-  const issues = splitIssueSummary(variables.mainCheckSummary);
-
   const issueRules = normalizeOperatingRules(rules);
 
-  if (!issues.length) {
+  // v41-115: 주요 확인사항을 저장된 요약 스냅샷 대신 항상 실시간으로 계산합니다.
+  // (외출/순공/퇴실 등 다른 항목이 모두 실시간이라, 요약만 옛 값이면 "외출 없음"인데
+  //  "외출 관리 필요"가 뜨는 등 앞뒤가 맞지 않는 결과가 나옵니다.)
+  const issues = [];
+  {
     const awayMinutes = calculateLiveAwayMinutes(session);
     const pureMinutes = calculateLivePureStudyMinutes(session, events, studyWindows);
     if (session.seat_status === 'absent') upsertAttendanceIssue(issues, formatIssueWithReason('결석', getEventReason(events, 'absent', '결석')));

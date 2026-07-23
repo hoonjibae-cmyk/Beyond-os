@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-114-away-no-return-as-checkout",
-  "version": "0.41.114",
+  "name": "beyond-os-v41-115-live-main-check-summary",
+  "version": "0.41.115",
   "private": true,
   "scripts": {
     "dev": "next dev",
