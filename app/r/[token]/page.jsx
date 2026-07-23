@@ -1013,6 +1013,10 @@ export default async function PublicReportPage({ params }) {
         </>
       ) : (
         <>
+          <div className="report-live-note">
+            <span className="report-live-note-badge">실시간</span>
+            <p>본 리포트는 학생의 실시간 학습 상황에 따라 자동으로 갱신됩니다. 지금 열람하신 시점 기준의 내용이며, 이후 학습·외출·퇴실 상황이 반영되면 순공시간 등 일부 수치가 달라질 수 있습니다.</p>
+          </div>
           <section className="parent-overview-card">
             <div className="section-eyebrow">오늘의 관리 요약</div>
             <div className="overview-grid">
@@ -1204,6 +1208,31 @@ const styles = `
     color: #6e6e73;
     font-size: 14px !important;
     font-weight: 600;
+  }
+  .report-live-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 15px;
+    border: 1px solid #d6e4ff;
+    background: #f2f7ff;
+    border-radius: 14px;
+  }
+  .report-live-note-badge {
+    flex: none;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    background: #2f6bff;
+    border-radius: 999px;
+    padding: 3px 10px;
+    margin-top: 1px;
+  }
+  .report-live-note p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #33507d;
   }
   .away-interval-list {
     display: grid;

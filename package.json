@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-115-live-main-check-summary",
-  "version": "0.41.115",
+  "name": "beyond-os-v41-116-report-live-update-notice",
+  "version": "0.41.116",
   "private": true,
   "scripts": {
     "dev": "next dev",
