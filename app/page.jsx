@@ -1911,7 +1911,10 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
       nowMinutes: now,
       defaultSchedule,
     });
-    if (presenceMismatch) alerts.push(presenceMismatch);
+    // v41-118: 같은 학생에게 '복귀 확인 필요'(return_check)가 함께 뜨는 경우,
+    // 더 구체적인 복귀 알림만 남기고 일반 '출결상태 확인 필요'는 중복이므로 억제합니다.
+    // (외출/퇴실 상태일 때만 — 미입실 상태의 mismatch는 복귀 알림과 성격이 달라 유지)
+    let hasReturnCheckAlert = false;
 
     const checkIn = timeToMinutes(schedule.planned_check_in);
     const plannedCheckOutForMismatch = timeToMinutes(schedule.planned_check_out);
@@ -1970,6 +1973,7 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
 
       const returnMismatchWindowEnd = checkOut !== null && checkOut > ret ? checkOut : 24 * 60 - 1;
       if (ret !== null && now >= ret && now <= returnMismatchWindowEnd && session?.seat_status !== 'occupied') {
+        hasReturnCheckAlert = true;
         alerts.push({
           id: `return-${item.id}`,
           type: 'return_check',
@@ -1984,6 +1988,11 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
           reason,
         });
       }
+    }
+
+    if (presenceMismatch) {
+      const duplicatedByReturnCheck = hasReturnCheckAlert && ['away', 'out'].includes(presenceMismatch.currentStatus);
+      if (!duplicatedByReturnCheck) alerts.push(presenceMismatch);
     }
   }
 
