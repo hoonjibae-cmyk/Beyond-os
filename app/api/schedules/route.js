@@ -300,6 +300,10 @@ async function saveScopedEvent(supabase, request, body) {
     }
     if (scope === 'absent' && absenceSupported) {
       await applyPlannedAbsentSession(supabase, { studentId: body.studentId, date, seatNo: defaultSeatNo, reason: body.absentReason || '' });
+    } else if (absenceSupported && !schedule.planned_absent) {
+      // v41-119: 결석이 아닌 이벤트를 저장했는데 그 날짜의 개인 시간표가 결석이 아니라면,
+      // 이전에 자동 생성된 '[예약결석]' 세션이 남아있지 않도록 정리합니다.
+      await rollbackPlannedAbsentSession(supabase, { studentId: body.studentId, date });
     }
     saved.push(schedule);
   }

@@ -108,7 +108,7 @@ export async function GET(request) {
       .eq('status', 'active')
       .order('name', { ascending: true });
 
-    const { data: sessions, error: sessionsError } = await supabase
+    let { data: sessions, error: sessionsError } = await supabase
       .from('daily_sessions')
       .select('*, students(*, student_guardians(*))')
       .eq('session_date', today);
@@ -127,6 +127,37 @@ export async function GET(request) {
         todayMentoringAssignments: [],
         warning: `오늘 세션 조회 실패. 좌석만 표시합니다: ${sessionsError.message}`,
       });
+    }
+
+    // v41-119: 예약결석 세션 정합성 자동 보정.
+    // 개인 시간표가 더 이상 결석(planned_absent)이 아닌데도, 이전에 자동 생성된
+    // '[예약결석]' 세션(체크인 없음)이 남아 좌석배치도에 결석으로 잘못 뜨는 경우를 정리합니다.
+    // (관리자가 수동 결석 처리한 세션은 메모가 달라 건드리지 않습니다.)
+    try {
+      const staleAbsent = (sessions || []).filter((s) => s.seat_status === 'absent'
+        && !s.check_in_at
+        && String(s.attendance_memo || '').startsWith('[예약결석]'));
+      if (staleAbsent.length) {
+        const studentIds = [...new Set(staleAbsent.map((s) => s.student_id).filter(Boolean))];
+        const { data: scheduleRows } = await supabase
+          .from('student_daily_schedules')
+          .select('student_id, planned_absent')
+          .eq('schedule_date', today)
+          .in('student_id', studentIds);
+        const absentByStudent = {};
+        for (const row of scheduleRows || []) absentByStudent[String(row.student_id)] = Boolean(row.planned_absent);
+        // 오늘 개인 시간표가 명시적으로 '결석 아님'인 학생의 stale 세션만 삭제합니다.
+        const removeIds = staleAbsent
+          .filter((s) => absentByStudent[String(s.student_id)] === false)
+          .map((s) => s.id);
+        if (removeIds.length) {
+          await supabase.from('daily_sessions').delete().in('id', removeIds);
+          const removeSet = new Set(removeIds);
+          sessions = (sessions || []).filter((s) => !removeSet.has(s.id));
+        }
+      }
+    } catch {
+      // 보정 실패는 대시보드 표시를 막지 않습니다.
     }
 
     const sessionIds = (sessions || []).map((s) => s.id);
