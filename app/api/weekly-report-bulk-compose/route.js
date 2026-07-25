@@ -222,9 +222,12 @@ function createWeeklyComment(student = {}, summary = {}) {
 }
 
 function buildReportText({ student = {}, startDate, endDate, summary = {}, interview = '', finalComment = '' }) {
-  const comment = String(finalComment || '').trim() || createWeeklyComment(student, summary);
-  const interviewText = String(interview || '').trim() || '이번 주 주간면담 내용은 별도 입력 전입니다.';
-  return `[비욘드 주간 리포트]\n\n학생: ${student.name || '-'}\n기간: ${startDate} ~ ${endDate}\n\n이번 주 학습 요약\n- 등원일수: ${summary.attendanceDays || 0}일\n- 총 순공시간: ${formatMinutesKo(summary.totalStudyMinutes || 0)}\n- 일평균 순공시간: ${formatMinutesKo(summary.averageStudyMinutes || 0)}\n- 외출: ${summary.awayCount || 0}회 / 총 ${formatMinutesKo(summary.awayMinutes || 0)}\n- 주요 확인사항: ${summary.issueSummary || '특이사항 없음'}\n- 상벌점: ${summary.pointSummary?.label || '상벌점 기록 없음'}\n\n주간면담 내용\n${interviewText}\n\n주간 총평\n${comment}\n\n목동유쌤영어학원`;
+  // v41-126: '주간 총평' 항목을 없애고 주간면담 내용으로 통합했습니다.
+  // 면담 내용이 아직 없으면(자동 구성 등) 기존 총평/자동 생성 문장을 면담 내용 자리에 사용합니다.
+  const interviewText = String(interview || '').trim()
+    || String(finalComment || '').trim()
+    || createWeeklyComment(student, summary);
+  return `[비욘드 주간 리포트]\n\n학생: ${student.name || '-'}\n기간: ${startDate} ~ ${endDate}\n\n이번 주 학습 요약\n- 등원일수: ${summary.attendanceDays || 0}일\n- 총 순공시간: ${formatMinutesKo(summary.totalStudyMinutes || 0)}\n- 일평균 순공시간: ${formatMinutesKo(summary.averageStudyMinutes || 0)}\n- 외출: ${summary.awayCount || 0}회 / 총 ${formatMinutesKo(summary.awayMinutes || 0)}\n- 주요 확인사항: ${summary.issueSummary || '특이사항 없음'}\n- 상벌점: ${summary.pointSummary?.label || '상벌점 기록 없음'}\n\n주간면담 내용\n${interviewText}\n\n목동유쌤영어학원`;
 }
 
 function buildRowsFromSessions({ sessions = [], eventsBySession = {}, reportsBySession = {}, schedulesByDate = {}, scheduleConfig = null, rules = DEFAULT_OPERATING_RULES }) {
@@ -387,12 +390,16 @@ async function processStudent({ supabase, student, startDate, endDate, existingR
   const existingInterview = existingReport?.director_interview || '';
   const existingAiComment = existingReport?.ai_weekly_comment || '';
   const finalWeeklyComment = existingReport?.final_weekly_comment || createWeeklyComment(student, summaryPayload);
+  // v41-126: '주간 총평'을 주간면담 내용으로 통합했으므로, 면담 내용이 아직 없으면
+  // 자동 생성 문장을 주간면담 내용 초안으로 채워 학부모 화면이 비지 않게 합니다.
+  // (관리자가 위클리 화면에서 검토·수정하는 것을 전제로 한 초안입니다.)
+  const interviewForReport = existingInterview || finalWeeklyComment;
   const reportText = buildReportText({
     student,
     startDate,
     endDate,
     summary: summaryPayload,
-    interview: existingInterview,
+    interview: interviewForReport,
     finalComment: finalWeeklyComment,
   });
 
@@ -406,7 +413,7 @@ async function processStudent({ supabase, student, startDate, endDate, existingR
       autoComposedBy: actorName,
       autoComposeVersion: 'v41-24',
     },
-    director_interview: existingInterview || null,
+    director_interview: interviewForReport || null,
     ai_weekly_comment: existingAiComment || null,
     final_weekly_comment: finalWeeklyComment || null,
     report_text: reportText,

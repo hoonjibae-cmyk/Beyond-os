@@ -1034,15 +1034,10 @@ export default async function PublicReportPage({ params }) {
             </Card>
           ) : null}
 
+          {/* v41-126: '주간 총평'은 주간면담 내용과 내용이 겹쳐 주간면담 내용으로 통합했습니다. */}
           {report.director_interview ? (
             <Card title="주간면담 내용">
               <p>{report.director_interview}</p>
-            </Card>
-          ) : null}
-
-          {report.final_weekly_comment ? (
-            <Card title="주간 총평">
-              <p>{report.final_weekly_comment}</p>
             </Card>
           ) : null}
         </>

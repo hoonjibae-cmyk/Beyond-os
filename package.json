@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-125-remove-weekly-main-away",
-  "version": "0.41.125",
+  "name": "beyond-os-v41-126-merge-weekly-comment-into-interview",
+  "version": "0.41.126",
   "private": true,
   "scripts": {
     "dev": "next dev",

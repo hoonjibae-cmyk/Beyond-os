@@ -11225,6 +11225,15 @@ textarea {
   font-weight: 850;
 }
 
+/* v41-126: AI 다듬기 + AI 초안 생성 버튼을 한 줄에 나란히 배치 */
+.weekly-interview-ai-buttons {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .points-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

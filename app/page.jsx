@@ -11227,11 +11227,10 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
 
   const reportText = useMemo(() => {
     if (!selectedStudent) return '';
-    const comment = String(finalWeeklyComment || aiWeeklyComment || '').trim() || '이번 주 학습 흐름을 바탕으로 다음 주 관리 방향을 지속적으로 점검하겠습니다.';
     const interview = String(directorInterview || '').trim() || '이번 주 주간면담 내용이 아직 입력되지 않았습니다.';
 
-    return `[비욘드 주간 리포트]\n\n학생: ${selectedStudent.name}\n기간: ${start} ~ ${end}\n\n이번 주 학습 요약\n- 등원일수: ${weeklyStats.attendanceDays}일\n- 총 순공시간: ${formatMinutes(weeklyStats.totalStudy)}\n- 일평균 순공시간: ${formatMinutes(weeklyStats.averageStudy)}\n- 외출: ${weeklyStats.totalAwayCount}회 / 총 ${formatMinutes(weeklyStats.totalAwayMinutes)}\n- 주요 확인사항: ${weeklyStats.issueSummary}\n- 상벌점: ${weeklyPointSummary.label}\n\n주간면담 내용\n${interview}\n\n주간 총평\n${comment}\n\n목동유쌤영어학원`;
-  }, [selectedStudent, start, end, weeklyStats, weeklyPointSummary, finalWeeklyComment, aiWeeklyComment, directorInterview]);
+    return `[비욘드 주간 리포트]\n\n학생: ${selectedStudent.name}\n기간: ${start} ~ ${end}\n\n이번 주 학습 요약\n- 등원일수: ${weeklyStats.attendanceDays}일\n- 총 순공시간: ${formatMinutes(weeklyStats.totalStudy)}\n- 일평균 순공시간: ${formatMinutes(weeklyStats.averageStudy)}\n- 외출: ${weeklyStats.totalAwayCount}회 / 총 ${formatMinutes(weeklyStats.totalAwayMinutes)}\n- 주요 확인사항: ${weeklyStats.issueSummary}\n- 상벌점: ${weeklyPointSummary.label}\n\n주간면담 내용\n${interview}\n\n목동유쌤영어학원`;
+  }, [selectedStudent, start, end, weeklyStats, weeklyPointSummary, directorInterview]);
 
   useEffect(() => {
     loadWeeklyStatus(start, end);
@@ -11443,7 +11442,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   async function runWeeklyBulkCompose(mode = 'missing') {
     const isAll = mode === 'all';
     const message = isAll
-      ? '전체 활성 학생의 위클리 리포트를 현재 주간 데이터 기준으로 다시 구성합니다. 기존 주간 총평/면담은 유지하되, 리포트 본문과 요약이 갱신될 수 있습니다. 계속할까요?'
+      ? '전체 활성 학생의 위클리 리포트를 현재 주간 데이터 기준으로 다시 구성합니다. 기존 주간면담 내용은 유지하되, 리포트 본문과 요약이 갱신될 수 있습니다. 계속할까요?'
       : '아직 저장된 위클리 리포트가 없는 학생을 대상으로 자동 구성합니다. 계속할까요?';
     if (!confirm(message)) return;
 
@@ -11585,7 +11584,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
     try {
       setAiLoading(true);
       setAiSourceMessage('');
-      setMessage('AI 주간 총평 초안 생성 중...');
+      setMessage('AI 주간면담 초안 생성 중...');
       const data = await apiFetch('/api/weekly-report/ai', {
         method: 'POST',
         body: JSON.stringify({
@@ -11619,11 +11618,20 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
           })),
         }),
       });
-      setAiWeeklyComment(data.draft || '');
-      setFinalWeeklyComment(data.draft || '');
-      setAiSourceMessage(data.fallback ? `AI 호출 실패 또는 미연동으로 규칙 기반 초안이 생성되었습니다.${data.message ? ` (사유: ${data.message})` : ''}` : `AI 초안 생성 완료${data.model ? ` · ${data.model}` : ''}`);
-      markDirty();
-      setMessage(data.fallback ? '규칙 기반 초안을 생성했습니다.' : 'AI 주간 총평 초안 생성 완료');
+      // v41-126: '주간 총평'을 없애고, AI 초안을 주간면담 내용 비교 화면으로 보냅니다.
+      // 원문을 바로 덮어쓰지 않고 관리자가 적용 여부를 선택합니다.
+      const draft = String(data.draft || '').trim();
+      setAiWeeklyComment(draft);
+      setInterviewAiComparison({
+        original: String(directorInterview || '').trim() || '입력된 원문 없이 주간 데이터 기준으로 생성되었습니다.',
+        draft,
+        fallback: Boolean(data.fallback),
+        model: data.model || '',
+      });
+      setInterviewAiMessage(data.fallback
+        ? `규칙 기반 초안이 생성되었습니다.${data.message ? ` (사유: ${data.message})` : ''} 원문과 비교 후 적용 여부를 선택하세요.`
+        : `주간 데이터를 반영한 AI 초안이 생성되었습니다${data.model ? ` · ${data.model}` : ''}. 원문과 비교 후 적용 여부를 선택하세요.`);
+      setMessage(data.fallback ? '규칙 기반 초안을 생성했습니다.' : 'AI 주간면담 초안 생성 완료');
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -12469,7 +12477,11 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
               <textarea value={directorInterview} onChange={(event) => { setDirectorInterview(event.target.value); setInterviewAiComparison(null); markDirty(); }} placeholder="예: 이번 주 면담에서는 자습 시작 후 집중 유지 시간, 단어 복습 루틴, 다음 주 목표를 중심으로 점검했습니다." />
               <div className="weekly-interview-ai-row">
                 <span>입력한 면담 메모를 학부모용 문장으로 정리합니다. 원문은 바로 바뀌지 않고 비교 화면에서 적용 여부를 선택합니다.</span>
-                <button className="secondary section-action" onClick={refineInterviewDraft} disabled={interviewAiLoading}>{interviewAiLoading ? 'AI 다듬는 중...' : 'AI 면담 내용 다듬기'}</button>
+                <div className="weekly-interview-ai-buttons">
+                  <button className="secondary section-action" onClick={refineInterviewDraft} disabled={interviewAiLoading || aiLoading}>{interviewAiLoading ? 'AI 다듬는 중...' : 'AI 면담 내용 다듬기'}</button>
+                  {/* v41-126: 기존 'AI 주간 총평 초안 생성'을 주간면담 내용으로 통합했습니다. */}
+                  <button className="secondary section-action" onClick={generateAiDraft} disabled={aiLoading || interviewAiLoading}>{aiLoading ? 'AI 작성 중...' : 'AI 초안 생성 (주간 데이터 반영)'}</button>
+                </div>
               </div>
 
               {interviewAiComparison ? (
@@ -12490,15 +12502,6 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
               ) : null}
 
               {interviewAiMessage ? <div className={interviewAiMessage.includes('오류') || interviewAiMessage.includes('취소') ? 'hint warning-hint' : 'hint success-hint'}>{interviewAiMessage}</div> : null}
-
-              <div className="weekly-ai-box">
-                <div>
-                  <h3>주간 총평</h3>
-                  <p>주간 학습 요약과 주간면담 내용을 바탕으로 학부모용 주간 총평 초안을 생성합니다.</p>
-                </div>
-                <button className="secondary section-action" onClick={generateAiDraft} disabled={aiLoading}>{aiLoading ? 'AI 작성 중...' : 'AI 주간 총평 초안 생성'}</button>
-              </div>
-              <textarea value={finalWeeklyComment} onChange={(event) => { setFinalWeeklyComment(event.target.value); markDirty(); }} placeholder="학부모님께 전달할 주간 총평을 입력하거나 AI 초안을 수정하세요." />
               {aiSourceMessage ? <div className={aiSourceMessage.includes('규칙 기반') ? 'hint warning-hint' : 'hint success-hint'}>{aiSourceMessage}</div> : null}
             </section>
           </div>
@@ -12507,7 +12510,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
             <div className="section-head">
               <div>
                 <h3>학부모용 위클리 리포트</h3>
-                <p>주간면담 내용을 먼저 제시한 뒤, 이를 반영한 주간 총평이 이어지도록 구성합니다. 저장 후 학부모 발송 흐름으로 운영합니다.</p>
+                <p>주간 학습 요약과 주간면담 내용으로 구성됩니다. 저장 후 학부모 발송 흐름으로 운영합니다.</p>
               </div>
               <div className="planner-head-actions weekly-send-actions">
                 <button className="secondary section-action" onClick={saveWeeklyReport} disabled={saveLoading}>{saveLoading ? '저장 중...' : '저장'}</button>
