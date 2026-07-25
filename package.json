@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-120-dashboard-poll-6s",
-  "version": "0.41.120",
+  "name": "beyond-os-v41-121-dashboard-change-detection-sync",
+  "version": "0.41.121",
   "private": true,
   "scripts": {
     "dev": "next dev",

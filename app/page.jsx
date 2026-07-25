@@ -1999,6 +1999,26 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
   return alerts;
 }
 
+// ─────────────────────────────────────────────────────────────
+// v41-121: 대시보드 동기화(폴링) 정책
+//  - 평소에는 초경량 /api/dashboard-version 으로 "바뀌었는지"만 확인하고,
+//    변경이 감지된 경우에만 무거운 /api/dashboard 전체 데이터를 받아옵니다.
+//  - 아래 값들은 Vercel 사용량(Fast Origin Transfer 등)과 직결되므로 신중히 조정하세요.
+// ─────────────────────────────────────────────────────────────
+
+// 변경이 없어도 이 주기마다 한 번은 전체를 맞춥니다.
+// (학생 정보 수정 등 변경 지문이 잡지 못하는 항목을 보정하는 안전망)
+const FULL_SYNC_SAFETY_MS = 60 * 1000;
+
+// 새벽 운영 종료 시간대(KST 01:00~07:00)에는 확인 주기를 크게 늦춥니다.
+const QUIET_HOURS_START = 1;
+const QUIET_HOURS_END = 7;
+const QUIET_HOURS_INTERVAL_MS = 60 * 1000;
+
+// 아무 조작이 없으면(자리 비움 / 퇴근 후 화면 방치) 확인을 멈췄다가, 조작하면 즉시 재개합니다.
+const IDLE_PAUSE_MS = 10 * 60 * 1000;
+const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'];
+
 export default function Page() {
   const [adminPassword, setAdminPassword] = useState('');
   const [appSessionToken, setAppSessionToken] = useState('');
@@ -2100,6 +2120,11 @@ export default function Page() {
   const [sendConfig, setSendConfig] = useState(null);
   const mobileNavDragRef = useRef({ active: false, startX: 0, scrollLeft: 0, moved: false });
   const dashboardSyncRef = useRef(false);
+  // v41-121: 변경 감지 기반 폴링용 상태
+  const dashboardVersionRef = useRef('');
+  const lastFullSyncRef = useRef(0);
+  const lastVersionCheckRef = useRef(0);
+  const lastActivityRef = useRef(Date.now());
   const dashboardSignatureRef = useRef('');
   const kioskImportSeenRef = useRef(new Set());
   const attendanceSaveLockRef = useRef(false);
@@ -2350,39 +2375,100 @@ export default function Page() {
   useEffect(() => {
     if (!isLoggedIn) return undefined;
 
-    const syncDashboard = async () => {
+    // 전체 데이터 동기화 (무거움) — 실제로 변경이 감지됐을 때만 호출합니다.
+    const runFullSync = async () => {
       if (dashboardSyncRef.current) return;
-      if (typeof document !== 'undefined' && document.hidden) return;
-
       dashboardSyncRef.current = true;
       try {
         await loadDashboard({ silent: true, runAutoCheckout: false });
+        lastFullSyncRef.current = Date.now();
       } finally {
         dashboardSyncRef.current = false;
       }
     };
 
-    // v41-100: 서버 비용(Vercel Fluid Active CPU) 절감.
-    // 실시간 좌석/알림이 필요한 '메인 대시보드' 탭만 짧은 주기로 폴링하고,
-    // 다른 탭(시간표·학습관리·랭킹보드 등)에서는 30초로 완화합니다. (백그라운드 탭은 기존대로 요청 생략)
-    // v41-120: 대시보드 폴링을 3초 → 6초로 늘려 Fast Origin Transfer/Fluid Active CPU 사용량을 절반으로 줄입니다.
-    const isDashboardTab = activeTab === 'dashboard';
-    const intervalMs = isDashboardTab ? 6000 : 30000;
-    if (isDashboardTab) syncDashboard(); // 대시보드 진입 시 즉시 1회 동기화
+    // v41-121: 변경 감지 기반 폴링.
+    // 매번 무거운 /api/dashboard 를 받지 않고, 초경량 /api/dashboard-version 으로 "바뀌었는지"만 확인한 뒤
+    // 지문이 달라졌을 때만 전체 데이터를 다시 받아옵니다. (Fast Origin Transfer 대폭 절감)
+    const syncDashboard = async ({ force = false } = {}) => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (force) {
+        await runFullSync();
+        // 방금 받은 전체 데이터에 해당하는 지문을 미리 저장해, 곧바로 중복 동기화가 일어나지 않게 합니다.
+        try {
+          const primed = await apiFetch('/api/dashboard-version');
+          if (primed?.ok && primed.version) dashboardVersionRef.current = String(primed.version);
+        } catch {}
+        return;
+      }
+      if (dashboardSyncRef.current) return;
 
-    const interval = window.setInterval(syncDashboard, intervalMs);
-    const handleVisibilityChange = () => {
-      if (!document.hidden) syncDashboard();
+      try {
+        const data = await apiFetch('/api/dashboard-version');
+        const version = String(data?.version || '');
+        if (!data?.ok || !version) {
+          // 감지 실패 시에는 안전망(주기적 전체 동기화)에만 의존합니다.
+          if (Date.now() - lastFullSyncRef.current >= FULL_SYNC_SAFETY_MS) await runFullSync();
+          return;
+        }
+        if (version !== dashboardVersionRef.current) {
+          dashboardVersionRef.current = version;
+          await runFullSync();
+          return;
+        }
+      } catch {
+        // 네트워크/배포 지연 등으로 감지에 실패해도 폴링 비용이 늘지 않도록 안전망만 사용합니다.
+      }
+
+      // 변경이 없어도 아주 가끔은 전체를 맞춰, 지문이 잡지 못하는 변화(학생 정보 수정 등)를 보정합니다.
+      if (Date.now() - lastFullSyncRef.current >= FULL_SYNC_SAFETY_MS) await runFullSync();
     };
-    const handleFocus = () => syncDashboard();
+
+    // v41-100: 실시간 좌석/알림이 필요한 '메인 대시보드' 탭만 짧은 주기로 확인하고,
+    // 다른 탭(시간표·학습관리 등)은 30초로 완화합니다. (백그라운드 탭은 요청 생략)
+    const isDashboardTab = activeTab === 'dashboard';
+    const baseIntervalMs = isDashboardTab ? 6000 : 30000;
+
+    if (isDashboardTab) syncDashboard({ force: true }); // 대시보드 진입 시 즉시 1회 전체 동기화
+
+    const tick = () => {
+      const now = Date.now();
+      // 일정 시간 아무 조작이 없으면(자리 비움/퇴근 후 화면 방치) 확인을 멈춥니다.
+      if (now - lastActivityRef.current > IDLE_PAUSE_MS) return;
+
+      // v41-121: 새벽(운영 종료 시간대)에는 확인 주기를 크게 늦춥니다.
+      // 자정을 넘겨 계속 켜둔 화면에도 적용되도록 매 tick마다 시간대를 다시 판단합니다.
+      const kstHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).format(new Date()));
+      const isQuietHours = kstHour >= QUIET_HOURS_START && kstHour < QUIET_HOURS_END;
+      if (isQuietHours && now - lastVersionCheckRef.current < QUIET_HOURS_INTERVAL_MS) return;
+
+      lastVersionCheckRef.current = now;
+      syncDashboard();
+    };
+
+    const interval = window.setInterval(tick, baseIntervalMs);
+
+    const markActivity = () => {
+      const wasIdle = Date.now() - lastActivityRef.current > IDLE_PAUSE_MS;
+      lastActivityRef.current = Date.now();
+      if (wasIdle) syncDashboard(); // 방치 상태에서 돌아오면 즉시 한 번 맞춥니다.
+    };
+    const handleVisibilityChange = () => {
+      if (!document.hidden) markActivity();
+    };
+    const handleFocus = () => markActivity();
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleFocus);
+    for (const eventName of ACTIVITY_EVENTS) {
+      window.addEventListener(eventName, markActivity, { passive: true });
+    }
 
     return () => {
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
+      for (const eventName of ACTIVITY_EVENTS) window.removeEventListener(eventName, markActivity);
     };
   }, [isLoggedIn, adminPassword, activeTab]);
 
