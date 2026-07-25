@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-124-strip-system-memo-weekly",
-  "version": "0.41.124",
+  "name": "beyond-os-v41-125-remove-weekly-main-away",
+  "version": "0.41.125",
   "private": true,
   "scripts": {
     "dev": "next dev",

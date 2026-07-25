@@ -507,8 +507,6 @@ function getWeeklySummaryRows(report = {}, summary = {}) {
     ['총 순공시간', formatMinutesKo(summary.totalStudyMinutes || summary.totalStudy)],
     ['일평균 순공시간', formatMinutesKo(summary.averageStudyMinutes || summary.averageStudy)],
     ['외출', `${Number(summary.awayCount || 0)}회 / 총 ${formatMinutesKo(summary.awayMinutes || 0)}`],
-    // v41-123: '외출과다 N일' 같은 집계 대신, 그 주에 가장 길었던 외출을 사유와 함께 보여줍니다.
-    ['주요 외출 사항', summary.mainAwayLabel || '특이 외출 없음'],
     ['주요 확인사항', sanitizeParentIssueSummary(summary.issueSummary || '특이사항 없음')],
     ['상벌점', summary.pointSummary?.label || '상벌점 기록 없음'],
   ];
@@ -548,36 +546,14 @@ function buildWeeklyRowsFromSessions(sessions = [], eventsBySession = {}, schedu
   });
 }
 
-// v41-123: 그 주에 '가장 길게' 외출한 건을 사유와 함께 한 줄로 만듭니다.
-// (외출과다 N일 같은 집계는 학부모가 파악하기 어려워 이 표기로 대체)
-// 사유 우선순위는 데일리와 동일: 외출 이벤트 메모 → 겹치는 개인 시간표 외출 → 공란
-function buildWeeklyMainAwayLabel(sessions = [], eventsBySession = {}, breaksByDate = {}) {
-  let best = null;
-  for (const session of sessions || []) {
-    const intervals = buildAwayIntervalsFromEvents(
-      eventsBySession[session.id] || [],
-      breaksByDate[session.session_date] || [],
-      Boolean(session.check_out_at),
-    );
-    for (const item of intervals) {
-      if (!item.end) continue; // 복귀 기록이 없는 건은 퇴실로 처리되므로 제외
-      const minutes = diffMinutesIso(item.start, item.end);
-      if (minutes <= 10) continue; // 10분 이하 짧은 외출은 제외(데일리 '주요 외출 내역'과 동일 기준)
-      if (!best || minutes > best.minutes) best = { minutes, date: session.session_date, reason: item.reason };
-    }
-  }
-  if (!best) return '특이 외출 없음';
-  const dateLabel = String(best.date || '').slice(5).replace('-', '/');
-  return `${dateLabel} ${formatMinutesKo(best.minutes)}${best.reason ? ` · ${best.reason}` : ''}`;
-}
-
 function summarizeWeeklyRows(savedSummary = {}, liveRows = []) {
   if (!liveRows.length) return savedSummary || {};
   const attendanceDays = liveRows.filter((row) => row.checkInTime && row.checkInTime !== '-').length;
   const totalStudyMinutes = liveRows.reduce((sum, row) => sum + Number(row.pureStudyMinutes || 0), 0);
   const awayCount = liveRows.reduce((sum, row) => sum + Number(row.awayCount || 0), 0);
   const awayMinutes = liveRows.reduce((sum, row) => sum + Number(row.awayMinutes || 0), 0);
-  // v41-123: 외출은 '외출과다 N일' 집계 대신 '주요 외출 사항'(가장 긴 외출 + 사유)으로 따로 보여줍니다.
+  // v41-125: '외출과다 N일' 집계는 학부모가 파악하기 어려워 확인사항에서 제외합니다.
+  // 외출은 위 '외출' 항목(횟수 / 총 시간)만으로 충분히 전달됩니다.
   const issueCounts = { 결석: 0, 지각: 0, 조퇴: 0, 순공부족: 0, 미등원: 0 };
   for (const row of liveRows) {
     for (const flag of row.flags || []) {
@@ -597,8 +573,7 @@ function summarizeWeeklyRows(savedSummary = {}, liveRows = []) {
     averageStudy: attendanceDays ? Math.round(totalStudyMinutes / attendanceDays) : 0,
     awayCount,
     awayMinutes,
-    // v41-123: 저장된 요약을 쓸 때도 외출 관련 항목('외출과다 N일', '외출 관리 필요')은 제외합니다.
-    // 외출은 아래 '주요 외출 사항'에서 실제 시간·사유로 따로 보여줍니다.
+    // v41-125: 저장된 요약을 쓸 때도 외출 관련 항목('외출과다 N일', '외출 관리 필요')은 제외합니다.
     issueSummary: savedIssues.length
       ? savedIssues.join(', ')
       : (issues.length ? issues.join(', ') : '특이사항 없음'),
@@ -943,35 +918,7 @@ async function loadReport(token) {
       }
     }
 
-    // v41-123: '주요 외출 사항'의 사유 폴백용으로 그 주의 개인 시간표 외출을 날짜별로 모읍니다.
-    const weeklyBreaksByDate = {};
-    try {
-      const { data: scheduleRows } = await supabase
-        .from('student_daily_schedules')
-        .select('id, schedule_date')
-        .eq('student_id', report.student_id)
-        .gte('schedule_date', report.start_date)
-        .lte('schedule_date', report.end_date);
-      const dateByScheduleId = Object.fromEntries((scheduleRows || []).map((row) => [String(row.id), row.schedule_date]));
-      const scheduleIds = Object.keys(dateByScheduleId);
-      if (scheduleIds.length) {
-        const { data: breakRows } = await supabase
-          .from('student_schedule_breaks')
-          .select('schedule_id, leave_start, return_time, reason, reason_detail')
-          .in('schedule_id', scheduleIds)
-          .order('leave_start', { ascending: true });
-        for (const row of breakRows || []) {
-          const date = dateByScheduleId[String(row.schedule_id)];
-          if (!date) continue;
-          if (!weeklyBreaksByDate[date]) weeklyBreaksByDate[date] = [];
-          weeklyBreaksByDate[date].push(row);
-        }
-      }
-    } catch {
-      // 사유 폴백은 없어도 시간/일자는 정상 표기되므로 조회 실패는 무시합니다.
-    }
-
-    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, weeklyBreaksByDate, scheduleConfig };
+    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, scheduleConfig };
   }
 
   return { error: 'unknown-type' };
@@ -986,7 +933,7 @@ export default async function PublicReportPage({ params }) {
     return <ErrorPage title="리포트를 열 수 없습니다" message="링크가 만료되었거나 더 이상 사용 가능한 리포트가 아닙니다." />;
   }
 
-  const { reportType, report, session, student, link, planner, events = [], checks = [], scheduleBreaks = [], weeklySessions = [], weeklyEventsBySession = {}, weeklyBreaksByDate = {}, pointRows = [], dailyPointRows = [], schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
+  const { reportType, report, session, student, link, planner, events = [], checks = [], scheduleBreaks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
   const studyWindows = defaultSchedule?.studyWindows;
   const variables = getTemplateVariables(report);
   const isWeekly = reportType === 'weekly';
@@ -996,11 +943,7 @@ export default async function PublicReportPage({ params }) {
     : (session?.session_date || report.report_date || '-');
 
   const liveWeeklyRows = isWeekly ? buildWeeklyRowsFromSessions(weeklySessions, weeklyEventsBySession, scheduleConfig) : [];
-  const weeklySummaryBase = isWeekly ? summarizeWeeklyRows(report.summary_payload || {}, liveWeeklyRows) : {};
-  // v41-123: 그 주에 가장 길었던 외출(사유 포함)을 '주요 외출 사항'으로 별도 표기합니다.
-  const weeklySummary = isWeekly
-    ? { ...weeklySummaryBase, mainAwayLabel: buildWeeklyMainAwayLabel(weeklySessions, weeklyEventsBySession, weeklyBreaksByDate) }
-    : weeklySummaryBase;
+  const weeklySummary = isWeekly ? summarizeWeeklyRows(report.summary_payload || {}, liveWeeklyRows) : {};
   const weeklyRows = getWeeklySummaryRows(report, weeklySummary);
   const savedWeeklyDetailRows = getWeeklyDetailRows(weeklySummary);
   const weeklyDetailRows = savedWeeklyDetailRows.length ? savedWeeklyDetailRows : liveWeeklyRows;
