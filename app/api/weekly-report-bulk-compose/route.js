@@ -99,16 +99,23 @@ function averageClock(rows = [], key = '') {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
+// v41-124: 시스템이 자동으로 남긴 내부 처리 메모는 학부모용 사유로 쓰지 않습니다.
+// (예: "퇴실 후 재입실 처리", "쉬는 시간 HOLD에서 관리자 승인", "시스템 자동 자정 퇴실",
+//  "자정 시스템 자동퇴실 후 실제 키오스크 퇴실시간으로 보정")
+function isSystemProcessingMemo(value = '') {
+  return /재입실|재등원|자동|퇴실\s*후|HOLD|관리자\s*승인|쉬는\s*시간|수동\s*지정|보정|시스템|승인\s*\(|처리$/i.test(String(value || ''));
+}
+
 function cleanReason(value = '', label = '') {
   let raw = String(value || '').trim();
   if (!raw) return '';
   const cleanLabel = String(label || '').trim();
   if (cleanLabel) {
     for (const prefix of [`${cleanLabel} 사유:`, `${cleanLabel} 사유：`, `${cleanLabel}:`, `${cleanLabel}：`]) {
-      if (raw.startsWith(prefix)) return raw.slice(prefix.length).trim();
+      if (raw.startsWith(prefix)) { raw = raw.slice(prefix.length).trim(); break; }
     }
   }
-  return raw;
+  return isSystemProcessingMemo(raw) ? '' : raw;
 }
 
 function getLatestEventReason(events = [], eventType = '', label = '') {

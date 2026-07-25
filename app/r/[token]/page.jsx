@@ -208,8 +208,39 @@ function calculateLivePureStudyMinutes(session = {}, events = [], studyWindows =
   return calculateScheduledPureStudyMinutes(session, { events, studyWindows });
 }
 
+// v41-124: 이미 저장된 리포트 요약에 섞여 들어간 시스템 내부 처리 문구를 학부모 화면에서 제거합니다.
+// (예: "지각 2일(퇴실 후 재입실 처리 1일, 쉬는 시간 HOLD에서 관리자 승인 (공용 관리자) 1일)" → "지각 2일")
+const SYSTEM_MEMO_PATTERN = /재입실|재등원|자동|퇴실\s*후|HOLD|관리자\s*승인|쉬는\s*시간|수동\s*지정|보정|시스템|처리/i;
+
+function stripSystemParentheticals(value = '') {
+  const src = String(value || '');
+  let out = '';
+  let index = 0;
+  while (index < src.length) {
+    if (src[index] !== '(') {
+      out += src[index];
+      index += 1;
+      continue;
+    }
+    // 중첩까지 고려해 짝이 맞는 괄호 구간을 통째로 찾습니다.
+    let depth = 0;
+    let end = index;
+    for (; end < src.length; end += 1) {
+      if (src[end] === '(') depth += 1;
+      else if (src[end] === ')') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    const group = src.slice(index, end + 1);
+    if (!SYSTEM_MEMO_PATTERN.test(group.slice(1, -1))) out += group;
+    index = end + 1;
+  }
+  return out.replace(/\s{2,}/g, ' ').replace(/\s+,/g, ',').trim();
+}
+
 function normalizeIssueSummaryText(value) {
-  return String(value || '')
+  return stripSystemParentheticals(String(value || ''))
     .replace(/외출 확인 필요/g, '외출 관리 필요')
     .replace(/순공시간 확인 필요/g, '순공시간 부족')
     .replace(/(상점|벌점)\s*(\d+)점 발생\s*[:：]\s*([^,]+)/g, '$1 $2점 발생($3)')
