@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-122-schedule-today-button",
-  "version": "0.41.122",
+  "name": "beyond-os-v41-123-weekly-main-away",
+  "version": "0.41.123",
   "private": true,
   "scripts": {
     "dev": "next dev",
