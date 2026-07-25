@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-119-reconcile-stale-planned-absent",
-  "version": "0.41.119",
+  "name": "beyond-os-v41-120-dashboard-poll-6s",
+  "version": "0.41.120",
   "private": true,
   "scripts": {
     "dev": "next dev",
