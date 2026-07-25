@@ -18742,6 +18742,9 @@ button{ border-width:1px !important; }
 .base-date-nav{ display: flex; align-items: flex-end; gap: 8px; }
 .base-date-nav .field{ margin-bottom: 0; }
 .base-date-nav > button{ white-space: nowrap; margin-bottom: 2px; }
+/* v41-122: 기준 날짜를 오늘로 되돌리는 버튼 */
+.schedule-today-btn{ border-color: #c9b78e !important; background: #fff8e8 !important; color: #8a5a08 !important; font-weight: 800; }
+.schedule-today-btn:disabled{ opacity: .55; cursor: default; background: #f5f2ea !important; color: #8a8272 !important; border-color: #e0d8c8 !important; }
 /* 2) 주간 시간표 좌우 화살표 */
 .week-nav-wrap{ display: flex; gap: 10px; align-items: stretch; }
 .week-nav-wrap .week-activity-grid{ flex: 1 1 auto; min-width: 0; }

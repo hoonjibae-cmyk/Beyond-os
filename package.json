@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-121-dashboard-change-detection-sync",
-  "version": "0.41.121",
+  "name": "beyond-os-v41-122-schedule-today-button",
+  "version": "0.41.122",
   "private": true,
   "scripts": {
     "dev": "next dev",
