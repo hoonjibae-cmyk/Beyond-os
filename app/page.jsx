@@ -5644,6 +5644,14 @@ export default function Page() {
         <PanelSection title="학습멘토 코멘트" defaultMobileOpen={false} className="mentor-comment-section">
 <div className="field"><label>데일리 리포트 최종 코멘트</label><textarea value={form.reportMentorComment} onChange={(e) => setForm({ ...form, reportMentorComment: e.target.value })} placeholder="하루 1회만 입력합니다. 비워두면 리포트에서 코멘트 항목이 제외됩니다." /></div>
           <div className="btn-row"><button className="primary" onClick={saveMentorComment}>코멘트 저장</button></div>
+          {/* v41-129: 저장된 코멘트가 있으면 작성한 멘토를 함께 표시합니다. */}
+          {selectedReport?.mentor_comment ? (
+            <div className="mentor-comment-author-line">
+              <span>작성</span>
+              <strong>{selectedReport.mentor_comment_by || selectedReport.created_by || '관리자'}</strong>
+              {selectedReport.mentor_comment_at ? <em>{formatKstTime(selectedReport.mentor_comment_at)}</em> : null}
+            </div>
+          ) : null}
           {selectedReport?.updated_at ? <div className="hint">저장됨: {formatKstTime(selectedReport.updated_at)}</div> : <div className="hint">저장된 코멘트가 있으면 다시 열었을 때 자동으로 불러옵니다.</div>}
         </PanelSection>
 

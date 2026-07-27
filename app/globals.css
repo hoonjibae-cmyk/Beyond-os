@@ -280,6 +280,36 @@ h1 { margin: 0; font-size: 28px; letter-spacing: -0.6px; }
 .field label { display: block; color: #cfc5b3; font-size: 12px; margin-bottom: 6px; font-weight: 700; }
 .content-card .field label { color: #6f6b62; }
 .hint { color: #a99f8e; font-size: 11px; line-height: 1.45; margin-top: 6px; }
+
+/* v41-129: 학습멘토 코멘트 작성자 표시 */
+.mentor-comment-author-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border: 1px solid #d9e6ff;
+  background: #f2f7ff;
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+.mentor-comment-author-line > span {
+  color: #5f7699;
+  font-weight: 800;
+  font-size: 11.5px;
+}
+.mentor-comment-author-line > strong {
+  color: #23406e;
+  font-weight: 900;
+}
+.mentor-comment-author-line > em {
+  margin-left: auto;
+  font-style: normal;
+  color: #7b8ca6;
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 800;
+}
 input, select, textarea {
   width: 100%;
   background: #15130f;
