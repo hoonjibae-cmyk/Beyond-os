@@ -222,6 +222,9 @@ function getTimelineRows({ sessions = [], eventsBySession = {}, checksBySession 
       eventLines,
       observation: safeText(report?.mentor_comment || session.attendance_memo || '', 220),
       mentorComment: safeText(report?.mentor_comment || '', 240),
+      // v41-130: 학습 관리에서도 코멘트 작성자를 표시합니다.
+      mentorCommentBy: report?.mentor_comment ? (report.mentor_comment_by || report.created_by || '') : '',
+      mentorCommentAt: report?.mentor_comment ? (report.mentor_comment_at || '') : '',
       attendanceMemo: safeText(session.attendance_memo || '', 200),
       plannerMemo: safeText(planner?.memo || '', 180),
       plannerStatus: planner ? '제출' : '미제출',

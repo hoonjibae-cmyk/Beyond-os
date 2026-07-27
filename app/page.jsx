@@ -4351,7 +4351,13 @@ export default function Page() {
       });
 
       setAttendanceRows((prev) => (prev || []).map((row) => (
-        row.id === sessionId ? { ...row, mentorComment: data.report?.mentor_comment || mentorComment || '' } : row
+        row.id === sessionId ? {
+          ...row,
+          mentorComment: data.report?.mentor_comment || mentorComment || '',
+          // v41-130: 저장 직후에도 작성자가 바로 보이도록 함께 갱신합니다.
+          mentorCommentBy: data.report?.mentor_comment ? (data.report.mentor_comment_by || data.report.created_by || '') : '',
+          mentorCommentAt: data.report?.mentor_comment ? (data.report.mentor_comment_at || '') : '',
+        } : row
       )));
 
       if (data.report) {
@@ -13426,6 +13432,14 @@ function AttendanceTab({
                 </div>
                 {todayRow ? <span className={todayRow.mentorComment ? 'status-pill done' : 'status-pill pending'}>{todayRow.mentorComment ? '입력됨' : '미입력'}</span> : <span className="status-pill neutral">오늘 기록 없음</span>}
               </div>
+              {/* v41-130: 저장된 코멘트가 있으면 작성한 멘토를 표시합니다. */}
+              {todayRow?.mentorComment && todayRow?.mentorCommentBy ? (
+                <div className="mentor-comment-author-line">
+                  <span>작성</span>
+                  <strong>{todayRow.mentorCommentBy}</strong>
+                  {todayRow.mentorCommentAt ? <em>{formatKstTime(todayRow.mentorCommentAt)}</em> : null}
+                </div>
+              ) : null}
               {todayRow ? (
                 <>
                   <textarea
@@ -13466,7 +13480,7 @@ function AttendanceTab({
                 <div className="recent-comment-list">
                   {recentCommentRows.map((row) => (
                     <div key={`recent-${row.id}`}>
-                      <b>{formatAttendanceDate(row.date)}</b>
+                      <b>{formatAttendanceDate(row.date)}{row.mentorCommentBy ? <i className="recent-comment-author">{row.mentorCommentBy}</i> : null}</b>
                       <span>{row.mentorComment}</span>
                     </div>
                   ))}

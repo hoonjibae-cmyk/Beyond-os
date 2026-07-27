@@ -310,6 +310,18 @@ h1 { margin: 0; font-size: 28px; letter-spacing: -0.6px; }
   font-size: 11.5px;
   font-weight: 800;
 }
+/* 최근 코멘트 목록의 작성자 배지 */
+.recent-comment-author {
+  display: inline-block;
+  margin-left: 6px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  color: #23406e;
+  background: #eaf1fd;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
 input, select, textarea {
   width: 100%;
   background: #15130f;

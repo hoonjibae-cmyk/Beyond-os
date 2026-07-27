@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
+import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
@@ -246,38 +246,54 @@ export async function POST(request) {
 
     if (existingError) throw existingError;
 
+    // v41-130: 코멘트를 실제로 작성한 멘토를 기록합니다.
+    // 마이그레이션(v41-129 SQL) 미적용 환경에서도 저장이 막히지 않도록 폴백합니다.
+    const actor = getAuthorizedUser(request);
+    const actorName = actor?.displayName || body.adminName || '관리자';
+    const authorFields = {
+      mentor_comment_by: mentorComment ? actorName : null,
+      mentor_comment_at: mentorComment ? new Date().toISOString() : null,
+    };
+
     let report;
     if (existingReport?.id) {
-      const { data: updated, error: updateError } = await supabase
+      const runUpdate = async (payload) => supabase
         .from('daily_reports')
-        .update({
-          mentor_comment: mentorComment || null,
-        })
+        .update(payload)
         .eq('id', existingReport.id)
         .select()
         .single();
 
+      let { data: updated, error: updateError } = await runUpdate({ mentor_comment: mentorComment || null, ...authorFields });
+      if (updateError) {
+        ({ data: updated, error: updateError } = await runUpdate({ mentor_comment: mentorComment || null }));
+      }
       if (updateError) throw updateError;
       report = updated;
     } else {
       const student = session.students || {};
       const fallbackText = `[비욘드 데일리 리포트]\n\n학생: ${student.name || '-'}\n날짜: ${session.session_date || getKstDateString()}\n\n학습멘토 코멘트\n${mentorComment || '-'}`;
+      const basePayload = {
+        session_id: session.id,
+        student_id: session.student_id,
+        report_date: session.session_date,
+        report_text: fallbackText,
+        mentor_comment: mentorComment || null,
+        send_status: 'draft',
+        sent_channel: 'kakao_copy',
+        created_by: actorName,
+      };
 
-      const { data: inserted, error: insertError } = await supabase
+      const runInsert = async (payload) => supabase
         .from('daily_reports')
-        .insert({
-          session_id: session.id,
-          student_id: session.student_id,
-          report_date: session.session_date,
-          report_text: fallbackText,
-          mentor_comment: mentorComment || null,
-          send_status: 'draft',
-          sent_channel: 'kakao_copy',
-          created_by: body.adminName || '관리자',
-        })
+        .insert(payload)
         .select()
         .single();
 
+      let { data: inserted, error: insertError } = await runInsert({ ...basePayload, ...authorFields });
+      if (insertError) {
+        ({ data: inserted, error: insertError } = await runInsert(basePayload));
+      }
       if (insertError) throw insertError;
       report = inserted;
     }
