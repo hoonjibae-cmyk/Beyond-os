@@ -11324,6 +11324,91 @@ textarea {
   gap: 9px;
 }
 
+/* v41-127: 상벌점 기록 학생별 그룹 */
+.points-student-group-list {
+  display: grid;
+  gap: 14px;
+}
+
+.points-student-group {
+  border: 1px solid #e6e0d5;
+  border-radius: 18px;
+  padding: 13px;
+  background: #fbfaf7;
+}
+
+.points-student-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 11px;
+  padding: 0 3px;
+}
+
+.points-student-name strong {
+  font-size: 17px;
+  color: #211f1b;
+  margin-right: 8px;
+}
+
+.points-student-name span {
+  color: #8a8272;
+  font-size: 12.5px;
+  font-weight: 850;
+}
+
+.points-student-score {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.points-student-score em {
+  font-style: normal;
+  font-size: 12.5px;
+  font-weight: 900;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.points-student-score em.reward {
+  background: #ecfbf1;
+  border: 1px solid #8bd3a5;
+  color: #2f7d54;
+}
+
+.points-student-score em.penalty {
+  background: #fdecef;
+  border: 1px solid #ff8fa3;
+  color: #c1355a;
+}
+
+.points-student-score b {
+  font-size: 13.5px;
+  font-weight: 950;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: #f0ece3;
+  color: #4a4335;
+}
+
+.points-student-score b.net-negative {
+  background: #fdecef;
+  color: #c1355a;
+}
+
+.points-student-score b.net-positive {
+  background: #ecfbf1;
+  color: #2f7d54;
+}
+
+@media (max-width: 720px) {
+  .points-student-head { flex-direction: column; align-items: flex-start; gap: 7px; }
+}
+
 .points-row {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) auto minmax(220px, 1.5fr) auto;

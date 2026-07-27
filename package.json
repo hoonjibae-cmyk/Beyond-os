@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-126-merge-weekly-comment-into-interview",
-  "version": "0.41.126",
+  "name": "beyond-os-v41-127-points-group-by-student",
+  "version": "0.41.127",
   "private": true,
   "scripts": {
     "dev": "next dev",

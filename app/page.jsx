@@ -12720,6 +12720,32 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ pointDate: today, pointType: 'reward', points: 1, reason: '', memo: '' });
 
+  // v41-127: 상벌점 기록을 '일자별 나열'에서 '학생별 대분류 → 학생 안에서 일자별'로 재구성합니다.
+  const pointStudentGroups = useMemo(() => {
+    const map = new Map();
+    for (const row of rows || []) {
+      const key = String(row.student_id || row.student?.id || row.student_name || row.id);
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          name: row.student?.name || row.student_name || '학생',
+          subtitle: [row.student?.school, row.student?.grade].filter(Boolean).join(' '),
+          items: [],
+        });
+      }
+      map.get(key).items.push(row);
+    }
+    return Array.from(map.values())
+      .map((group) => {
+        const items = [...group.items].sort((a, b) => String(b.point_date || '').localeCompare(String(a.point_date || '')));
+        const reward = items.filter((item) => item.point_type === 'reward').reduce((sum, item) => sum + Number(item.points || 0), 0);
+        const penalty = items.filter((item) => item.point_type !== 'reward').reduce((sum, item) => sum + Number(item.points || 0), 0);
+        return { ...group, items, reward, penalty, net: reward - penalty, latestDate: items[0]?.point_date || '' };
+      })
+      // 최근 기록이 있는 학생을 위로, 같은 날짜면 이름순으로 정렬합니다.
+      .sort((a, b) => String(b.latestDate).localeCompare(String(a.latestDate)) || String(a.name).localeCompare(String(b.name), 'ko'));
+  }, [rows]);
+
   useEffect(() => {
     loadPoints();
   }, []);
@@ -12868,20 +12894,37 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
       <div className="points-list-card clean-panel">
         <div className="points-list-head">
           <strong>상벌점 기록</strong>
-          <span>{loading ? '조회 중...' : `${rows.length}건 표시 중`}</span>
+          <span>{loading ? '조회 중...' : `학생 ${pointStudentGroups.length}명 · ${rows.length}건 표시 중`}</span>
         </div>
-        {rows.length ? (
-          <div className="points-row-list">
-            {rows.map((row) => (
-              <article key={row.id} className={`points-row ${row.point_type}`}>
-                <div>
-                  <strong>{row.student?.name || row.student_name || '학생'}</strong>
-                  <span>{row.point_date} · {[row.student?.school, row.student?.grade].filter(Boolean).join(' ')}</span>
+        {pointStudentGroups.length ? (
+          <div className="points-student-group-list">
+            {pointStudentGroups.map((group) => (
+              <section key={group.key} className="points-student-group">
+                <div className="points-student-head">
+                  <div className="points-student-name">
+                    <strong>{group.name}</strong>
+                    <span>{group.subtitle || '학교/학년 미입력'} · {group.items.length}건</span>
+                  </div>
+                  <div className="points-student-score">
+                    {group.reward ? <em className="reward">상점 +{group.reward}</em> : null}
+                    {group.penalty ? <em className="penalty">벌점 -{group.penalty}</em> : null}
+                    <b className={group.net >= 0 ? 'net-positive' : 'net-negative'}>순점수 {group.net > 0 ? '+' : ''}{group.net}점</b>
+                  </div>
                 </div>
-                <em>{row.point_type === 'reward' ? '+' : '-'}{row.points}점</em>
-                <p>{row.reason}</p>
-                <button className="secondary" onClick={() => deletePoint(row)}>삭제</button>
-              </article>
+                <div className="points-row-list">
+                  {group.items.map((row) => (
+                    <article key={row.id} className={`points-row ${row.point_type}`}>
+                      <div>
+                        <strong>{row.point_date}</strong>
+                        {row.memo ? <span>{row.memo}</span> : null}
+                      </div>
+                      <em>{row.point_type === 'reward' ? '+' : '-'}{row.points}점</em>
+                      <p>{row.reason}</p>
+                      <button className="secondary" onClick={() => deletePoint(row)}>삭제</button>
+                    </article>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         ) : (
