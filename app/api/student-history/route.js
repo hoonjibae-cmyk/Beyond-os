@@ -69,6 +69,18 @@ function sourceLabelForEvent(event = {}) {
   return event.source_label || '관리자 수동기록';
 }
 
+// v41-128: 학습 관리 일자별 이력 가독성 개선.
+// 줄마다 '키오스크 자동반영 / 관리자 수동 기록'이 길게 반복되어 눈에 걸리므로
+// 출처는 짧은 태그(키오스크 / 수동 / 시스템)로만 표기합니다.
+function shortSourceTag(event = {}) {
+  const type = String(event.source_type || '').toLowerCase();
+  if (type === 'kiosk') return '키오스크';
+  if (type === 'system') return '시스템';
+  const createdBy = String(event.created_by || '').toLowerCase();
+  if (createdBy === 'system') return '시스템';
+  return '수동';
+}
+
 function eventLabel(type) {
   const map = {
     check_in: '입실',
@@ -157,13 +169,32 @@ function getTimelineRows({ sessions = [], eventsBySession = {}, checksBySession 
     });
     const studySummary = summarizeStudyChecks(sessionChecks);
 
-    const eventSummary = sessionEvents
-      .sort((a, b) => new Date(a.event_at || a.created_at || 0) - new Date(b.event_at || b.created_at || 0))
+    const sortedEvents = [...sessionEvents]
+      .sort((a, b) => new Date(a.event_at || a.created_at || 0) - new Date(b.event_at || b.created_at || 0));
+    const sortedChecks = [...sessionChecks]
+      .sort((a, b) => new Date(a.checked_at || a.created_at || 0) - new Date(b.checked_at || b.created_at || 0));
+
+    // v41-128: 한 줄에 한 건씩 보여줄 수 있도록 구조화된 배열도 함께 내려줍니다.
+    const eventLines = sortedEvents.map((event) => ({
+      time: formatKstTime(event.event_at),
+      label: eventLabel(event.event_type),
+      source: shortSourceTag(event),
+      memo: safeText(event.memo || '', 80),
+    }));
+
+    const periodLines = sortedChecks.map((check) => ({
+      time: formatKstTime(check.checked_at || check.created_at),
+      subject: check.subject || '-',
+      status: check.study_status || '-',
+      content: safeText(check.study_content || '', 60),
+    }));
+
+    // 기존 문자열 요약(엑셀 내보내기 등 호환용)
+    const eventSummary = sortedEvents
       .map((event) => `${formatKstTime(event.event_at)} ${eventLabel(event.event_type)} · ${sourceLabelForEvent(event)}${event.memo ? ` · ${safeText(event.memo, 80)}` : ''}`)
       .join(' / ');
 
-    const periodSummary = sessionChecks
-      .sort((a, b) => new Date(a.checked_at || a.created_at || 0) - new Date(b.checked_at || b.created_at || 0))
+    const periodSummary = sortedChecks
       .map((check) => `${formatKstTime(check.checked_at || check.created_at)} ${check.subject || '-'} / ${check.study_status || '-'}${check.study_content ? ` · ${safeText(check.study_content, 50)}` : ''}`)
       .join(' / ');
 
@@ -187,6 +218,8 @@ function getTimelineRows({ sessions = [], eventsBySession = {}, checksBySession 
       topSubject: studySummary.topSubject,
       topStudyStatus: studySummary.topStatus,
       periodSummary: periodSummary || '-',
+      periodLines,
+      eventLines,
       observation: safeText(report?.mentor_comment || session.attendance_memo || '', 220),
       mentorComment: safeText(report?.mentor_comment || '', 240),
       attendanceMemo: safeText(session.attendance_memo || '', 200),

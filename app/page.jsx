@@ -14336,8 +14336,36 @@ function StudentHistoryTab({ students = [], apiFetch, currentUser, setMessage, s
                             <tr className="student-history-detail-row">
                               <td colSpan={9}>
                                 <div className="student-history-detail-grid">
-                                  <div><b>출결 이벤트</b><span>{row.eventSummary || '-'}</span></div>
-                                  <div><b>순찰/학습상태</b><span>{row.periodSummary || '-'}</span></div>
+                                  {/* v41-128: 한 줄에 한 건씩 표시해 가독성을 높입니다. */}
+                                  <div>
+                                    <b>출결 이벤트</b>
+                                    {row.eventLines?.length ? (
+                                      <ul className="history-line-list">
+                                        {row.eventLines.map((line, lineIndex) => (
+                                          <li key={`ev-${row.sessionId || row.date}-${lineIndex}`}>
+                                            <time>{line.time}</time>
+                                            <strong>{line.label}</strong>
+                                            {line.memo ? <span className="history-line-note">{line.memo}</span> : null}
+                                            <em className="history-line-source">{line.source}</em>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : <span>{row.eventSummary || '-'}</span>}
+                                  </div>
+                                  <div>
+                                    <b>순찰/학습상태</b>
+                                    {row.periodLines?.length ? (
+                                      <ul className="history-line-list">
+                                        {row.periodLines.map((line, lineIndex) => (
+                                          <li key={`pd-${row.sessionId || row.date}-${lineIndex}`}>
+                                            <time>{line.time}</time>
+                                            <strong>{line.subject} · {line.status}</strong>
+                                            {line.content ? <span className="history-line-note">{line.content}</span> : null}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : <span>{row.periodSummary || '-'}</span>}
+                                  </div>
                                   <div><b>멘토 코멘트</b><span>{row.mentorComment || '-'}</span></div>
                                   <div><b>특이사항</b><span>{row.attendanceMemo || '-'}</span></div>
                                   <div><b>플래너 검토</b><span>{row.plannerStatus === '제출' ? (row.plannerMemo || '제출') : (row.plannerStatus || '-')}</span></div>

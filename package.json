@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-127-points-group-by-student",
-  "version": "0.41.127",
+  "name": "beyond-os-v41-128-history-line-per-item",
+  "version": "0.41.128",
   "private": true,
   "scripts": {
     "dev": "next dev",
