@@ -4700,7 +4700,9 @@ export default function Page() {
     }));
   }
 
-  async function saveActivityPopup() {
+  async function saveActivityPopup(options = {}) {
+    // v41-132: clearAbsent=true 이면 해당 날짜(반복 포함)의 결석 처리를 해제합니다.
+    const clearAbsent = options?.clearAbsent === true;
     if (!activityPopup?.studentId) return alert('학생 정보가 없습니다.');
     const scope = activityPopup.eventType;
     if (!scope) return alert('설정할 일정 종류(등하원/외출/결석)를 먼저 선택하세요.');
@@ -4729,9 +4731,12 @@ export default function Page() {
         errors.push(...validateSchedulePayload({ plannedCheckIn: activityPopup.plannedCheckIn, plannedCheckOut: activityPopup.plannedCheckOut, breaks: activityPopup.breaks || [] }));
       }
     } else if (scope === 'absent') {
-      if (!String(activityPopup.absentReason || '').trim()) errors.push('결석 사유를 입력하세요.');
+      // v41-132: 결석 해제는 사유 입력이 필요 없습니다.
+      if (!clearAbsent && !String(activityPopup.absentReason || '').trim()) errors.push('결석 사유를 입력하세요.');
     }
     if (errors.length) { alert(errors.join('\n')); return; }
+
+    if (clearAbsent && !confirm('선택한 날짜(반복 포함)의 결석 처리를 해제할까요?\n\n해제하면 해당 날짜는 일반 등원 예정으로 돌아가고, 자동으로 입력된 결석 출결도 함께 정리됩니다.')) return;
 
     const payload = {
       studentId: activityPopup.studentId,
@@ -4752,8 +4757,8 @@ export default function Page() {
     } else if (scope === 'break') {
       payload.breaks = activityPopup.breaks || [];
     } else if (scope === 'absent') {
-      payload.plannedAbsent = true;
-      payload.absentReason = activityPopup.absentReason || '';
+      payload.plannedAbsent = !clearAbsent;
+      payload.absentReason = clearAbsent ? '' : (activityPopup.absentReason || '');
     }
 
     if (scope !== 'absent') {
@@ -6312,6 +6317,16 @@ function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBre
 
             {eventType === 'absent' ? (
               <section className="activity-popup-card">
+                {/* v41-132: 이미 결석으로 등록된 날짜는 해제할 수 있어야 합니다. */}
+                {popup.plannedAbsent ? (
+                  <div className="absent-clear-box">
+                    <div>
+                      <strong>이 날짜는 현재 <b>결석</b>으로 등록되어 있습니다.</strong>
+                      <span>{popup.absentReason ? `사유: ${popup.absentReason}` : '사유 미입력'}</span>
+                    </div>
+                    <button type="button" className="danger" onClick={() => savePopup({ clearAbsent: true })}>결석 해제</button>
+                  </div>
+                ) : null}
                 <div className="field"><label>결석 사유</label><input value={popup.absentReason || ''} onChange={(e) => setField({ absentReason: e.target.value })} placeholder="예: 병결, 가정 사유, 학교 일정" /></div>
                 <p className="absent-hint">저장하면 선택한 날짜(반복 포함)의 출결이 자동으로 <b>결석</b>으로 입력됩니다. 이미 입실 기록이 있는 날은 덮어쓰지 않습니다.</p>
               </section>
@@ -6321,7 +6336,7 @@ function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBre
 
             <div className="popup-bottom-actions">
               <button className="secondary" onClick={() => setPopup({ ...popup, step: 'type' })}>◀ 이전</button>
-              <button className="primary" onClick={savePopup}>확인 및 시간표 반영</button>
+              <button className="primary" onClick={() => savePopup()}>확인 및 시간표 반영</button>
             </div>
           </div>
         )}

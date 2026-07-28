@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-131-schedule-day-gantt",
-  "version": "0.41.131",
+  "name": "beyond-os-v41-132-clear-planned-absence",
+  "version": "0.41.132",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -18931,6 +18931,16 @@ button{ border-width:1px !important; }
 /* v41-122: 기준 날짜를 오늘로 되돌리는 버튼 */
 .schedule-today-btn{ border-color: #c9b78e !important; background: #fff8e8 !important; color: #8a5a08 !important; font-weight: 800; }
 .schedule-today-btn:disabled{ opacity: .55; cursor: default; background: #f5f2ea !important; color: #8a8272 !important; border-color: #e0d8c8 !important; }
+/* v41-132: 결석 해제 안내 박스 */
+.absent-clear-box{
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 13px; margin-bottom: 12px;
+  border: 1px solid #d8b4fe; background: #faf5ff; border-radius: 13px;
+}
+.absent-clear-box strong{ display: block; font-size: 13.5px; color: #6b21a8; }
+.absent-clear-box span{ display: block; margin-top: 3px; font-size: 12px; font-weight: 800; color: #8b6bb1; }
+.absent-clear-box button{ flex: none; }
+
 /* v41-131: 전체 학생 일별 시간표 — 시간축 정렬 간트 */
 .schedule-gantt-wrap{ overflow-x: auto; border: 1px solid #e6e0d5; border-radius: 16px; background: #fff; padding: 10px 12px 12px; }
 .schedule-gantt{ min-width: 1040px; display: grid; gap: 6px; }

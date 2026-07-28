@@ -284,8 +284,10 @@ async function saveScopedEvent(supabase, request, body) {
       payload.confirmation_note = body.confirmationNote || null;
       payload.schedule_note = body.scheduleNote || null;
     } else if (scope === 'absent') {
-      payload.planned_absent = true;
-      payload.absent_reason = body.absentReason || null;
+      // v41-132: plannedAbsent=false 로 오면 해당 날짜의 결석 처리를 해제합니다.
+      const clearing = body.plannedAbsent === false;
+      payload.planned_absent = !clearing;
+      payload.absent_reason = clearing ? null : (body.absentReason || null);
     }
 
     const { data: schedule, error: scheduleError } = await supabase
@@ -298,7 +300,7 @@ async function saveScopedEvent(supabase, request, body) {
     if (scope === 'break') {
       await replaceBreaksForSchedule(supabase, schedule.id, body.breaks || []);
     }
-    if (scope === 'absent' && absenceSupported) {
+    if (scope === 'absent' && absenceSupported && schedule.planned_absent) {
       await applyPlannedAbsentSession(supabase, { studentId: body.studentId, date, seatNo: defaultSeatNo, reason: body.absentReason || '' });
     } else if (absenceSupported && !schedule.planned_absent) {
       // v41-119: 결석이 아닌 이벤트를 저장했는데 그 날짜의 개인 시간표가 결석이 아니라면,
