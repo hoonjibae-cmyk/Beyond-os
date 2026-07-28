@@ -18931,6 +18931,58 @@ button{ border-width:1px !important; }
 /* v41-122: 기준 날짜를 오늘로 되돌리는 버튼 */
 .schedule-today-btn{ border-color: #c9b78e !important; background: #fff8e8 !important; color: #8a5a08 !important; font-weight: 800; }
 .schedule-today-btn:disabled{ opacity: .55; cursor: default; background: #f5f2ea !important; color: #8a8272 !important; border-color: #e0d8c8 !important; }
+/* v41-131: 전체 학생 일별 시간표 — 시간축 정렬 간트 */
+.schedule-gantt-wrap{ overflow-x: auto; border: 1px solid #e6e0d5; border-radius: 16px; background: #fff; padding: 10px 12px 12px; }
+.schedule-gantt{ min-width: 1040px; display: grid; gap: 6px; }
+.schedule-gantt-row{ display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 10px; align-items: stretch; }
+.schedule-gantt-row.is-absent .schedule-gantt-name{ color: #8b5cf6; }
+.schedule-gantt-name{
+  position: sticky; left: 0; z-index: 4;
+  display: flex; align-items: center; gap: 6px;
+  background: #fff; border: none; padding: 6px 8px;
+  font-size: 13.5px; font-weight: 850; color: #211f1b;
+  text-align: left; cursor: pointer; border-radius: 9px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.schedule-gantt-name:hover{ background: #f4f1ea; }
+.presence-dot{ flex: none; width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.presence-dot.inside{ background: #2f9e6b; }
+.presence-dot.outside{ background: #3478f6; }
+.presence-dot.absent{ background: #8b5cf6; }
+.schedule-gantt-track{ position: relative; height: 32px; background: #faf8f4; border-radius: 9px; overflow: hidden; }
+.gantt-gridline{ position: absolute; top: 0; bottom: 0; width: 1px; background: #eee7db; }
+.gantt-hour-label{ position: absolute; top: 50%; transform: translate(2px, -50%); font-size: 11px; font-weight: 800; color: #9a9081; }
+.schedule-gantt-ruler .schedule-gantt-track{ height: 24px; background: transparent; overflow: visible; }
+.schedule-gantt-ruler .schedule-gantt-name{ font-size: 11.5px; color: #9a9081; font-weight: 800; }
+.gantt-now-line{ position: absolute; top: 0; bottom: 0; width: 2px; background: #e0453f; z-index: 3; }
+.gantt-now-line.ruler{ overflow: visible; }
+.gantt-now-line.ruler b{
+  position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
+  background: #e0453f; color: #fff; font-size: 10.5px; font-weight: 900;
+  padding: 1px 6px; border-radius: 999px; white-space: nowrap;
+}
+.gantt-block{
+  position: absolute; top: 3px; bottom: 3px;
+  border: 1px solid transparent; border-radius: 7px;
+  font-size: 11.5px; font-weight: 800; line-height: 1;
+  padding: 0 6px; cursor: pointer; z-index: 2;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  display: flex; align-items: center;
+}
+.gantt-block.match{ background: #eeeae2; border-color: #ded7c9; color: #4a4335; }
+.gantt-block.deviation{ background: #3478f6; border-color: #2a63cf; color: #fff; z-index: 3; }
+.gantt-block.absent{ background: #f3e8ff; border-color: #d8b4fe; color: #6b21a8; justify-content: center; }
+.gantt-block.empty{ background: transparent; border: 1px dashed #ded7c9; color: #a99f8e; justify-content: center; font-weight: 700; }
+.gantt-block:hover{ filter: brightness(0.97); }
+.schedule-gantt-legend{ display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 10px; font-size: 12px; color: #6f6b62; font-weight: 800; }
+.schedule-gantt-legend i{ display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.schedule-gantt-legend i.match{ background: #eeeae2; border: 1px solid #ded7c9; }
+.schedule-gantt-legend i.deviation{ background: #3478f6; }
+.schedule-gantt-legend i.now{ width: 2px; height: 12px; background: #e0453f; border-radius: 0; }
+@media (max-width: 900px){
+  .schedule-gantt-row{ grid-template-columns: 82px minmax(0, 1fr); }
+}
+
 /* 2) 주간 시간표 좌우 화살표 */
 .week-nav-wrap{ display: flex; gap: 10px; align-items: stretch; }
 .week-nav-wrap .week-activity-grid{ flex: 1 1 auto; min-width: 0; }

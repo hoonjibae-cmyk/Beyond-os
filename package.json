@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-130-care-mentor-comment-author",
-  "version": "0.41.130",
+  "name": "beyond-os-v41-131-schedule-day-gantt",
+  "version": "0.41.131",
   "private": true,
   "scripts": {
     "dev": "next dev",

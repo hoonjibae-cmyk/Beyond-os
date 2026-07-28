@@ -9492,6 +9492,13 @@ function SchedulesTab(props) {
   const dates = makeDateRange(range.start, range.end);
   const selectedFilterStudent = students.find((student) => student.id === scheduleStudentFilter);
   const filteredStudents = selectedFilterStudent ? [selectedFilterStudent] : students;
+  // v41-131: 전체 학생 일별 간트의 '현재 시각' 세로선을 1분마다 갱신합니다.
+  const [scheduleNowTick, setScheduleNowTick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setScheduleNowTick((value) => value + 1), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const TIMELINE_START = 9 * 60;
   const TIMELINE_END = 23 * 60;
   const TIMELINE_TOTAL = TIMELINE_END - TIMELINE_START;
@@ -9597,6 +9604,102 @@ function SchedulesTab(props) {
     return blocks;
   }
 
+  // v41-131: 전체 학생 일별 보기를 '시간축 정렬' 간트 형태로 렌더링합니다.
+  // 모든 학생의 차시를 같은 시간축에 열맞춤하고, 현재 시각 세로선으로
+  // 지금 누가 학습실 안/밖에 있어야 하는지 한 화면에서 파악할 수 있게 합니다.
+  function timelinePercent(minute) {
+    const clamped = Math.min(TIMELINE_END, Math.max(TIMELINE_START, Number(minute) || 0));
+    return ((clamped - TIMELINE_START) / TIMELINE_TOTAL) * 100;
+  }
+
+  function renderAllStudentsDayGantt() {
+    const isToday = scheduleBaseDate === getKstDateString();
+    void scheduleNowTick; // 1분 틱에 맞춰 현재 시각선을 다시 계산합니다.
+    const nowMinutes = isToday ? currentKstMinutes() : null;
+    const nowInRange = nowMinutes !== null && nowMinutes >= TIMELINE_START && nowMinutes <= TIMELINE_END;
+    const nowLeft = nowInRange ? timelinePercent(nowMinutes) : null;
+
+    const gridLines = HOURS.map((hour) => (
+      <span key={`grid-${hour}`} className="gantt-gridline" style={{ left: `${timelinePercent(hour * 60)}%` }} />
+    ));
+
+    return (
+      <div className="schedule-gantt-wrap">
+        <div className="schedule-gantt">
+          <div className="schedule-gantt-row schedule-gantt-ruler">
+            <div className="schedule-gantt-name">시간</div>
+            <div className="schedule-gantt-track">
+              {gridLines}
+              {HOURS.map((hour) => (
+                <span key={`hour-${hour}`} className="gantt-hour-label" style={{ left: `${timelinePercent(hour * 60)}%` }}>{hour}</span>
+              ))}
+              {nowLeft !== null ? <span className="gantt-now-line ruler" style={{ left: `${nowLeft}%` }}><b>{minutesToTime(nowMinutes)}</b></span> : null}
+            </div>
+          </div>
+
+          {students.map((student) => {
+            const schedule = getScheduleForStudentDate(student, scheduleBaseDate);
+            const blocks = buildActivityBlocks(schedule);
+            const isAbsent = Boolean(schedule.planned_absent);
+            // 현재 시각에 해당하는 블록을 찾아, 지금 안에 있어야 하는지 밖인지 표시합니다.
+            const currentBlock = nowInRange && !isAbsent
+              ? blocks.find((block) => nowMinutes >= block.startMinute && nowMinutes < block.endMinute) || null
+              : null;
+            const presence = !isToday ? '' : isAbsent ? 'absent' : currentBlock ? (currentBlock.type === 'deviation' ? 'outside' : 'inside') : 'none';
+            return (
+              <div key={student.id} className={`schedule-gantt-row ${isAbsent ? 'is-absent' : ''}`}>
+                <button
+                  type="button"
+                  className={`schedule-gantt-name presence-${presence || 'na'}`}
+                  onClick={() => { setScheduleStudentFilter(student.id); openActivityPopup(schedule); }}
+                  title={`${student.name} 시간표 수정`}
+                >
+                  {presence === 'inside' ? <i className="presence-dot inside" title="현재 학습실 내부" /> : null}
+                  {presence === 'outside' ? <i className="presence-dot outside" title="현재 외출·부재" /> : null}
+                  {presence === 'absent' ? <i className="presence-dot absent" title="결석" /> : null}
+                  <span>{student.name}</span>
+                </button>
+                <div className="schedule-gantt-track">
+                  {gridLines}
+                  {nowLeft !== null ? <span className="gantt-now-line" style={{ left: `${nowLeft}%` }} /> : null}
+                  {isAbsent ? (
+                    <button type="button" className="gantt-block absent" style={{ left: '0%', width: '100%' }} onClick={() => openActivityPopup(schedule)} title={`결석${schedule.absent_reason ? ` · ${schedule.absent_reason}` : ''}`}>
+                      🚫 결석{schedule.absent_reason ? ` · ${schedule.absent_reason}` : ''}
+                    </button>
+                  ) : blocks.length ? blocks.map((block) => {
+                    const left = timelinePercent(block.startMinute);
+                    const width = Math.max(0.6, timelinePercent(block.endMinute) - left);
+                    return (
+                      <button
+                        key={block.id}
+                        type="button"
+                        className={`gantt-block ${block.type}`}
+                        style={{ left: `${left}%`, width: `${width}%` }}
+                        onClick={() => openActivityPopup(block.schedule || schedule)}
+                        title={`${block.title} ${block.detail || ''}`.trim()}
+                      >
+                        {block.title}
+                      </button>
+                    );
+                  }) : (
+                    <button type="button" className="gantt-block empty" style={{ left: '0%', width: '100%' }} onClick={() => openActivityPopup(schedule)}>
+                      시간표 없음 · 클릭하여 추가
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="schedule-gantt-legend">
+          <span><i className="match" />학습실 차시</span>
+          <span><i className="deviation" />외출 · 부재</span>
+          {isToday ? <span><i className="now" />현재 시각 · 왼쪽 이름의 <b style={{ color: '#2f9e6b' }}>●</b> 내부 / <b style={{ color: '#3478f6' }}>●</b> 외부</span> : <span>오늘이 아니어서 현재 시각선은 표시되지 않습니다.</span>}
+        </div>
+      </div>
+    );
+  }
+
   function currentTimeLineStyle(date) {
     if (date !== getKstDateString()) return null;
     const current = currentKstMinutes();
@@ -9628,7 +9731,7 @@ function SchedulesTab(props) {
     return <div className={`activity-timeline-wrap ${isAbsent ? 'is-absent' : ''}`}><div className="timeline-title"><strong>{student.name} 학생 시간표 · {date}</strong>{isAbsent ? <span className="timeline-absent-tag">결석</span> : null}<span>{blocks.length}개 액티비티 블록</span></div>{isAbsent ? <div className="timeline-absent-banner">🚫 이 날은 <b>결석</b> 처리된 날입니다{absentReason ? ` · 사유: ${absentReason}` : ''}. 아래 기본 차시는 참고용이며, 출결은 결석으로 반영됩니다.</div> : null}<div className="day-timeline activity-mode"><div className="timeline-hour-labels">{HOURS.map((hour) => <div key={hour} style={{ top: `${((hour * 60 - TIMELINE_START) / TIMELINE_TOTAL) * 100}%` }}>{hour < 12 ? `오전 ${hour}시` : hour === 12 ? '오후 12시' : `오후 ${hour - 12}시`}</div>)}</div><div className="timeline-grid-lines">{HOURS.map((hour) => <div key={hour} style={{ top: `${((hour * 60 - TIMELINE_START) / TIMELINE_TOTAL) * 100}%` }} />)}</div>{nowStyle ? <div className="now-line" style={nowStyle}><span>현재 시간</span></div> : null}{blocks.map((block, index) => <button key={block.id} className={`activity-block ${block.type}`} style={activityStyle(block, index)} onClick={() => openActivityPopup(schedule)}><b>{block.title}</b><span>{block.detail}</span><em>클릭하여 수정</em></button>)}</div></div>;
   }
 
-  return <section className="content-card"><h2>학생 시간표</h2><p>개인 시간표가 저장된 날짜만 등원 예정으로 처리됩니다. 기본 시간표 일괄 생성은 설정 &gt; 기본 시간표 설정에서 총괄 관리자가 실행하며, 예외 일정은 블록을 클릭해 수정하거나 삭제하세요.</p>{scheduleCoverage?.warnings?.length ? <div className="template-validation-list failed"><strong>개인 시간표 공백 경고 ({scheduleCoverage.warnings.length}명)</strong><span>{scheduleCoverage.warnings.map((warning) => warning.kind === 'missing' ? `${warning.name}: 시간표 없음` : `${warning.name}: ${warning.lastDate}까지만 있음`).join(' · ')} — 이 학생들은 시간표가 없는 날 결석해도 감지되지 않습니다. 설정 &gt; 기본 시간표 설정의 일괄 생성으로 채워주세요.</span></div> : null}<div className="schedule-target-bar"><div><span>보기 대상</span><strong>{selectedFilterStudent ? `${selectedFilterStudent.name} 학생 시간표` : '전체 학생 시간표'}</strong></div><select value={scheduleStudentFilter} onChange={(e) => setScheduleStudentFilter(e.target.value)}><option value="all">전체 학생</option>{students.map((student) => <option key={student.id} value={student.id}>{student.name} / {[student.school, student.grade].filter(Boolean).join(' ')}</option>)}</select></div>{selectedFilterStudent && deleteStudentSchedulesRange ? <div className="repeat-box student-schedule-purge-box"><h4>{selectedFilterStudent.name} 학생 시간표 일괄 삭제</h4><div className="planner-head-actions" style={{ flexWrap: 'wrap' }}><button className="danger section-action" onClick={() => deleteStudentSchedulesRange({ student: selectedFilterStudent, mode: 'from', fromDate: scheduleBaseDate })}>기준 날짜({scheduleBaseDate}) 이후 삭제</button><button className="danger section-action" onClick={() => deleteStudentSchedulesRange({ student: selectedFilterStudent, mode: 'all' })}>전체 기간 삭제</button></div><div className="hint">삭제된 날짜는 빈 날(등원 예정 없음)이 됩니다. 아래 &apos;기준 날짜&apos;를 바꾸면 삭제 시작일을 지정할 수 있습니다.</div></div> : null}<div className="calendar-controls"><div className="view-buttons"><button className={scheduleView === 'day' ? 'active' : ''} onClick={() => setScheduleView('day')}>일별</button><button className={scheduleView === 'week' ? 'active' : ''} onClick={() => setScheduleView('week')}>주간</button><button className={scheduleView === 'month' ? 'active' : ''} onClick={() => setScheduleView('month')}>월별</button></div><div className="base-date-nav"><button className="secondary" onClick={() => shiftBaseDate(-1)}>◀ {baseDateNavLabels.prev}</button><div className="field"><label>기준 날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={scheduleBaseDate} onChange={(e) => setScheduleBaseDate(e.target.value)} /></div><button className="secondary" onClick={() => shiftBaseDate(1)}>{baseDateNavLabels.next} ▶</button><button type="button" className="secondary schedule-today-btn" onClick={() => setScheduleBaseDate(getKstDateString())} disabled={scheduleBaseDate === getKstDateString()} title="기준 날짜를 오늘로 되돌립니다">{scheduleBaseDate === getKstDateString() ? '오늘 ✓' : '오늘'}</button></div><button className="primary" onClick={() => selectedFilterStudent ? openActivityPopup(getScheduleForStudentDate(selectedFilterStudent, scheduleBaseDate)) : alert('개별 학생을 먼저 선택하세요.')}>선택 학생 시간표 수정</button></div><div className="timeline-legend"><span><i className="event-dot match"></i>기본 시간표 부합</span><span><i className="event-dot deviation"></i>외출 · 부재(늦은 등원/이른 하원)</span></div>{scheduleView === 'day' ? (selectedFilterStudent ? renderDayTimeline(scheduleBaseDate, selectedFilterStudent) : <div className="student-timeline-overview">{students.map((student) => { const schedule = getScheduleForStudentDate(student, scheduleBaseDate); const blocks = buildActivityBlocks(schedule); return <button key={student.id} className={`student-activity-row ${schedule.planned_absent ? 'is-absent' : ''}`} onClick={() => { setScheduleStudentFilter(student.id); openActivityPopup(schedule); }}><strong>{student.name}{schedule.planned_absent ? <span className="timeline-absent-tag">결석</span> : null}</strong><div>{schedule.planned_absent ? <span className="mini-activity absent">결석 처리됨{schedule.absent_reason ? ` · ${schedule.absent_reason}` : ''}</span> : null}{blocks.length ? blocks.map((block) => <span key={block.id} className={`mini-activity ${block.type}`}>{block.title} {block.detail}</span>) : <span className="mini-activity">시간표 없음 · 클릭하여 추가</span>}</div></button>; })}</div>) : null}{scheduleView === 'week' ? <div className="week-nav-wrap"><button className="week-nav-btn secondary" onClick={() => shiftBaseDate(-1)} aria-label="지난주">◀</button><div className="week-activity-grid">{dates.map((date) => { const wSchedule = selectedFilterStudent ? getScheduleForStudentDate(selectedFilterStudent, date) : null; const isAbsentDay = Boolean(wSchedule?.planned_absent); return <div key={date} className={`calendar-day clickable-blank-day ${date === getKstDateString() ? 'today' : ''} ${isAbsentDay ? 'month-absent-day' : ''}`} onClick={() => goToDayView(date)} title={`${date} 일별 시간표 보기`}><strong>{date.slice(5)}</strong>{selectedFilterStudent ? (isAbsentDay ? <button className="schedule-chip activity-chip absent" onClick={(e) => { e.stopPropagation(); openActivityPopup(wSchedule); }}><b>🚫 결석</b>{wSchedule.absent_reason ? wSchedule.absent_reason : '결석 처리됨'}</button> : (() => { const schedule = wSchedule; const blocks = buildActivityBlocks(schedule); if (!blocks.length) return <button className="schedule-chip activity-chip" onClick={(e) => { e.stopPropagation(); openActivityPopup(schedule); }}><b>시간표 없음</b>클릭하여 추가</button>; return blocks.map((block) => <button key={block.id} className={`schedule-chip activity-chip ${block.type}`} onClick={(e) => { e.stopPropagation(); openActivityPopup(schedule); }}><b>{block.title}</b>{block.detail}</button>); })()) : <div className="muted">학생을 선택하면 주간 액티비티가 표시됩니다.</div>}</div>; })}</div><button className="week-nav-btn secondary" onClick={() => shiftBaseDate(1)} aria-label="다음주">▶</button></div> : null}{scheduleView === 'month' ? <div className="calendar-grid month-grid month-calendar">{['일', '월', '화', '수', '목', '금', '토'].map((dowLabel) => <div key={`dow-${dowLabel}`} className="month-weekday-head">{dowLabel}</div>)}{Array.from({ length: dates.length ? getDayOfWeekFromDateString(dates[0]) : 0 }, (_, padIndex) => <div key={`month-pad-${padIndex}`} className="month-pad-cell" aria-hidden="true" />)}{dates.map((date) => { const dayDefaults = resolveForDate(date); const dateSchedules = filteredStudents.map((student) => getScheduleForStudentDate(student, date)).filter((schedule) => !schedule.isDefault); const breakCount = dateSchedules.reduce((sum, schedule) => sum + getBreaks(schedule).length, 0); const lateCount = dateSchedules.filter((schedule) => normalizeTime(schedule.planned_check_in) !== dayDefaults.plannedCheckIn).length; const earlyCount = dateSchedules.filter((schedule) => normalizeTime(schedule.planned_check_out) !== dayDefaults.plannedCheckOut).length; const selSchedule = selectedFilterStudent ? getScheduleForStudentDate(selectedFilterStudent, date) : null; const isAbsentDay = Boolean(selSchedule?.planned_absent); return <div key={date} role="button" tabIndex={0} className={`calendar-day clickable-month-day clickable-blank-day ${date === getKstDateString() ? 'today' : ''} ${isAbsentDay ? 'month-absent-day' : ''}`} onClick={() => goToDayView(date)} title={`${date} 일별 시간표 보기`}><strong>{date.slice(5)}</strong>{selectedFilterStudent ? (isAbsentDay ? <button className="month-summary-chip month-chip-button absent" onClick={(e) => { e.stopPropagation(); openActivityPopup(selSchedule); }}>🚫 결석{selSchedule.absent_reason ? ` · ${selSchedule.absent_reason}` : ''}</button> : (() => { const hasSchedule = dateSchedules.length > 0; const deviation = Boolean(breakCount || lateCount || earlyCount); const tone = hasSchedule ? (deviation ? 'deviation' : 'match') : 'empty'; const chipLabel = hasSchedule ? (deviation ? '변동 · 수정' : '부합 · 수정') : '시간표 없음 · 추가'; return <button className={`month-summary-chip month-chip-button ${tone}`} onClick={(e) => { e.stopPropagation(); openActivityPopup(getScheduleForStudentDate(selectedFilterStudent, date)); }}>{chipLabel}</button>; })()) : <div className="month-summary-chip">개인 시간표 {dateSchedules.length}명</div>}{!isAbsentDay && breakCount ? <div className="month-summary-chip deviation">외출 {breakCount}건</div> : null}{!isAbsentDay && lateCount ? <div className="month-summary-chip deviation">늦은 등원 {lateCount}건</div> : null}{!isAbsentDay && earlyCount ? <div className="month-summary-chip deviation">등하원 조정 {earlyCount}건</div> : null}</div>; })}</div> : null}</section>;
+  return <section className="content-card"><h2>학생 시간표</h2><p>개인 시간표가 저장된 날짜만 등원 예정으로 처리됩니다. 기본 시간표 일괄 생성은 설정 &gt; 기본 시간표 설정에서 총괄 관리자가 실행하며, 예외 일정은 블록을 클릭해 수정하거나 삭제하세요.</p>{scheduleCoverage?.warnings?.length ? <div className="template-validation-list failed"><strong>개인 시간표 공백 경고 ({scheduleCoverage.warnings.length}명)</strong><span>{scheduleCoverage.warnings.map((warning) => warning.kind === 'missing' ? `${warning.name}: 시간표 없음` : `${warning.name}: ${warning.lastDate}까지만 있음`).join(' · ')} — 이 학생들은 시간표가 없는 날 결석해도 감지되지 않습니다. 설정 &gt; 기본 시간표 설정의 일괄 생성으로 채워주세요.</span></div> : null}<div className="schedule-target-bar"><div><span>보기 대상</span><strong>{selectedFilterStudent ? `${selectedFilterStudent.name} 학생 시간표` : '전체 학생 시간표'}</strong></div><select value={scheduleStudentFilter} onChange={(e) => setScheduleStudentFilter(e.target.value)}><option value="all">전체 학생</option>{students.map((student) => <option key={student.id} value={student.id}>{student.name} / {[student.school, student.grade].filter(Boolean).join(' ')}</option>)}</select></div>{selectedFilterStudent && deleteStudentSchedulesRange ? <div className="repeat-box student-schedule-purge-box"><h4>{selectedFilterStudent.name} 학생 시간표 일괄 삭제</h4><div className="planner-head-actions" style={{ flexWrap: 'wrap' }}><button className="danger section-action" onClick={() => deleteStudentSchedulesRange({ student: selectedFilterStudent, mode: 'from', fromDate: scheduleBaseDate })}>기준 날짜({scheduleBaseDate}) 이후 삭제</button><button className="danger section-action" onClick={() => deleteStudentSchedulesRange({ student: selectedFilterStudent, mode: 'all' })}>전체 기간 삭제</button></div><div className="hint">삭제된 날짜는 빈 날(등원 예정 없음)이 됩니다. 아래 &apos;기준 날짜&apos;를 바꾸면 삭제 시작일을 지정할 수 있습니다.</div></div> : null}<div className="calendar-controls"><div className="view-buttons"><button className={scheduleView === 'day' ? 'active' : ''} onClick={() => setScheduleView('day')}>일별</button><button className={scheduleView === 'week' ? 'active' : ''} onClick={() => setScheduleView('week')}>주간</button><button className={scheduleView === 'month' ? 'active' : ''} onClick={() => setScheduleView('month')}>월별</button></div><div className="base-date-nav"><button className="secondary" onClick={() => shiftBaseDate(-1)}>◀ {baseDateNavLabels.prev}</button><div className="field"><label>기준 날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={scheduleBaseDate} onChange={(e) => setScheduleBaseDate(e.target.value)} /></div><button className="secondary" onClick={() => shiftBaseDate(1)}>{baseDateNavLabels.next} ▶</button><button type="button" className="secondary schedule-today-btn" onClick={() => setScheduleBaseDate(getKstDateString())} disabled={scheduleBaseDate === getKstDateString()} title="기준 날짜를 오늘로 되돌립니다">{scheduleBaseDate === getKstDateString() ? '오늘 ✓' : '오늘'}</button></div><button className="primary" onClick={() => selectedFilterStudent ? openActivityPopup(getScheduleForStudentDate(selectedFilterStudent, scheduleBaseDate)) : alert('개별 학생을 먼저 선택하세요.')}>선택 학생 시간표 수정</button></div><div className="timeline-legend"><span><i className="event-dot match"></i>기본 시간표 부합</span><span><i className="event-dot deviation"></i>외출 · 부재(늦은 등원/이른 하원)</span></div>{scheduleView === 'day' ? (selectedFilterStudent ? renderDayTimeline(scheduleBaseDate, selectedFilterStudent) : renderAllStudentsDayGantt()) : null}{scheduleView === 'week' ? <div className="week-nav-wrap"><button className="week-nav-btn secondary" onClick={() => shiftBaseDate(-1)} aria-label="지난주">◀</button><div className="week-activity-grid">{dates.map((date) => { const wSchedule = selectedFilterStudent ? getScheduleForStudentDate(selectedFilterStudent, date) : null; const isAbsentDay = Boolean(wSchedule?.planned_absent); return <div key={date} className={`calendar-day clickable-blank-day ${date === getKstDateString() ? 'today' : ''} ${isAbsentDay ? 'month-absent-day' : ''}`} onClick={() => goToDayView(date)} title={`${date} 일별 시간표 보기`}><strong>{date.slice(5)}</strong>{selectedFilterStudent ? (isAbsentDay ? <button className="schedule-chip activity-chip absent" onClick={(e) => { e.stopPropagation(); openActivityPopup(wSchedule); }}><b>🚫 결석</b>{wSchedule.absent_reason ? wSchedule.absent_reason : '결석 처리됨'}</button> : (() => { const schedule = wSchedule; const blocks = buildActivityBlocks(schedule); if (!blocks.length) return <button className="schedule-chip activity-chip" onClick={(e) => { e.stopPropagation(); openActivityPopup(schedule); }}><b>시간표 없음</b>클릭하여 추가</button>; return blocks.map((block) => <button key={block.id} className={`schedule-chip activity-chip ${block.type}`} onClick={(e) => { e.stopPropagation(); openActivityPopup(schedule); }}><b>{block.title}</b>{block.detail}</button>); })()) : <div className="muted">학생을 선택하면 주간 액티비티가 표시됩니다.</div>}</div>; })}</div><button className="week-nav-btn secondary" onClick={() => shiftBaseDate(1)} aria-label="다음주">▶</button></div> : null}{scheduleView === 'month' ? <div className="calendar-grid month-grid month-calendar">{['일', '월', '화', '수', '목', '금', '토'].map((dowLabel) => <div key={`dow-${dowLabel}`} className="month-weekday-head">{dowLabel}</div>)}{Array.from({ length: dates.length ? getDayOfWeekFromDateString(dates[0]) : 0 }, (_, padIndex) => <div key={`month-pad-${padIndex}`} className="month-pad-cell" aria-hidden="true" />)}{dates.map((date) => { const dayDefaults = resolveForDate(date); const dateSchedules = filteredStudents.map((student) => getScheduleForStudentDate(student, date)).filter((schedule) => !schedule.isDefault); const breakCount = dateSchedules.reduce((sum, schedule) => sum + getBreaks(schedule).length, 0); const lateCount = dateSchedules.filter((schedule) => normalizeTime(schedule.planned_check_in) !== dayDefaults.plannedCheckIn).length; const earlyCount = dateSchedules.filter((schedule) => normalizeTime(schedule.planned_check_out) !== dayDefaults.plannedCheckOut).length; const selSchedule = selectedFilterStudent ? getScheduleForStudentDate(selectedFilterStudent, date) : null; const isAbsentDay = Boolean(selSchedule?.planned_absent); return <div key={date} role="button" tabIndex={0} className={`calendar-day clickable-month-day clickable-blank-day ${date === getKstDateString() ? 'today' : ''} ${isAbsentDay ? 'month-absent-day' : ''}`} onClick={() => goToDayView(date)} title={`${date} 일별 시간표 보기`}><strong>{date.slice(5)}</strong>{selectedFilterStudent ? (isAbsentDay ? <button className="month-summary-chip month-chip-button absent" onClick={(e) => { e.stopPropagation(); openActivityPopup(selSchedule); }}>🚫 결석{selSchedule.absent_reason ? ` · ${selSchedule.absent_reason}` : ''}</button> : (() => { const hasSchedule = dateSchedules.length > 0; const deviation = Boolean(breakCount || lateCount || earlyCount); const tone = hasSchedule ? (deviation ? 'deviation' : 'match') : 'empty'; const chipLabel = hasSchedule ? (deviation ? '변동 · 수정' : '부합 · 수정') : '시간표 없음 · 추가'; return <button className={`month-summary-chip month-chip-button ${tone}`} onClick={(e) => { e.stopPropagation(); openActivityPopup(getScheduleForStudentDate(selectedFilterStudent, date)); }}>{chipLabel}</button>; })()) : <div className="month-summary-chip">개인 시간표 {dateSchedules.length}명</div>}{!isAbsentDay && breakCount ? <div className="month-summary-chip deviation">외출 {breakCount}건</div> : null}{!isAbsentDay && lateCount ? <div className="month-summary-chip deviation">늦은 등원 {lateCount}건</div> : null}{!isAbsentDay && earlyCount ? <div className="month-summary-chip deviation">등하원 조정 {earlyCount}건</div> : null}</div>; })}</div> : null}</section>;
 }
 
 
