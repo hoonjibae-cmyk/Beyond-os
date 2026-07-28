@@ -186,6 +186,26 @@ function findOverlappingBreakReasonText(startIso, endIso, scheduleBreaks = []) {
   return best ? formatScheduleBreakReasonText(best) : '';
 }
 
+// v41-133: 외출 구간 중 '실제 차시(학습 시간)'와 겹치는 분(minute)만 계산합니다.
+// 저녁식사 등 차시 사이 쉬는 시간에 나갔다 온 것은 학습 시간을 비운 것이 아니므로
+// 학부모 리포트의 외출 집계·목록에서 제외합니다. (순공시간과 동일한 기준)
+function overlapWithStudyWindows(startIso, endIso, studyWindows = []) {
+  const windows = Array.isArray(studyWindows) ? studyWindows : [];
+  if (!windows.length) return null; // 차시 정보를 모르면 판단하지 않습니다.
+  const startMin = getKstMinutesFromIso(startIso);
+  if (startMin === null) return 0;
+  const endMin = endIso ? (getKstMinutesFromIso(endIso) ?? startMin) : startMin;
+  if (endMin <= startMin) return 0;
+  let total = 0;
+  for (const window of windows) {
+    const from = timeToMinutes(window?.start);
+    const to = timeToMinutes(window?.end);
+    if (from === null || to === null || to <= from) continue;
+    total += Math.max(0, Math.min(endMin, to) - Math.max(startMin, from));
+  }
+  return total;
+}
+
 // 사유 우선순위: ① 외출 이벤트 메모 → ② 겹치는 개인 시간표 외출 → ③ 공란
 // isClosed(퇴실 완료)인데 복귀 기록이 없는 외출은 "퇴실"로 간주해 외출 내역에서 제외합니다.
 function buildAwayIntervalsFromEvents(events = [], scheduleBreaks = [], isClosed = false) {
@@ -432,7 +452,12 @@ function getDailyCheckSummary(session = {}, variables = {}, events = [], dailyPo
   //  "외출 관리 필요"가 뜨는 등 앞뒤가 맞지 않는 결과가 나옵니다.)
   const issues = [];
   {
-    const awayMinutes = calculateLiveAwayMinutes(session);
+    // v41-133: '외출 관리 필요' 판정도 차시 중 외출만 기준으로 삼아, 위 '외출' 표기와 어긋나지 않게 합니다.
+    const hasWindows = Array.isArray(studyWindows) && studyWindows.length > 0;
+    const awayMinutes = hasWindows
+      ? buildAwayIntervalsFromEvents(events, [], Boolean(session?.check_out_at))
+        .reduce((sum, item) => sum + (overlapWithStudyWindows(item.start, item.end, studyWindows) ?? 0), 0)
+      : calculateLiveAwayMinutes(session);
     const pureMinutes = calculateLivePureStudyMinutes(session, events, studyWindows);
     if (session.seat_status === 'absent') upsertAttendanceIssue(issues, formatIssueWithReason('결석', getEventReason(events, 'absent', '결석')));
     if (['away', 'out'].includes(session.seat_status) && !session.check_in_at) pushUnique(issues, '입실시간 누락');
@@ -955,11 +980,26 @@ export default async function PublicReportPage({ params }) {
     ? liveDailyPeriods
     : (!isWeekly ? parseDailyLearningPeriods(dailyLearningText) : []);
   const dailyPureStudyDisplay = !isWeekly ? getPureStudyDisplay(session || {}, variables, events, studyWindows) : '';
-  const dailyAwayDisplay = !isWeekly ? (calculateLiveAwayMinutes(session || {}) ? formatMinutesKo(calculateLiveAwayMinutes(session || {})) : '외출 없음') : '';
   const dailyAwayIntervals = !isWeekly ? buildAwayIntervalsFromEvents(events, scheduleBreaks, Boolean(session?.check_out_at)) : [];
+
+  // v41-133: 학부모 리포트의 '외출'은 실제 차시(학습 시간)를 비운 시간만 집계합니다.
+  // 저녁식사 등 차시 사이 쉬는 시간에 다녀온 외출은 학습 시간을 비운 것이 아니므로 제외합니다.
+  // (차시 정보를 알 수 없으면 기존처럼 전체 외출 시간을 사용합니다.)
+  const dailyAwayStudyMinutes = !isWeekly
+    ? dailyAwayIntervals.reduce((sum, item) => sum + (overlapWithStudyWindows(item.start, item.end, studyWindows) ?? 0), 0)
+    : 0;
+  const hasStudyWindowInfo = Array.isArray(studyWindows) && studyWindows.length > 0;
+  const dailyAwayMinutes = !isWeekly
+    ? (hasStudyWindowInfo ? dailyAwayStudyMinutes : calculateLiveAwayMinutes(session || {}))
+    : 0;
+  const dailyAwayDisplay = !isWeekly ? (dailyAwayMinutes ? formatMinutesKo(dailyAwayMinutes) : '외출 없음') : '';
+
   // v41-113: 10분을 넘지 않는 짧은 외출은 "주요 외출 내역"에서 제외(횟수 산정에서도 제외).
-  // 총 외출 시간(dailyAwayDisplay)에는 그대로 반영됩니다.
-  const dailyMajorAwayIntervals = dailyAwayIntervals.filter((item) => !item.end || diffMinutesIso(item.start, item.end) > 10);
+  // v41-133: 차시와 겹치지 않는(쉬는 시간) 외출도 목록에서 제외합니다.
+  const dailyMajorAwayIntervals = dailyAwayIntervals.filter((item) => {
+    if (hasStudyWindowInfo && (overlapWithStudyWindows(item.start, item.end, studyWindows) ?? 0) <= 0) return false;
+    return !item.end || diffMinutesIso(item.start, item.end) > 10;
+  });
   const dailyCheckSummary = !isWeekly ? getDailyCheckSummary(session || {}, variables, events, dailyPointRows, schedule, operatingRules, studyWindows) : '';
   const dailyPointSummary = !isWeekly ? summarizePointRows(pointRows) : { reward: 0, penalty: 0, net: 0, count: 0 };
 
@@ -1066,7 +1106,7 @@ export default async function PublicReportPage({ params }) {
 
           {dailyMajorAwayIntervals.length ? (
             <Card title="주요 외출 내역">
-              <p className="card-subtitle">10분을 초과한 외출의 시각과 사유입니다. (총 {dailyMajorAwayIntervals.length}회 · 전체 외출 {dailyAwayDisplay})</p>
+              <p className="card-subtitle">학습 차시 중 10분을 초과한 외출의 시각과 사유입니다. 차시 사이 쉬는 시간(식사 등) 이동은 제외됩니다. (총 {dailyMajorAwayIntervals.length}회 · 학습 중 외출 {dailyAwayDisplay})</p>
               <div className="away-interval-list">
                 {dailyMajorAwayIntervals.map((item, index) => (
                   <div key={`away-${index}`} className="away-interval-row">

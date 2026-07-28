@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-132-clear-planned-absence",
-  "version": "0.41.132",
+  "name": "beyond-os-v41-133-report-away-study-window",
+  "version": "0.41.133",
   "private": true,
   "scripts": {
     "dev": "next dev",
