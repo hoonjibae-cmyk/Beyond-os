@@ -16245,6 +16245,18 @@ textarea,
   top: 11px;
   background: #1d4ed8;
 }
+/* v41-134: 출결상태(결석·퇴실·확인필요) 우선 좌석의 멘토링 배지는 흐리게.
+   기존에는 전역 .muted 유틸을 재사용해 글자 크기가 커지고, 테마 레이어의
+   !important 배경색에 밀려 흐려지지도 않았습니다. 전용 클래스로 분리합니다. */
+.mentoring-seat-badge.is-dimmed {
+  background: #64748b !important;
+  border-color: #fff !important;
+  box-shadow: none;
+  opacity: .9;
+}
+.mentoring-list-note.is-dimmed {
+  opacity: .85;
+}
 .mentoring-list-note {
   background: rgba(219,234,254,.82) !important;
   color: #1d4ed8 !important;

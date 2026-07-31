@@ -7616,7 +7616,8 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
                   <button key={seat.seat_no} className={`seat ${selectedSeatNo === seat.seat_no ? 'selected' : ''} ${status} ${isFilteredOut ? 'filtered-out' : ''} ${isMissingStudy ? 'study-missing' : ''} ${urgent ? 'priority-attention' : ''} ${mentoringHighlight ? 'mentoring-upcoming' : ''} ${mentorCue && mentoringStatusPriority ? 'mentoring-status-priority' : ''} ${fillRoomTarget && !urgent ? 'fill-room-target' : ''} ${isQuickSelected ? 'quick-selected' : ''} ${quickDisabled ? 'quick-disabled' : ''}`} style={{ left: (Number(seat.x) || 0) * 0.82, top: (Number(seat.y) || 0) * 0.9, width: seat.width, height: seat.height }} onClick={() => handleSeatClick(row)}>
                     {quickMode && isQuickEligible(row) ? <span className="quick-select-dot">{isQuickSelected ? '✓' : '+'}</span> : null}
                     {urgent ? <span className="priority-attention-badge">확인</span> : null}
-                    {mentorCue ? <span className={`mentoring-seat-badge ${mentoringStatusPriority ? 'muted' : ''}`}>멘토링</span> : null}
+                    {/* v41-134: 전역 .muted 유틸(font-size !important)과 클래스명이 겹쳐 배지가 커지던 문제로 전용 클래스 사용 */}
+                    {mentorCue ? <span className={`mentoring-seat-badge ${mentoringStatusPriority ? 'is-dimmed' : ''}`}>멘토링</span> : null}
                     {fillRoomTarget ? <span className="fill-room-badge" title={fillRoomTarget.label}>채움실</span> : null}
                     {isMissingStudy ? <span className="missing-study-badge" title={getCurrentPeriodMissingLabel()}>미입력</span> : null}
                     <div className="seat-topline"><span className="seat-no">{String(seat.seat_no).padStart(2, '0')}</span><i>{STATUS_LABELS[status]}</i></div>
@@ -7646,7 +7647,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
                     <span>{STATUS_LABELS[status]} · {getSeatLearningLabel(row)}</span>
                     <small>{getSeatTimeLabel(row)} · {getSeatSourceLabel(row)}</small>
                     {fillRoomTarget ? <em className="fill-room-note">채움실 대상 · {fillRoomTarget.label}</em> : null}
-                    {mentorCue ? <em className={`mentoring-list-note ${mentoringStatusPriority ? 'muted' : ''}`}>다음 멘토링 · {mentorCue.label}{mentoringStatusPriority ? ' · 출결상태 우선' : ''}</em> : null}
+                    {mentorCue ? <em className={`mentoring-list-note ${mentoringStatusPriority ? 'is-dimmed' : ''}`}>다음 멘토링 · {mentorCue.label}{mentoringStatusPriority ? ' · 출결상태 우선' : ''}</em> : null}
                     {issue ? <em>{issue}</em> : null}
                   </div>
                 </button>
