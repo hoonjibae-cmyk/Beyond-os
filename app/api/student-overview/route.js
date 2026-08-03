@@ -11,6 +11,7 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes, formatMinutes } from '../../../lib/date';
+import { resolvePointCycle } from '../../../lib/studentPointCycle';
 
 export const dynamic = 'force-dynamic';
 
@@ -326,8 +327,16 @@ export async function GET(request) {
       .limit(200));
     if (pointsResult.warning) warnings.push(pointsResult.warning);
     const pointRows = pointsResult.rows;
-    const reward = pointRows.filter((row) => row.point_type === 'reward').reduce((sum, row) => sum + Number(row.points || 0), 0);
-    const penalty = pointRows.filter((row) => row.point_type !== 'reward').reduce((sum, row) => sum + Number(row.points || 0), 0);
+
+    // v41-137: 상품 지급으로 리셋된 이후의 '현재 사이클' 기준으로 누적 점수를 계산합니다.
+    const rewardHistoryResult = await safeSelect('상품 지급 이력', () => supabase
+      .from('student_point_rewards')
+      .select('*')
+      .eq('student_id', String(studentId))
+      .order('created_at', { ascending: true }));
+    const pointCycle = resolvePointCycle(pointRows, rewardHistoryResult.rows);
+    const reward = pointCycle.reward;
+    const penalty = pointCycle.penalty;
 
     const dailySentCount = dailyReports.filter((report) => report.sent_at).length;
 
@@ -362,9 +371,25 @@ export async function GET(request) {
       points: {
         reward,
         penalty,
-        net: reward - penalty,
-        count: pointRows.length,
+        net: pointCycle.net,
+        count: pointCycle.count,
         rows: pointRows.slice(0, 10),
+        // v41-137: 상품 지급 기준(리셋) 관련 정보
+        threshold: pointCycle.threshold,
+        eligible: pointCycle.eligible,
+        alertMessage: pointCycle.alertMessage,
+        remainingToTarget: pointCycle.remainingToTarget,
+        cycleStartAt: pointCycle.cycleStartAt,
+        grantCount: pointCycle.grantCount,
+        grants: pointCycle.grants.map((grant) => ({
+          id: grant.id,
+          date: String(grant.created_at || '').slice(0, 10),
+          netPoints: Number(grant.net_points || 0),
+          rewardPoints: Number(grant.reward_points || 0),
+          penaltyPoints: Number(grant.penalty_points || 0),
+          createdBy: grant.created_by || '',
+        })),
+        lifetime: pointCycle.lifetime,
       },
       dailyCoaching: dailyCoaching.slice(0, 10),
       weeklyCoaching,

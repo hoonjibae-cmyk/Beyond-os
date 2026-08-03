@@ -20213,3 +20213,206 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
     grid-column: 1 / -1;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-137: 상벌점 상품 지급(리셋) 운영
+   순점수가 기준(10점)을 초과하면 상품 지급 대상 알림을 띄우고,
+   [상품지급안내완료](카운팅 리셋) / [미지급](계속 누적) 중 하나로 처리합니다.
+   ───────────────────────────────────────────────────────────── */
+.point-reward-alert-card {
+  border: 1px solid #f2d49a;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fffaf0, #fff6e4);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.point-reward-alert-head strong {
+  display: block;
+  font-size: 15px;
+  color: #8a5a06;
+}
+.point-reward-alert-head span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-weight: 850;
+  color: #9a7a3a;
+  line-height: 1.45;
+}
+.point-reward-alert-list {
+  display: grid;
+  gap: 10px;
+}
+.point-reward-alert-list > article {
+  background: #fff;
+  border: 1px solid #f0e0bb;
+  border-radius: 16px;
+  padding: 13px 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.point-reward-alert-student strong {
+  display: block;
+  font-size: 15px;
+  color: #211f1b;
+}
+.point-reward-alert-student span {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #8a8479;
+  margin-top: 2px;
+}
+.point-reward-alert-score b {
+  display: block;
+  font-size: 16px;
+  color: #b4740d;
+}
+.point-reward-alert-score em {
+  display: block;
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #9a938a;
+  margin-top: 2px;
+}
+.point-reward-alert-list > article p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 900;
+  color: #8a5a06;
+  line-height: 1.45;
+}
+.point-reward-alert-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.point-reward-alert-actions button {
+  width: auto;
+  min-width: 112px;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 950;
+}
+.point-reward-warning {
+  border-radius: 14px;
+  background: #fff8e8;
+  border: 1px solid #f0e0bb;
+  color: #a8834b;
+  padding: 11px 13px;
+  font-size: 12.5px;
+  font-weight: 850;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+.points-cycle-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 11px;
+  margin: 0 0 8px;
+  border-radius: 12px;
+  background: #f4f2ed;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #7a756b;
+}
+.points-cycle-line.is-eligible {
+  background: #fff6e4;
+  color: #8a5a06;
+}
+.points-cycle-line span {
+  font-weight: 950;
+  color: #211f1b;
+}
+.points-cycle-line b {
+  color: #b4740d;
+  font-weight: 950;
+}
+.points-cycle-line em,
+.points-cycle-line i,
+.points-cycle-line u {
+  font-style: normal;
+  text-decoration: none;
+  color: #9a938a;
+}
+.student-overview-reward-alert {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid #f2d49a;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffaf0, #fff6e4);
+  padding: 14px 16px;
+}
+.student-overview-reward-alert strong {
+  display: block;
+  font-size: 14.5px;
+  color: #8a5a06;
+}
+.student-overview-reward-alert span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-weight: 850;
+  color: #9a7a3a;
+}
+.student-overview-reward-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.student-overview-reward-actions button {
+  width: auto;
+  min-width: 112px;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 950;
+}
+.student-overview-grant-history {
+  display: grid;
+  gap: 3px;
+  border-radius: 14px;
+  background: #f8f5ef;
+  padding: 10px 13px;
+}
+.student-overview-grant-history strong {
+  font-size: 11.5px;
+  color: #7a756b;
+}
+.student-overview-grant-history span {
+  font-size: 12px;
+  font-weight: 850;
+  color: #4f473c;
+  line-height: 1.5;
+}
+.student-overview-grant-history .student-overview-grant-note {
+  color: #9a938a;
+  font-size: 11.5px;
+  margin-top: 3px;
+}
+@media (max-width: 980px) {
+  .point-reward-alert-list > article {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .point-reward-alert-actions {
+    justify-content: flex-start;
+  }
+  .point-reward-alert-actions button {
+    flex: 1 1 140px;
+  }
+}

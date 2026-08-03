@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-136-student-overview-card",
-  "version": "0.41.136",
+  "name": "beyond-os-v41-137-point-reward-cycle",
+  "version": "0.41.137",
   "private": true,
   "scripts": {
     "dev": "next dev",

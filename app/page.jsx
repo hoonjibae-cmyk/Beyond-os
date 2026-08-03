@@ -216,6 +216,8 @@ const ACTION_LOG_LABELS = {
   'mentor_comment.save': '학습멘토 코멘트 저장',
   'student_points.create': '상벌점 기록',
   'student_points.delete': '상벌점 삭제',
+  'student_point_reward.grant': '상벌점 상품 지급 안내 완료(리셋)',
+  'student_point_reward.defer': '상벌점 상품 미지급 처리',
   'planner.upload': '플래너 업로드',
   'student.create': '학생 추가',
   'student.update': '학생 정보 수정',
@@ -12876,6 +12878,9 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ pointDate: today, pointType: 'reward', points: 1, reason: '', memo: '' });
+  // v41-137: 순점수가 기준(10점)을 초과한 학생의 상품 지급 처리 상태
+  const [rewardState, setRewardState] = useState(null);
+  const [rewardWorkingId, setRewardWorkingId] = useState('');
 
   // v41-127: 상벌점 기록을 '일자별 나열'에서 '학생별 대분류 → 학생 안에서 일자별'로 재구성합니다.
   const pointStudentGroups = useMemo(() => {
@@ -12905,7 +12910,40 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
 
   useEffect(() => {
     loadPoints();
+    loadRewardState();
   }, []);
+
+  // v41-137: 상품 지급 대상(순점수 기준 초과) 학생과 지급 이력을 조회합니다.
+  async function loadRewardState() {
+    try {
+      const data = await apiFetch('/api/student-point-rewards');
+      setRewardState(data);
+    } catch (error) {
+      setRewardState({ eligible: [], cycles: {}, warning: error?.message || '상품 지급 현황 조회 실패' });
+    }
+  }
+
+  async function handleRewardAction(studentId, action, studentName = '학생') {
+    const label = action === 'grant' ? '상품지급안내완료' : '미지급';
+    const confirmText = action === 'grant'
+      ? `${studentName} 학생을 상품 지급 안내 완료로 처리할까요?\n\n지금까지의 상벌점 카운팅이 0으로 리셋됩니다. 기록 자체는 그대로 보관되고, 지급 이력에 남습니다.`
+      : `${studentName} 학생을 미지급으로 처리할까요?\n\n카운팅은 리셋하지 않고 계속 누적되며, 순점수가 추가로 기준을 넘으면 다시 알림이 표시됩니다.`;
+    if (!confirm(confirmText)) return;
+
+    try {
+      setRewardWorkingId(`${studentId}-${action}`);
+      const data = await apiFetch('/api/student-point-rewards', {
+        method: 'POST',
+        body: JSON.stringify({ action, studentId, createdBy: currentUser?.displayName || '관리자' }),
+      });
+      setMessage?.(data.message || `${label} 처리 완료`);
+      await Promise.all([loadRewardState(), loadPoints()]);
+    } catch (error) {
+      setMessage?.(error.message || `${label} 처리 실패`);
+    } finally {
+      setRewardWorkingId('');
+    }
+  }
 
   async function loadPoints(next = {}) {
     try {
@@ -13012,6 +13050,50 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
         </div>
       </div>
 
+      {/* v41-137: 순점수가 기준(10점)을 초과한 학생은 상품 지급 대상으로 알립니다. */}
+      {(rewardState?.eligible || []).length ? (
+        <div className="point-reward-alert-card">
+          <div className="point-reward-alert-head">
+            <strong>상품 지급 대상 {rewardState.eligible.length}명</strong>
+            <span>순점수가 {rewardState.threshold || 10}점을 초과했습니다. 처리 후에도 상벌점 기록 자체는 그대로 보관됩니다.</span>
+          </div>
+          <div className="point-reward-alert-list">
+            {rewardState.eligible.map((item) => (
+              <article key={`reward-${item.studentId}`}>
+                <div className="point-reward-alert-student">
+                  <strong>{item.name}</strong>
+                  <span>{item.subtitle || '학교/학년 미입력'}</span>
+                </div>
+                <div className="point-reward-alert-score">
+                  <b>순점수 +{item.net}점</b>
+                  <em>상 {item.reward} · 벌 {item.penalty} · {item.count}건{item.grantCount ? ` · 지급 ${item.grantCount}회` : ''}</em>
+                </div>
+                <p>{item.message}</p>
+                <div className="point-reward-alert-actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => handleRewardAction(item.studentId, 'grant', item.name)}
+                    disabled={Boolean(rewardWorkingId)}
+                  >
+                    {rewardWorkingId === `${item.studentId}-grant` ? '처리 중...' : '상품지급안내완료'}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => handleRewardAction(item.studentId, 'defer', item.name)}
+                    disabled={Boolean(rewardWorkingId)}
+                  >
+                    {rewardWorkingId === `${item.studentId}-defer` ? '처리 중...' : '미지급'}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {rewardState?.warning ? <div className="point-reward-warning">{rewardState.warning}</div> : null}
+
       <div className="points-summary-grid">
         <div className="reward"><span>상점</span><strong>{summary.reward || 0}점</strong></div>
         <div className="penalty"><span>벌점</span><strong>{summary.penalty || 0}점</strong></div>
@@ -13055,7 +13137,10 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
         </div>
         {pointStudentGroups.length ? (
           <div className="points-student-group-list">
-            {pointStudentGroups.map((group) => (
+            {pointStudentGroups.map((group) => {
+              // v41-137: 조회 기간 합계와 별개로, 상품 지급 기준이 되는 '현재 사이클' 누적도 함께 보여줍니다.
+              const cycle = rewardState?.cycles?.[String(group.key)] || null;
+              return (
               <section key={group.key} className="points-student-group">
                 <div className="points-student-head">
                   <div className="points-student-name">
@@ -13068,6 +13153,16 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
                     <b className={group.net >= 0 ? 'net-positive' : 'net-negative'}>순점수 {group.net > 0 ? '+' : ''}{group.net}점</b>
                   </div>
                 </div>
+                {cycle ? (
+                  <div className={cycle.eligible ? 'points-cycle-line is-eligible' : 'points-cycle-line'}>
+                    <span>현재 누적 {cycle.net > 0 ? '+' : ''}{cycle.net}점</span>
+                    {cycle.eligible
+                      ? <b>상품 지급 대상</b>
+                      : <em>지급 기준까지 {cycle.remainingToTarget}점</em>}
+                    {cycle.lastGrant ? <i>최근 지급 {String(cycle.lastGrant.created_at || '').slice(0, 10)} · 당시 {cycle.lastGrant.net_points > 0 ? '+' : ''}{cycle.lastGrant.net_points}점</i> : null}
+                    {cycle.grantCount ? <u>지급 {cycle.grantCount}회</u> : null}
+                  </div>
+                ) : null}
                 <div className="points-row-list">
                   {group.items.map((row) => (
                     <article key={row.id} className={`points-row ${row.point_type}`}>
@@ -13082,7 +13177,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
                   ))}
                 </div>
               </section>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="all-clear">선택 조건에 해당하는 상벌점 기록이 없습니다.</div>
@@ -13667,12 +13763,13 @@ function AttendanceTab({
 
 // v41-136: 코칭 직전에 학생을 한 눈에 파악할 수 있는 종합 카드입니다.
 // 학생 관리 / 학습 관리 / 리포트 탭을 오가지 않도록, 누적 학습량·상벌점·데일리 코칭·위클리 상담·차시별 기록을 한 화면에 모읍니다.
-function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOverviewChange }) {
+function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOverviewChange, currentUser, setMessage }) {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [collapsed, setCollapsed] = useState(false);
   const [detailTab, setDetailTab] = useState('daily');
+  const [rewardWorking, setRewardWorking] = useState('');
   const loadedKeyRef = useRef('');
 
   const loadOverview = useCallback(async (targetId) => {
@@ -13705,6 +13802,29 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
     loadOverview(key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId]);
+
+  // v41-137: 상품 지급 대상 처리(지급 완료 → 카운팅 리셋 / 미지급 → 계속 누적)
+  async function handleRewardAction(action) {
+    const studentName = overview?.student?.name || '학생';
+    const confirmText = action === 'grant'
+      ? `${studentName} 학생을 상품 지급 안내 완료로 처리할까요?\n\n지금까지의 상벌점 카운팅이 0으로 리셋됩니다. 기록 자체는 그대로 보관되고, 지급 이력에 남습니다.`
+      : `${studentName} 학생을 미지급으로 처리할까요?\n\n카운팅은 리셋하지 않고 계속 누적되며, 순점수가 추가로 기준을 넘으면 다시 알림이 표시됩니다.`;
+    if (!confirm(confirmText)) return;
+
+    try {
+      setRewardWorking(action);
+      const data = await apiFetch('/api/student-point-rewards', {
+        method: 'POST',
+        body: JSON.stringify({ action, studentId, createdBy: currentUser?.displayName || '관리자' }),
+      });
+      setMessage?.(data.message || '상품 지급 처리 완료');
+      await loadOverview(studentId);
+    } catch (err) {
+      setMessage?.(err?.message || '상품 지급 처리 실패');
+    } finally {
+      setRewardWorking('');
+    }
+  }
 
   if (!studentId) return null;
 
@@ -13745,7 +13865,7 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
             <div><span>등원일수</span><strong>{totals.attendDays || 0}일</strong><em>결석 {totals.absentDays || 0}일</em></div>
             <div><span>일평균 순공</span><strong>{totals.avgStudyLabel || '-'}</strong><em>학습일 기준</em></div>
             <div><span>최고 순공</span><strong>{totals.bestStudyLabel || '-'}</strong><em>{totals.bestStudyDate || '-'}</em></div>
-            <div className={Number(points.net || 0) < 0 ? 'is-negative' : ''}><span>상벌점 누계</span><strong>{Number(points.net || 0) > 0 ? `+${points.net}` : (points.net || 0)}점</strong><em>상 {points.reward || 0} · 벌 {points.penalty || 0}</em></div>
+            <div className={Number(points.net || 0) < 0 ? 'is-negative' : ''}><span>상벌점 누계</span><strong>{Number(points.net || 0) > 0 ? `+${points.net}` : (points.net || 0)}점</strong><em>상 {points.reward || 0} · 벌 {points.penalty || 0}{points.grantCount ? ` · 지급 ${points.grantCount}회` : ''}</em></div>
             <div><span>코칭 기록</span><strong>데일리 {totals.dailyCommentCount || 0}건</strong><em>위클리 {totals.weeklyReportCount || 0}건</em></div>
           </div>
 
@@ -13774,6 +13894,36 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
             <span className="risk-chip">외출 {flags.awayCount || 0}회 · {formatMinutes(flags.awayMinutes || 0)}</span>
             <span className="risk-chip">등원 {flags.attendDays || 0}일</span>
           </div>
+
+          {/* v41-137: 순점수가 기준을 초과하면 상품 지급 대상 알림과 처리 버튼을 노출합니다. */}
+          {points.eligible ? (
+            <div className="student-overview-reward-alert">
+              <div>
+                <strong>{points.alertMessage}</strong>
+                <span>현재 순점수 +{points.net}점 (상 {points.reward} · 벌 {points.penalty} · {points.count}건)</span>
+              </div>
+              <div className="student-overview-reward-actions">
+                <button type="button" className="primary" onClick={() => handleRewardAction('grant')} disabled={Boolean(rewardWorking)}>
+                  {rewardWorking === 'grant' ? '처리 중...' : '상품지급안내완료'}
+                </button>
+                <button type="button" className="secondary" onClick={() => handleRewardAction('defer')} disabled={Boolean(rewardWorking)}>
+                  {rewardWorking === 'defer' ? '처리 중...' : '미지급'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {(points.grants || []).length ? (
+            <div className="student-overview-grant-history">
+              <strong>상품 지급 이력</strong>
+              {(points.grants || []).slice().reverse().map((grant) => (
+                <span key={`grant-${grant.id}`}>
+                  {grant.date} 지급 · 당시 순점수 {grant.netPoints > 0 ? '+' : ''}{grant.netPoints}점 (상 {grant.rewardPoints} / 벌 {grant.penaltyPoints}){grant.createdBy ? ` · ${grant.createdBy}` : ''}
+                </span>
+              ))}
+              <span className="student-overview-grant-note">지급 이후 카운팅은 0부터 다시 시작합니다. 전체 누적은 상 {points.lifetime?.reward || 0} · 벌 {points.lifetime?.penalty || 0}점입니다.</span>
+            </div>
+          ) : null}
 
           {student?.admin_note ? (
             <div className="student-overview-note">
@@ -13932,6 +14082,8 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
         apiFetch={historyProps.apiFetch}
         setActiveTab={historyProps.setActiveTab}
         onOverviewChange={setOverviewData}
+        currentUser={historyProps.currentUser}
+        setMessage={historyProps.setMessage}
       />
 
       <div id="student-care-attendance-section" className="student-care-section-block">

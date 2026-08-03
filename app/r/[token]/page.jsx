@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
+import { resolvePointCycle } from '../../../lib/studentPointCycle';
 
 export const dynamic = 'force-dynamic';
 
@@ -793,6 +794,23 @@ async function getPlannerImage(supabase, session) {
   }
 }
 
+// v41-137: 상품 지급으로 리셋된 이력을 함께 읽어, 학부모 리포트에는 '리셋 이후' 누적만 보여줍니다.
+async function getStudentPointRewardRows(supabase, studentId) {
+  if (!studentId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('student_point_rewards')
+      .select('id,action,net_points,reward_points,penalty_points,created_at')
+      .eq('student_id', String(studentId))
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  } catch {
+    // v41-137 SQL 미실행 환경에서는 기존처럼 전체 누적을 보여줍니다.
+    return [];
+  }
+}
+
 async function getStudentPointRows(supabase, studentId, endDate = null) {
   if (!studentId) return [];
   try {
@@ -875,8 +893,15 @@ async function loadReport(token) {
 
     const planner = await getPlannerImage(supabase, session);
     const reportDate = session?.session_date || report.report_date || null;
-    const pointRows = await getStudentPointRows(supabase, session?.student_id || report.student_id, reportDate);
-    const dailyPointRows = reportDate ? pointRows.filter((row) => row.point_date === reportDate) : [];
+    const pointStudentId = session?.student_id || report.student_id;
+    const allPointRows = await getStudentPointRows(supabase, pointStudentId, reportDate);
+    const pointRewardRows = await getStudentPointRewardRows(supabase, pointStudentId);
+    // v41-137: 상품 지급 시점 이후의 기록만 '누적'으로 집계합니다. (원본 기록은 그대로 보관)
+    const pointCycle = resolvePointCycle(allPointRows, pointRewardRows, {
+      asOf: reportDate ? `${reportDate}T23:59:59+09:00` : undefined,
+    });
+    const pointRows = pointCycle.cycleRows;
+    const dailyPointRows = reportDate ? allPointRows.filter((row) => row.point_date === reportDate) : [];
     let schedule = normalizeDailySchedule(safePayload(report)?.scheduleSnapshot || null);
     // v41-112: 외출 사유 폴백용으로 개인 시간표 외출(student_schedule_breaks)을 함께 조회합니다.
     let scheduleBreaks = [];
@@ -903,7 +928,7 @@ async function loadReport(token) {
     }
     const operatingRules = safePayload(report)?.dailyIssueRules || await getOperatingRules(supabase);
     const defaultSchedule = resolveScheduleForDate(scheduleConfig, reportDate);
-    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, checks, scheduleBreaks, pointRows, dailyPointRows, schedule, operatingRules, defaultSchedule };
+    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, checks, scheduleBreaks, pointRows, dailyPointRows, pointCycle, schedule, operatingRules, defaultSchedule };
   }
 
   if (link.report_type === 'weekly') {
@@ -958,7 +983,7 @@ export default async function PublicReportPage({ params }) {
     return <ErrorPage title="리포트를 열 수 없습니다" message="링크가 만료되었거나 더 이상 사용 가능한 리포트가 아닙니다." />;
   }
 
-  const { reportType, report, session, student, link, planner, events = [], checks = [], scheduleBreaks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
+  const { reportType, report, session, student, link, planner, events = [], checks = [], scheduleBreaks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], pointCycle = null, schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
   const studyWindows = defaultSchedule?.studyWindows;
   const variables = getTemplateVariables(report);
   const isWeekly = reportType === 'weekly';
@@ -1178,6 +1203,20 @@ export default async function PublicReportPage({ params }) {
             ) : (
               <p className="muted">상벌점 기록이 없습니다.</p>
             )}
+            {/* v41-137: 상품 지급으로 점수가 초기화된 이력을 작게 남겨둡니다. */}
+            {(pointCycle?.grants || []).length ? (
+              <div className="point-grant-history">
+                <div className="point-grant-title">상품 지급 이력</div>
+                <ul>
+                  {(pointCycle.grants || []).slice().reverse().map((grant) => (
+                    <li key={grant.id || grant.created_at}>
+                      {String(grant.created_at || '').slice(0, 10)} 상품 지급 · 당시 누적 순점수 {Number(grant.net_points || 0) > 0 ? '+' : ''}{Number(grant.net_points || 0)}점
+                    </li>
+                  ))}
+                </ul>
+                <p>상품 지급 후에는 상벌점이 0점부터 다시 누적됩니다.</p>
+              </div>
+            ) : null}
           </Card>
         </>
       )}
@@ -1574,6 +1613,30 @@ const styles = `
     line-height: 1.7;
     font-size: 14px;
     font-weight: 600;
+  }
+  .point-grant-history {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #ededf0;
+  }
+  .point-grant-title {
+    color: #86868b;
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .point-grant-history ul {
+    margin: 6px 0 0;
+    padding-left: 16px;
+    color: #6e6e73;
+    font-size: 12.5px;
+    line-height: 1.6;
+    font-weight: 600;
+  }
+  .point-grant-history p {
+    margin: 6px 0 0;
+    color: #86868b;
+    font-size: 12px;
+    line-height: 1.5;
   }
   .muted {
     color: #86868b;
