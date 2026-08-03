@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-138-counseling-voice-summary",
-  "version": "0.41.138",
+  "name": "beyond-os-v41-139-recording-background",
+  "version": "0.41.139",
   "private": true,
   "scripts": {
     "dev": "next dev",

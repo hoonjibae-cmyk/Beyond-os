@@ -20447,20 +20447,21 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   font-weight: 900;
 }
 .counseling-recording-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e0303a;
+  flex: 0 0 auto;
+  animation: counseling-pulse 1.2s ease-in-out infinite;
+}
+.counseling-recorder-live {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   font-size: 12.5px;
   font-weight: 950;
   color: #b4232b;
-}
-.counseling-recording-dot::before {
-  content: '';
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #e0303a;
-  animation: counseling-pulse 1.2s ease-in-out infinite;
 }
 @keyframes counseling-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -20496,21 +20497,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   background: #e0303a;
   color: #fff;
 }
-.counseling-file-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 38px;
-  padding: 0 16px;
-  border-radius: 12px;
-  border: 1px solid #d8d2c6;
-  background: #fff;
-  color: #4f473c;
-  font-size: 13px;
-  font-weight: 950;
-  cursor: pointer;
-}
-.counseling-file-button input {
+.counseling-file-input {
   display: none;
 }
 .counseling-recorder-meta {
@@ -20607,5 +20594,69 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   }
   .counseling-recorder-summary-row button {
     width: 100%;
+  }
+}
+
+/* v41-139: 녹음 중 어느 화면에서나 보이는 고정 표시줄 */
+.counseling-floating-bar {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #211f1b;
+  color: #fff;
+  box-shadow: 0 12px 32px rgba(20, 18, 14, 0.28);
+}
+.counseling-floating-bar.is-recording {
+  background: #7a1b21;
+}
+.counseling-floating-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.counseling-floating-main strong {
+  display: block;
+  font-size: 13.5px;
+  color: #fff;
+  line-height: 1.25;
+}
+.counseling-floating-main span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.35;
+}
+.counseling-floating-bar .counseling-recording-dot {
+  background: #ff6a6a;
+}
+.counseling-floating-stop {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+  color: #7a1b21;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 12.5px;
+  font-weight: 950;
+  cursor: pointer;
+  font-family: inherit;
+}
+@media (max-width: 760px) {
+  .counseling-floating-bar {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    max-width: none;
   }
 }
