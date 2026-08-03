@@ -20416,3 +20416,196 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
     flex: 1 1 140px;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-138: 코칭/면담 녹음 → 자동 전사 → AI 상담 요약 패널
+   ───────────────────────────────────────────────────────────── */
+.counseling-recorder {
+  margin-top: 10px;
+  border: 1px dashed #d8d2c6;
+  border-radius: 16px;
+  background: #fffdfa;
+  padding: 10px 12px;
+}
+.counseling-recorder.is-open {
+  border-style: solid;
+  border-color: #cddcff;
+  background: #fbfcff;
+}
+.counseling-recorder-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.counseling-recorder-head button {
+  width: auto;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-weight: 900;
+}
+.counseling-recording-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 950;
+  color: #b4232b;
+}
+.counseling-recording-dot::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e0303a;
+  animation: counseling-pulse 1.2s ease-in-out infinite;
+}
+@keyframes counseling-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+.counseling-recorder-pending {
+  font-size: 12px;
+  font-weight: 900;
+  color: #1d4ed8;
+}
+.counseling-recorder-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.counseling-recorder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.counseling-recorder-actions button {
+  width: auto;
+  min-height: 38px;
+  min-width: 104px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 950;
+}
+.counseling-recorder-actions .danger-action {
+  border: 0;
+  background: #e0303a;
+  color: #fff;
+}
+.counseling-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid #d8d2c6;
+  background: #fff;
+  color: #4f473c;
+  font-size: 13px;
+  font-weight: 950;
+  cursor: pointer;
+}
+.counseling-file-button input {
+  display: none;
+}
+.counseling-recorder-meta {
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #8a8479;
+}
+.counseling-recorder-status,
+.counseling-recorder-error,
+.counseling-recorder-warning {
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+.counseling-recorder-status {
+  background: #eef4ff;
+  color: #1d4ed8;
+}
+.counseling-recorder-error {
+  background: #fdeeee;
+  color: #b4232b;
+}
+.counseling-recorder-warning {
+  background: #fff8e8;
+  color: #a8834b;
+}
+.counseling-recorder-field {
+  display: grid;
+  gap: 5px;
+}
+.counseling-recorder-field label {
+  font-size: 11.5px;
+  font-weight: 950;
+  color: #7a756b;
+}
+.counseling-recorder-field textarea {
+  min-height: 110px;
+  width: 100%;
+  background: #fff !important;
+  color: #211f1b !important;
+  border: 1px solid #d8d2c6 !important;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  font-family: inherit;
+  resize: vertical;
+}
+.counseling-recorder-summary-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.counseling-recorder-summary-row .field {
+  flex: 1 1 260px;
+  margin-bottom: 0;
+}
+.counseling-recorder-summary-row button {
+  width: auto;
+  min-height: 40px;
+  min-width: 116px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 950;
+}
+.counseling-recorder-apply {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.counseling-recorder-apply button {
+  width: auto;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 950;
+}
+.counseling-recorder-note {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #9a938a;
+  line-height: 1.5;
+}
+@media (max-width: 760px) {
+  .counseling-recorder-actions button,
+  .counseling-file-button {
+    flex: 1 1 132px;
+  }
+  .counseling-recorder-summary-row button {
+    width: 100%;
+  }
+}

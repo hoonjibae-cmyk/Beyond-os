@@ -2611,6 +2611,30 @@ export default function Page() {
     return data;
   }
 
+  // v41-138: 파일 업로드(멀티파트)용. Content-Type을 브라우저가 직접 지정해야 하므로
+  // apiFetch와 달리 JSON 헤더를 붙이지 않고, 인증 헤더만 동일하게 실어 보냅니다.
+  async function apiUpload(url, formData) {
+    markLocalMutation('api', url);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...(adminPassword ? { 'x-admin-password': adminPassword } : {}),
+        ...(appSessionToken ? { 'x-app-session-token': appSessionToken } : {}),
+        ...(clientIdRef.current ? { 'x-beyond-client-id': clientIdRef.current } : {}),
+      },
+      body: formData,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(data.error || '업로드 처리 중 오류가 발생했습니다.');
+      Object.assign(error, data || {});
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  }
+
   async function loadOperatingRules() {
     try {
       const data = await apiFetch('/api/operating-rules');
@@ -5356,6 +5380,7 @@ export default function Page() {
           <WeeklyReportsTab
             students={students}
             apiFetch={apiFetch}
+            apiUpload={apiUpload}
             operatingRules={operatingRules}
             setMessage={setMessage}
             sendConfig={sendConfig}
@@ -5413,6 +5438,7 @@ export default function Page() {
             historyProps={{
               students,
               apiFetch,
+              apiUpload,
               currentUser,
               setMessage,
               setActiveTab,
@@ -11207,7 +11233,7 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
 }
 
 
-function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, sendConfig, onActionNotice, currentUser }) {
+function WeeklyReportsTab({ students, apiFetch, apiUpload, operatingRules, setMessage, sendConfig, onActionNotice, currentUser }) {
   const initialRange = getFullWeekRange();
   const [studentId, setStudentId] = useState('');
   const [start, setStart] = useState(initialRange.start);
@@ -12634,6 +12660,23 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
               <h3>주간면담 내용</h3>
               <p>원장님이 토요일에 학생과 심층 면담한 내용을 입력합니다. 학습 루틴, 집중도, 과목별 고민, 정서 상태, 다음 주 목표 등을 기록하세요.</p>
               <textarea value={directorInterview} onChange={(event) => { setDirectorInterview(event.target.value); setInterviewAiComparison(null); markDirty(); }} placeholder="예: 이번 주 면담에서는 자습 시작 후 집중 유지 시간, 단어 복습 루틴, 다음 주 목표를 중심으로 점검했습니다." />
+              {/* v41-138: 면담을 녹음하면 AI가 주간면담 내용 초안으로 정리해 줍니다. */}
+              <CounselingRecorderPanel
+                mode="weekly"
+                student={selectedStudent}
+                date={end}
+                apiFetch={apiFetch}
+                apiUpload={apiUpload}
+                applyLabel="주간면담 내용에 반영"
+                disabled={!selectedStudent}
+                onApply={(text, options = {}) => {
+                  const current = String(directorInterview || '').trim();
+                  const next = options.replace || !current ? text : `${current}\n\n${text}`;
+                  setDirectorInterview(next);
+                  setInterviewAiComparison(null);
+                  markDirty();
+                }}
+              />
               <div className="weekly-interview-ai-row">
                 <span>입력한 면담 메모를 학부모용 문장으로 정리합니다. 원문은 바로 바뀌지 않고 비교 화면에서 적용 여부를 선택합니다.</span>
                 <div className="weekly-interview-ai-buttons">
@@ -13518,6 +13561,7 @@ function AttendanceTab({
   students, rows, loading, start, end, studentFilter, setStart, setEnd, setStudentFilter, loadHistory, setPreset,
   operatingRules, statusFilter, setStatusFilter, summaryCollapsed, setSummaryCollapsed, saveMentorComment, focusMentorCommentRequest,
   mentoringContext, onReturnToMentoring, onNavigateMentoringStudent, historySummary = null, assignedMentorName = '',
+  apiFetch, apiUpload,
 }) {
   const rules = normalizeOperatingRules(operatingRules);
   const selectedStudent = (students || []).find((student) => String(student.id) === String(studentFilter));
@@ -13691,6 +13735,20 @@ function AttendanceTab({
                     onChange={(event) => updateCommentDraft(todayRow.id, event.target.value)}
                     placeholder="오늘 1:1 면담 내용과 다음 관리 포인트를 입력하세요."
                   />
+                  {/* v41-138: 코칭 내용을 녹음하면 AI가 코멘트 초안으로 정리해 줍니다. */}
+                  <CounselingRecorderPanel
+                    mode="daily"
+                    student={selectedStudent}
+                    date={today}
+                    apiFetch={apiFetch}
+                    apiUpload={apiUpload}
+                    applyLabel="오늘 코멘트에 반영"
+                    onApply={(text, options = {}) => {
+                      const current = String(getCommentDraft(todayRow) || '').trim();
+                      const next = options.replace || !current ? text : `${current}\n\n${text}`;
+                      updateCommentDraft(todayRow.id, next);
+                    }}
+                  />
                   <div className="today-comment-actions">
                     <span>저장 후 리포트 미리보기/발송 시 최신 코멘트가 자동 반영됩니다.</span>
                     <div className="today-comment-primary-actions">
@@ -13760,6 +13818,343 @@ function AttendanceTab({
 }
 
 
+
+// v41-138: 코칭/면담 녹음 → 자동 전사 → AI 상담 요약 패널
+//
+// 동작 방식
+//   1) 마이크로 녹음합니다. Vercel 요청 본문 한도(4.5MB)를 넘지 않도록 5분마다 조각을 끊어
+//      바로 전사 서버로 보내고, 돌아온 문장을 순서대로 이어 붙입니다.
+//   2) 녹음이 끝나면 전사문을 화면에서 직접 고칠 수 있습니다.
+//   3) [AI 요약]을 누르면 상담 기록용 문장으로 정리하고, 확인 후 코멘트/면담 내용에 반영합니다.
+//
+// 개인정보: 녹음 음성 자체는 서버나 Supabase에 저장하지 않습니다. 전사에만 쓰고 즉시 폐기합니다.
+const RECORDER_SEGMENT_MS = 5 * 60 * 1000;
+const RECORDER_MAX_MS = 90 * 60 * 1000;
+const RECORDER_BITS_PER_SECOND = 24000;
+
+function formatRecorderClock(ms = 0) {
+  const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const minutes = String(Math.floor(total / 60)).padStart(2, '0');
+  const seconds = String(total % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+function pickRecorderMimeType() {
+  if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined') return '';
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  return candidates.find((type) => window.MediaRecorder.isTypeSupported?.(type)) || '';
+}
+
+function CounselingRecorderPanel({
+  mode = 'daily',
+  student = null,
+  date = '',
+  apiFetch,
+  apiUpload,
+  onApply,
+  applyLabel = '코멘트에 반영',
+  disabled = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [segmentCount, setSegmentCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [transcript, setTranscript] = useState('');
+  const [summary, setSummary] = useState('');
+  const [summaryMode, setSummaryMode] = useState(mode === 'weekly' ? 'weekly' : 'daily');
+  const [status, setStatus] = useState('');
+  const [errorText, setErrorText] = useState('');
+  const [summarizing, setSummarizing] = useState(false);
+  const [supported, setSupported] = useState(true);
+
+  const streamRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const segmentIndexRef = useRef(0);
+  const startedAtRef = useRef(0);
+  const tickRef = useRef(null);
+  const segmentTimerRef = useRef(null);
+  const stoppingRef = useRef(false);
+  const transcriptRef = useRef('');
+  const mimeTypeRef = useRef('');
+
+  useEffect(() => {
+    setSupported(typeof window !== 'undefined'
+      && typeof window.MediaRecorder !== 'undefined'
+      && Boolean(navigator?.mediaDevices?.getUserMedia));
+  }, []);
+
+  // 화면을 떠나거나 패널을 닫을 때 마이크를 확실히 해제합니다.
+  useEffect(() => () => {
+    try { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); } catch {}
+    streamRef.current?.getTracks?.().forEach((track) => track.stop());
+    if (tickRef.current) clearInterval(tickRef.current);
+    if (segmentTimerRef.current) clearTimeout(segmentTimerRef.current);
+  }, []);
+
+  function appendTranscript(text) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    transcriptRef.current = [transcriptRef.current, clean].filter(Boolean).join(' ');
+    setTranscript(transcriptRef.current);
+  }
+
+  async function uploadSegment(blob, index) {
+    if (!blob || !blob.size) return;
+    setPendingCount((prev) => prev + 1);
+    try {
+      const form = new FormData();
+      const extension = (mimeTypeRef.current || 'audio/webm').includes('mp4') ? 'm4a' : 'webm';
+      form.append('audio', blob, `counseling-${index}.${extension}`);
+      form.append('segmentIndex', String(index));
+      form.append('language', 'ko');
+      form.append('promptHint', transcriptRef.current.slice(-400));
+      const data = await apiUpload('/api/counseling-transcribe', form);
+      appendTranscript(data?.text || '');
+      setStatus(data?.text ? `${index + 1}번째 구간 전사 완료` : `${index + 1}번째 구간에서 인식된 말이 없습니다.`);
+    } catch (error) {
+      setErrorText(error?.message || `${index + 1}번째 구간 전사에 실패했습니다.`);
+    } finally {
+      setPendingCount((prev) => Math.max(0, prev - 1));
+    }
+  }
+
+  function releaseStream() {
+    streamRef.current?.getTracks?.().forEach((track) => track.stop());
+    streamRef.current = null;
+  }
+
+  // 조각 경계에서는 레코더만 껐다 켜고 마이크 스트림은 그대로 둡니다.
+  // (권한을 다시 묻지 않고, 각 조각이 독립적으로 재생 가능한 완전한 파일이 됩니다.)
+  function startRecorderCycle() {
+    const stream = streamRef.current;
+    if (!stream) return;
+    const mimeType = mimeTypeRef.current;
+    const recorder = new window.MediaRecorder(stream, {
+      ...(mimeType ? { mimeType } : {}),
+      audioBitsPerSecond: RECORDER_BITS_PER_SECOND,
+    });
+    chunksRef.current = [];
+    recorderRef.current = recorder;
+
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size) chunksRef.current.push(event.data);
+    };
+    recorder.onstop = () => {
+      const index = segmentIndexRef.current;
+      const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
+      chunksRef.current = [];
+      segmentIndexRef.current = index + 1;
+      setSegmentCount(index + 1);
+      uploadSegment(blob, index);
+
+      if (stoppingRef.current) {
+        // 마지막 데이터까지 받은 뒤에 마이크를 해제해야 끝부분이 잘리지 않습니다.
+        releaseStream();
+        return;
+      }
+      // 조각 경계이면 같은 마이크 스트림으로 곧바로 다음 조각을 시작합니다.
+      startRecorderCycle();
+    };
+
+    recorder.start();
+    if (segmentTimerRef.current) clearTimeout(segmentTimerRef.current);
+    segmentTimerRef.current = setTimeout(() => {
+      if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    }, RECORDER_SEGMENT_MS);
+  }
+
+  async function startRecording() {
+    setErrorText('');
+    setStatus('');
+    if (!supported) {
+      setErrorText('이 브라우저에서는 녹음을 지원하지 않습니다. 아래 "녹음 파일 올리기"를 이용하세요.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      streamRef.current = stream;
+      mimeTypeRef.current = pickRecorderMimeType();
+      stoppingRef.current = false;
+      segmentIndexRef.current = 0;
+      setSegmentCount(0);
+      startedAtRef.current = Date.now();
+      setElapsedMs(0);
+      setRecording(true);
+      setStatus('녹음 중입니다. 상담이 끝나면 [녹음 종료]를 누르세요.');
+      startRecorderCycle();
+
+      tickRef.current = setInterval(() => {
+        const elapsed = Date.now() - startedAtRef.current;
+        setElapsedMs(elapsed);
+        if (elapsed >= RECORDER_MAX_MS) stopRecording();
+      }, 1000);
+    } catch (error) {
+      setErrorText(error?.name === 'NotAllowedError'
+        ? '마이크 권한이 거부되었습니다. 브라우저 주소창의 자물쇠 아이콘에서 마이크를 허용해 주세요.'
+        : (error?.message || '마이크를 시작하지 못했습니다.'));
+    }
+  }
+
+  function stopRecording() {
+    stoppingRef.current = true;
+    if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+    if (segmentTimerRef.current) { clearTimeout(segmentTimerRef.current); segmentTimerRef.current = null; }
+    // 녹음 중이면 onstop에서 마지막 조각을 올린 뒤 마이크를 해제하고,
+    // 이미 멈춰 있으면 여기서 바로 해제합니다.
+    let willStop = false;
+    try {
+      if (recorderRef.current?.state === 'recording') {
+        recorderRef.current.stop();
+        willStop = true;
+      }
+    } catch {}
+    if (!willStop) releaseStream();
+    setRecording(false);
+    setStatus('녹음을 종료했습니다. 마지막 구간을 전사하는 중입니다.');
+  }
+
+  async function handleFileUpload(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    // Vercel 요청 본문 한도(4.5MB)를 넘는 파일은 서버까지 가지 못하므로 미리 막습니다.
+    if (file.size > 4 * 1024 * 1024) {
+      setErrorText(`파일이 ${(file.size / 1024 / 1024).toFixed(1)}MB로 너무 큽니다. 4MB 이하로 나누어 올리거나 이 화면에서 직접 녹음해 주세요.`);
+      return;
+    }
+    setErrorText('');
+    setStatus('업로드한 녹음 파일을 전사하는 중...');
+    const index = segmentIndexRef.current;
+    segmentIndexRef.current = index + 1;
+    setSegmentCount(index + 1);
+    await uploadSegment(file, index);
+  }
+
+  async function generateSummary() {
+    const text = String(transcript || '').trim();
+    if (!text) {
+      setErrorText('요약할 전사 내용이 없습니다.');
+      return;
+    }
+    try {
+      setSummarizing(true);
+      setErrorText('');
+      setStatus('AI가 상담 내용을 요약하는 중...');
+      const data = await apiFetch('/api/counseling-summary', {
+        method: 'POST',
+        body: JSON.stringify({
+          transcript: text,
+          mode: summaryMode,
+          date,
+          student: { name: student?.name, school: student?.school, grade: student?.grade },
+        }),
+      });
+      setSummary(data?.summary || '');
+      setStatus(data?.fallback
+        ? (data.message || 'AI를 쓸 수 없어 전사문을 정리해 표시했습니다.')
+        : 'AI 요약이 완료되었습니다. 내용을 확인하고 반영하세요.');
+    } catch (error) {
+      setErrorText(error?.message || 'AI 요약에 실패했습니다.');
+      setStatus('');
+    } finally {
+      setSummarizing(false);
+    }
+  }
+
+  function resetAll() {
+    if (recording) stopRecording();
+    transcriptRef.current = '';
+    segmentIndexRef.current = 0;
+    setTranscript('');
+    setSummary('');
+    setSegmentCount(0);
+    setElapsedMs(0);
+    setStatus('');
+    setErrorText('');
+  }
+
+  const busy = pendingCount > 0;
+
+  return (
+    <div className={open ? 'counseling-recorder is-open' : 'counseling-recorder'}>
+      <div className="counseling-recorder-head">
+        <button type="button" className="secondary" onClick={() => setOpen((prev) => !prev)} disabled={disabled}>
+          {open ? '녹음 상담 요약 닫기' : '녹음으로 상담 요약'}
+        </button>
+        {recording ? <span className="counseling-recording-dot">녹음 중 {formatRecorderClock(elapsedMs)}</span> : null}
+        {!recording && busy ? <span className="counseling-recorder-pending">전사 중 {pendingCount}건</span> : null}
+      </div>
+
+      {open ? (
+        <div className="counseling-recorder-body">
+          <div className="counseling-recorder-actions">
+            {!recording ? (
+              <button type="button" className="primary" onClick={startRecording} disabled={disabled || !supported}>녹음 시작</button>
+            ) : (
+              <button type="button" className="danger-action" onClick={stopRecording}>녹음 종료</button>
+            )}
+            <label className="counseling-file-button">
+              녹음 파일 올리기
+              <input type="file" accept="audio/*" onChange={handleFileUpload} disabled={recording || disabled} />
+            </label>
+            <button type="button" className="secondary" onClick={resetAll} disabled={busy || summarizing}>초기화</button>
+            <span className="counseling-recorder-meta">
+              {segmentCount ? `구간 ${segmentCount}개` : '5분마다 자동으로 나누어 전사합니다'}
+            </span>
+          </div>
+
+          {!supported ? (
+            <div className="counseling-recorder-warning">이 브라우저는 녹음 기능을 지원하지 않습니다. 휴대폰 등으로 녹음한 파일을 올려 주세요.</div>
+          ) : null}
+          {errorText ? <div className="counseling-recorder-error">{errorText}</div> : null}
+          {status ? <div className="counseling-recorder-status">{status}</div> : null}
+
+          <div className="counseling-recorder-field">
+            <label>전사문 (직접 수정 가능)</label>
+            <textarea
+              value={transcript}
+              onChange={(event) => { transcriptRef.current = event.target.value; setTranscript(event.target.value); }}
+              placeholder="녹음을 시작하면 말한 내용이 여기에 자동으로 채워집니다. 잘못 인식된 부분은 직접 고칠 수 있습니다."
+            />
+          </div>
+
+          <div className="counseling-recorder-summary-row">
+            <div className="field">
+              <label>요약 형식</label>
+              <select value={summaryMode} onChange={(event) => setSummaryMode(event.target.value)}>
+                <option value="daily">데일리 코칭 요약 (학부모 노출)</option>
+                <option value="weekly">주간면담 요약 (학부모 노출)</option>
+                <option value="internal">내부 상담 기록 (학부모 미노출)</option>
+              </select>
+            </div>
+            <button type="button" className="primary" onClick={generateSummary} disabled={summarizing || busy || !transcript.trim()}>
+              {summarizing ? 'AI 요약 중...' : 'AI 요약'}
+            </button>
+          </div>
+
+          {summary ? (
+            <div className="counseling-recorder-field">
+              <label>AI 요약 (반영 전에 수정할 수 있습니다)</label>
+              <textarea value={summary} onChange={(event) => setSummary(event.target.value)} />
+              <div className="counseling-recorder-apply">
+                <button type="button" className="primary" onClick={() => onApply?.(summary, { replace: true })}>{applyLabel}</button>
+                <button type="button" className="secondary" onClick={() => onApply?.(summary, { replace: false })}>기존 내용 뒤에 덧붙이기</button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="counseling-recorder-note">
+            녹음 음성은 서버에 저장하지 않습니다. 전사에만 사용한 뒤 곧바로 폐기하며, 화면에 남은 전사문도 저장 버튼을 누르기 전까지는 기록되지 않습니다.
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 // v41-136: 코칭 직전에 학생을 한 눈에 파악할 수 있는 종합 카드입니다.
 // 학생 관리 / 학습 관리 / 리포트 탭을 오가지 않도록, 누적 학습량·상벌점·데일리 코칭·위클리 상담·차시별 기록을 한 화면에 모읍니다.
@@ -14094,7 +14489,13 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
             <p>오늘 출결 상태와 멘토 코멘트를 먼저 확인하고 저장합니다. 멘토링 시간표에서 넘어온 경우 저장 후 시간표로 바로 돌아갈 수 있습니다.</p>
           </div>
         </div>
-        <AttendanceTab {...attendanceProps} historySummary={historySummary} assignedMentorName={assignedMentorName} />
+        <AttendanceTab
+          {...attendanceProps}
+          historySummary={historySummary}
+          assignedMentorName={assignedMentorName}
+          apiFetch={historyProps.apiFetch}
+          apiUpload={historyProps.apiUpload}
+        />
       </div>
 
       <div id="student-care-history-section" className="student-care-section-block student-care-history-section">

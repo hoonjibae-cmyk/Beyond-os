@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-137-point-reward-cycle",
-  "version": "0.41.137",
+  "name": "beyond-os-v41-138-counseling-voice-summary",
+  "version": "0.41.138",
   "private": true,
   "scripts": {
     "dev": "next dev",
