@@ -1,7 +1,7 @@
 import { isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getSolapiAdapterStatus } from '../../../lib/solapiAdapter';
-import { getReportSendSettings, getRecipientTestModeSource, normalizeAttendanceNotificationSettings, resolveRecipientTestMode, saveReportSendSettings } from '../../../lib/reportSendSettings';
+import { getReportSendSettings, getRecipientTestModeSource, normalizeAttendanceNotificationSettings, normalizeStudentRecipientSettings, resolveRecipientTestMode, saveReportSendSettings } from '../../../lib/reportSendSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +65,8 @@ async function getRecipientPolicyStatus(supabase) {
         ? 'Allowlist 외 수신번호 차단'
         : '수신번호 제한 없음',
     notificationPolicy: settings.attendanceNotifications,
+    // v41-135: 데일리/위클리 리포트를 학생 본인에게도 보낼지 설정값
+    studentRecipientPolicy: settings.studentRecipients,
   };
 }
 
@@ -230,6 +232,7 @@ export async function GET(request) {
     reportLinks,
     recipientPolicy,
     notificationPolicy: recipientPolicy.notificationPolicy,
+    studentRecipientPolicy: recipientPolicy.studentRecipientPolicy,
     availableModes: ['manual_copy', 'ready_only', 'webhook', 'kakao_api_prepare', 'solapi'],
     sampleEndpoint: '/api/kakao-send-webhook',
     note: '웹훅 값과 API 키는 보안상 노출하지 않고 연결 여부와 환경변수 이름만 표시합니다.',
@@ -284,6 +287,28 @@ export async function POST(request) {
         recipientPolicy,
         notificationPolicy: settings.attendanceNotifications,
         message: '출결 알림 설정을 저장했습니다.',
+      });
+    }
+
+    // v41-135: 데일리/위클리 리포트를 학생 본인에게도 알림톡으로 보낼지 설정합니다.
+    if (action === 'set_student_recipient_settings') {
+      const nextStudentRecipients = normalizeStudentRecipientSettings({
+        ...currentSettings.studentRecipients,
+        ...(body.settings || {}),
+      });
+      const settings = await saveReportSendSettings(supabase, {
+        ...currentSettings,
+        studentRecipients: nextStudentRecipients,
+      });
+      const recipientPolicy = await getRecipientPolicyStatus(supabase);
+
+      return Response.json({
+        ok: true,
+        settings,
+        recipientPolicy,
+        notificationPolicy: settings.attendanceNotifications,
+        studentRecipientPolicy: settings.studentRecipients,
+        message: '학생 본인 리포트 발송 설정을 저장했습니다.',
       });
     }
 

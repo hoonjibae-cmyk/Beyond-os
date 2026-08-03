@@ -660,10 +660,34 @@ function getReportSendSafetySummary(sendConfig = {}) {
   };
 }
 
-function buildStudentRecipientPreviewRows(items = [], reportType = 'daily', getStudent = (item) => item) {
+// v41-135: 설정에서 '학생 본인에게도 발송'이 켜져 있는지 확인합니다.
+function isStudentSelfSendEnabled(sendConfig = {}, reportType = 'daily') {
+  const policy = sendConfig?.studentRecipientPolicy || sendConfig?.recipientPolicy?.studentRecipientPolicy || {};
+  return reportType === 'weekly' ? Boolean(policy.weeklyEnabled) : Boolean(policy.dailyEnabled);
+}
+
+// v41-135: 보호자 목록에 학생 본인 연락처를 더한 실제 수신자 목록을 만듭니다.
+// 연락처가 없거나 보호자와 번호가 같으면 중복으로 세지 않습니다.
+function getReportRecipientsWithStudent(student = {}, reportType = 'daily', sendConfig = null) {
+  const guardians = getActiveGuardians(student, reportType);
+  if (!isStudentSelfSendEnabled(sendConfig, reportType)) return guardians;
+  const studentDigits = normalizePhoneDigits(student?.student_phone);
+  if (!studentDigits) return guardians;
+  if (guardians.some((guardian) => guardian.phoneDigits === studentDigits)) return guardians;
+  return [...guardians, {
+    id: 'student-self',
+    relationship: '학생 본인',
+    displayName: student?.name || '학생 본인',
+    phone: student.student_phone,
+    phoneDigits: studentDigits,
+    isStudent: true,
+  }];
+}
+
+function buildStudentRecipientPreviewRows(items = [], reportType = 'daily', getStudent = (item) => item, sendConfig = null) {
   return (items || []).map((item, index) => {
     const student = getStudent(item) || {};
-    const guardians = getActiveGuardians(student, reportType);
+    const guardians = getReportRecipientsWithStudent(student, reportType, sendConfig);
     return {
       id: String(item?.id || student?.id || `${reportType}-${index}`),
       name: student?.name || item?.name || '학생',
@@ -10435,7 +10459,7 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
 
     const warningRows = buildWarningRows(targets);
     const shareLinkRows = buildShareLinkRows(targets);
-    const recipientRows = buildStudentRecipientPreviewRows(targets, 'daily', (session) => session.students || {});
+    const recipientRows = buildStudentRecipientPreviewRows(targets, 'daily', (session) => session.students || {}, sendConfig);
     const safety = getReportSendSafetySummary(sendConfig);
     setConfirmSend({
       title,
@@ -11972,7 +11996,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
     }
 
     const safety = getReportSendSafetySummary(sendConfig);
-    const recipientRows = buildStudentRecipientPreviewRows([selectedStudent], 'weekly', (student) => student || {});
+    const recipientRows = buildStudentRecipientPreviewRows([selectedStudent], 'weekly', (student) => student || {}, sendConfig);
     setWeeklySendConfirm({
       report: previewData?.report || reportToSend,
       student: selectedStudent,
@@ -12071,7 +12095,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
       }
       const safety = getReportSendSafetySummary(sendConfig);
       const recipientRows = targets.map(({ report, student }) => {
-        const guardians = getActiveGuardians(student, 'weekly');
+        const guardians = getReportRecipientsWithStudent(student, 'weekly', sendConfig);
         return {
           id: String(report.id),
           name: student?.name || '학생',
@@ -16872,6 +16896,9 @@ function ReportSendSettingsTab({ sendConfig, apiFetch, setMessage, loadSendConfi
   const [notificationSaving, setNotificationSaving] = useState(false);
 
   const notificationPolicy = sendConfig?.notificationPolicy || {};
+  // v41-135: 데일리/위클리 리포트를 학생 본인에게도 보낼지 설정
+  const [studentRecipientSaving, setStudentRecipientSaving] = useState(false);
+  const studentRecipientPolicy = sendConfig?.studentRecipientPolicy || {};
   const daily = sendConfig?.daily || {};
   const weekly = sendConfig?.weekly || {};
   const dailyMode = daily.configured ? 'Webhook 연동 모드' : '발송대기 저장 모드';
@@ -16984,6 +17011,29 @@ function ReportSendSettingsTab({ sendConfig, apiFetch, setMessage, loadSendConfi
       setMessage?.(error.message || '출결 알림 설정 저장 실패');
     } finally {
       setNotificationSaving(false);
+    }
+  }
+
+  // v41-135: 학생 본인 발송 ON/OFF 저장
+  async function saveStudentRecipientSettings(patch) {
+    const nextSettings = {
+      dailyEnabled: Boolean(studentRecipientPolicy.dailyEnabled),
+      weeklyEnabled: Boolean(studentRecipientPolicy.weeklyEnabled),
+      ...patch,
+    };
+
+    try {
+      setStudentRecipientSaving(true);
+      const data = await apiFetch('/api/report-send-config', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'set_student_recipient_settings', settings: nextSettings }),
+      });
+      setMessage?.(data.message || '학생 본인 발송 설정 저장 완료');
+      await loadSendConfig?.();
+    } catch (error) {
+      setMessage?.(error.message || '학생 본인 발송 설정 저장 실패');
+    } finally {
+      setStudentRecipientSaving(false);
     }
   }
 
@@ -17171,6 +17221,29 @@ function ReportSendSettingsTab({ sendConfig, apiFetch, setMessage, loadSendConfi
           </div>
         </div>
         <div className="hint">복귀 지연 알림은 학생 시간표에 외출 시작·복귀 예정이 등록되어 있고, 현재 상태가 외출 중인 경우에만 발송됩니다. 중복 발송은 학생·알림종류·예정복귀시간 기준으로 차단됩니다.</div>
+      </section>
+
+      <section className="attendance-notification-settings-card clean-panel">
+        <div className="send-payload-head">
+          <div>
+            <h3>학생 본인에게도 리포트 발송</h3>
+            <p>데일리·위클리 리포트를 보호자뿐 아니라 학생 본인 휴대폰으로도 함께 보냅니다. 학생 정보에 &quot;학생 연락처&quot;가 등록된 학생에게만 발송되며, 보호자와 번호가 같으면 중복 발송하지 않습니다.</p>
+          </div>
+          <span className="status-pill neutral">v41-135</span>
+        </div>
+        <div className="notification-toggle-grid">
+          <div>
+            <strong>데일리 리포트</strong>
+            <span>보호자 발송과 동시에 학생 본인에게도 발송</span>
+            <button className={studentRecipientPolicy.dailyEnabled ? 'primary' : 'secondary'} onClick={() => saveStudentRecipientSettings({ dailyEnabled: !studentRecipientPolicy.dailyEnabled })} disabled={studentRecipientSaving}>{studentRecipientPolicy.dailyEnabled ? 'ON' : 'OFF'}</button>
+          </div>
+          <div>
+            <strong>위클리 리포트</strong>
+            <span>보호자 발송과 동시에 학생 본인에게도 발송</span>
+            <button className={studentRecipientPolicy.weeklyEnabled ? 'primary' : 'secondary'} onClick={() => saveStudentRecipientSettings({ weeklyEnabled: !studentRecipientPolicy.weeklyEnabled })} disabled={studentRecipientSaving}>{studentRecipientPolicy.weeklyEnabled ? 'ON' : 'OFF'}</button>
+          </div>
+        </div>
+        <div className="hint">학생 연락처가 없는 학생은 자동으로 건너뜁니다. 발송 확인창의 &quot;수신 대상&quot; 목록에서 학생 본인이 포함됐는지 미리 확인할 수 있습니다. 테스트모드가 켜져 있으면 학생 번호도 테스트 수신번호로 대체됩니다.</div>
       </section>
 
       <div className="send-mode-grid">

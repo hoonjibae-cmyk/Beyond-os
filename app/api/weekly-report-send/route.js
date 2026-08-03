@@ -6,6 +6,7 @@ import { validateKakaoTemplateVariables } from '../../../lib/reportTemplateValid
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
+import { getReportSendSettings, isStudentRecipientEnabled } from '../../../lib/reportSendSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +49,24 @@ function getReportGuardians(student = {}, reportType = 'weekly') {
     phoneDigits: fallback,
     isPrimary: true,
   }] : [];
+}
+
+// v41-135: 설정에서 '학생 본인에게도 발송'이 켜져 있으면 학생 연락처를 수신자에 추가합니다.
+// 연락처가 없거나 보호자와 번호가 같으면 중복 발송하지 않습니다.
+function withStudentRecipient(recipients = [], student = {}, enabled = false) {
+  if (!enabled) return recipients;
+  const studentPhone = normalizePhone(student.student_phone);
+  if (!studentPhone) return recipients;
+  if (recipients.some((item) => item.phoneDigits === studentPhone)) return recipients;
+  return [...recipients, {
+    id: 'student-self',
+    name: student.name || '학생',
+    relationship: '학생 본인',
+    phone: student.student_phone,
+    phoneDigits: studentPhone,
+    isPrimary: false,
+    isStudent: true,
+  }];
 }
 
 function formatMinutesKo(minutes) {
@@ -288,7 +307,12 @@ export async function POST(request) {
 
     if (studentError) throw studentError;
 
-    const recipients = getReportGuardians(student || {}, 'weekly');
+    const { settings: reportSendSettings } = await getReportSendSettings(supabase);
+    const recipients = withStudentRecipient(
+      getReportGuardians(student || {}, 'weekly'),
+      student || {},
+      isStudentRecipientEnabled('weekly', reportSendSettings),
+    );
     const recipientPhone = recipients[0]?.phoneDigits || '';
 
     let liveWeeklySummary = report.summary_payload || {};
