@@ -19781,3 +19781,435 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
     font-size:11px !important; color:var(--ap-text-3) !important; font-weight:600 !important; }
   .app .nav button, .app.report-mode .nav button{ font-size:12.5px !important; padding:8px 13px !important; text-align:left !important; }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-136: 학습 관리 · 학생 한눈에 보기 종합 카드
+   코칭 직전에 필요한 정보(누적 학습량 / 상벌점 / 데일리·위클리 코칭 / 차시별 기록)를
+   탭 이동 없이 한 화면에서 확인할 수 있도록 구성한 카드입니다.
+   ───────────────────────────────────────────────────────────── */
+.student-overview-card {
+  display: grid;
+  gap: 14px;
+}
+.student-overview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.student-overview-identity {
+  display: grid;
+  gap: 3px;
+}
+.student-overview-eyebrow {
+  display: inline-block;
+  justify-self: start;
+  background: #211f1b;
+  color: #fff;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: -0.01em;
+}
+.student-overview-identity strong {
+  font-size: 20px;
+  color: #211f1b;
+  line-height: 1.2;
+}
+.student-overview-identity em {
+  font-style: normal;
+  font-size: 12.5px;
+  font-weight: 850;
+  color: #7a756b;
+}
+.student-overview-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.student-overview-head-actions button {
+  width: auto;
+  min-width: 84px;
+  min-height: 36px;
+  border-radius: 12px;
+  font-weight: 900;
+  font-size: 13px;
+}
+.student-overview-mentor-badge,
+.today-comment-mentor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 950;
+  background: #eef4ff;
+  color: #1d4ed8;
+  border: 1px solid #cddcff;
+  white-space: nowrap;
+}
+.student-overview-mentor-badge.empty,
+.today-comment-mentor-badge.empty {
+  background: #f4f2ed;
+  color: #8a8479;
+  border-color: #e2ded6;
+}
+.today-comment-head-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.student-overview-error {
+  border-radius: 14px;
+  background: #fdeeee;
+  color: #b4232b;
+  border: 1px solid #f4cfd1;
+  padding: 11px 13px;
+  font-size: 13px;
+  font-weight: 900;
+}
+.student-overview-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+.student-overview-kpi-grid > div {
+  background: #fffdfa;
+  border: 1px solid #e2ded6;
+  border-radius: 16px;
+  padding: 12px 13px;
+  display: grid;
+  gap: 2px;
+  align-content: start;
+}
+.student-overview-kpi-grid span {
+  color: #7a756b;
+  font-size: 11.5px;
+  font-weight: 850;
+}
+.student-overview-kpi-grid strong {
+  font-size: 19px;
+  color: #211f1b;
+  line-height: 1.2;
+}
+.student-overview-kpi-grid em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #9a938a;
+}
+.student-overview-kpi-grid > div.is-negative strong {
+  color: #b4232b;
+}
+.student-overview-trend {
+  border: 1px solid #e2ded6;
+  border-radius: 18px;
+  background: #fffdfa;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.student-overview-trend-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.student-overview-trend-head strong {
+  font-size: 14px;
+  color: #211f1b;
+}
+.student-overview-trend-head span {
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #7a756b;
+}
+.student-overview-trend-bars {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+.student-overview-trend-bars > div {
+  display: grid;
+  grid-template-rows: 84px auto auto;
+  gap: 4px;
+  justify-items: center;
+  align-items: end;
+}
+.student-overview-trend-bars b {
+  display: block;
+  width: 100%;
+  max-width: 34px;
+  min-height: 3px;
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, #4b8bf5, #2f6fe0);
+  align-self: end;
+}
+.student-overview-trend-bars > div.is-current b {
+  background: linear-gradient(180deg, #ffb648, #f08a1d);
+}
+.student-overview-trend-bars i {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 850;
+  color: #9a938a;
+  white-space: nowrap;
+}
+.student-overview-trend-bars u {
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 950;
+  color: #211f1b;
+}
+.student-overview-flag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.student-overview-flag-label {
+  font-size: 12px;
+  font-weight: 950;
+  color: #7a756b;
+}
+.student-overview-note {
+  border-radius: 16px;
+  background: #fff8e8;
+  border: 1px solid #f0e0bb;
+  padding: 12px 14px;
+  display: grid;
+  gap: 4px;
+}
+.student-overview-note strong {
+  font-size: 12px;
+  color: #8a6a12;
+}
+.student-overview-note span {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4f473c;
+  white-space: pre-wrap;
+}
+.student-overview-detail {
+  border: 1px solid #e2ded6;
+  border-radius: 18px;
+  background: #fffdfa;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+.student-overview-detail-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.student-overview-detail-tabs button {
+  width: auto;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid #e2ded6;
+  background: #fff;
+  color: #6f6b62;
+  font-size: 12.5px;
+  font-weight: 900;
+}
+.student-overview-detail-tabs button.is-active {
+  background: #211f1b;
+  border-color: #211f1b;
+  color: #fff;
+}
+.student-overview-log-list,
+.student-overview-study-list,
+.student-overview-point-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.student-overview-log-list > div {
+  display: grid;
+  gap: 5px;
+  border-radius: 14px;
+  background: #f8f5ef;
+  padding: 10px 12px;
+}
+.student-overview-log-list b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #211f1b;
+  font-size: 12px;
+}
+.student-overview-log-list b i {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 900;
+  color: #1d4ed8;
+  background: #eef4ff;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.student-overview-log-list span {
+  color: #4f473c;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.student-overview-log-list span u {
+  display: block;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 950;
+  color: #8a8479;
+  margin-bottom: 2px;
+}
+.student-overview-log-list span.is-empty {
+  color: #9a938a;
+  font-weight: 850;
+}
+.student-overview-study-list > div {
+  border-radius: 14px;
+  background: #f8f5ef;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+.student-overview-study-list b {
+  color: #211f1b;
+  font-size: 12px;
+}
+.student-overview-study-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.student-overview-study-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #4f473c;
+}
+.student-overview-study-list li em {
+  font-style: normal;
+  font-weight: 950;
+  color: #211f1b;
+  min-width: 42px;
+}
+.student-overview-study-list li span {
+  font-weight: 900;
+  color: #2f6fe0;
+}
+.student-overview-study-list li i {
+  font-style: normal;
+  font-weight: 850;
+  color: #8a8479;
+}
+.student-overview-study-list li u {
+  text-decoration: none;
+  flex: 1 1 200px;
+  color: #4f473c;
+}
+.student-overview-point-list > div {
+  display: grid;
+  grid-template-columns: 88px 52px 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  border-radius: 14px;
+  background: #f8f5ef;
+  padding: 9px 12px;
+  font-size: 12.5px;
+}
+.student-overview-point-list b {
+  color: #211f1b;
+  font-size: 12px;
+}
+.student-overview-point-list strong {
+  font-size: 14px;
+}
+.student-overview-point-list > div.is-reward strong {
+  color: #1f7a44;
+}
+.student-overview-point-list > div.is-penalty strong {
+  color: #b4232b;
+}
+.student-overview-point-list span {
+  color: #4f473c;
+  line-height: 1.4;
+}
+.student-overview-point-list i {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 850;
+  color: #9a938a;
+}
+.student-overview-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.student-overview-links span {
+  font-size: 12px;
+  font-weight: 950;
+  color: #7a756b;
+}
+.student-overview-links button {
+  width: auto;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-weight: 900;
+}
+.student-overview-warnings {
+  display: grid;
+  gap: 4px;
+}
+.student-overview-warnings span {
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #a8834b;
+  line-height: 1.45;
+}
+@media (max-width: 1180px) {
+  .student-overview-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .student-overview-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .student-overview-trend-bars {
+    grid-auto-flow: column;
+    gap: 5px;
+  }
+  .student-overview-trend-bars > div {
+    grid-template-rows: 62px auto auto;
+  }
+  .student-overview-trend-bars i {
+    font-size: 9px;
+    writing-mode: vertical-rl;
+  }
+  .student-overview-point-list > div {
+    grid-template-columns: 76px 46px 1fr;
+  }
+  .student-overview-point-list i {
+    grid-column: 1 / -1;
+  }
+}

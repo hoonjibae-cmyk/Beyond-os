@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
@@ -13421,7 +13421,7 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
 function AttendanceTab({
   students, rows, loading, start, end, studentFilter, setStart, setEnd, setStudentFilter, loadHistory, setPreset,
   operatingRules, statusFilter, setStatusFilter, summaryCollapsed, setSummaryCollapsed, saveMentorComment, focusMentorCommentRequest,
-  mentoringContext, onReturnToMentoring, onNavigateMentoringStudent, historySummary = null,
+  mentoringContext, onReturnToMentoring, onNavigateMentoringStudent, historySummary = null, assignedMentorName = '',
 }) {
   const rules = normalizeOperatingRules(operatingRules);
   const selectedStudent = (students || []).find((student) => String(student.id) === String(studentFilter));
@@ -13573,7 +13573,11 @@ function AttendanceTab({
                   <strong>오늘 학습멘토 코멘트</strong>
                   <span>{today} · 오늘 코멘트만 수정 가능합니다.</span>
                 </div>
-                {todayRow ? <span className={todayRow.mentorComment ? 'status-pill done' : 'status-pill pending'}>{todayRow.mentorComment ? '입력됨' : '미입력'}</span> : <span className="status-pill neutral">오늘 기록 없음</span>}
+                <div className="today-comment-head-badges">
+                  {/* v41-136: 이 학생의 담당 코치를 항상 표시합니다. */}
+                  <span className={assignedMentorName ? 'today-comment-mentor-badge' : 'today-comment-mentor-badge empty'}>담당 코치 {assignedMentorName || '미지정'}</span>
+                  {todayRow ? <span className={todayRow.mentorComment ? 'status-pill done' : 'status-pill pending'}>{todayRow.mentorComment ? '입력됨' : '미입력'}</span> : <span className="status-pill neutral">오늘 기록 없음</span>}
+                </div>
               </div>
               {/* v41-130: 저장된 코멘트가 있으면 작성한 멘토를 표시합니다. */}
               {todayRow?.mentorComment && todayRow?.mentorCommentBy ? (
@@ -13661,9 +13665,224 @@ function AttendanceTab({
 
 
 
+// v41-136: 코칭 직전에 학생을 한 눈에 파악할 수 있는 종합 카드입니다.
+// 학생 관리 / 학습 관리 / 리포트 탭을 오가지 않도록, 누적 학습량·상벌점·데일리 코칭·위클리 상담·차시별 기록을 한 화면에 모읍니다.
+function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOverviewChange }) {
+  const [overview, setOverview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [collapsed, setCollapsed] = useState(false);
+  const [detailTab, setDetailTab] = useState('daily');
+  const loadedKeyRef = useRef('');
+
+  const loadOverview = useCallback(async (targetId) => {
+    if (!targetId || !apiFetch) return;
+    try {
+      setLoading(true);
+      setError('');
+      const data = await apiFetch(`/api/student-overview?studentId=${encodeURIComponent(targetId)}`);
+      setOverview(data);
+      onOverviewChange?.(data);
+    } catch (err) {
+      setOverview(null);
+      onOverviewChange?.(null);
+      setError(err?.message || '학생 종합 정보를 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch, onOverviewChange]);
+
+  useEffect(() => {
+    const key = String(studentId || '');
+    if (!key) {
+      loadedKeyRef.current = '';
+      setOverview(null);
+      onOverviewChange?.(null);
+      return;
+    }
+    if (loadedKeyRef.current === key) return;
+    loadedKeyRef.current = key;
+    loadOverview(key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentId]);
+
+  if (!studentId) return null;
+
+  const student = overview?.student || null;
+  const totals = overview?.totals || {};
+  const flags = overview?.flags || {};
+  const points = overview?.points || {};
+  const weeks = overview?.recentWeeks || [];
+  const maxWeekMinutes = Math.max(1, ...weeks.map((week) => Number(week.studyMinutes || 0)));
+  const mentorName = overview?.assignedMentor?.name || '';
+  const dailyCoaching = overview?.dailyCoaching || [];
+  const weeklyCoaching = overview?.weeklyCoaching || [];
+  const studyLog = overview?.studyLog || [];
+
+  return (
+    <section className="content-card student-overview-card">
+      <div className="student-overview-head">
+        <div className="student-overview-identity">
+          <span className="student-overview-eyebrow">한눈에 보기</span>
+          <strong>{student?.name || '학생'}</strong>
+          <em>{[student?.school, student?.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}{student?.default_seat_no ? ` · ${student.default_seat_no}번` : ''}</em>
+        </div>
+        <div className="student-overview-head-actions">
+          <span className={mentorName ? 'student-overview-mentor-badge' : 'student-overview-mentor-badge empty'}>
+            담당 코치 {mentorName || '미지정'}
+          </span>
+          <button type="button" className="secondary" onClick={() => loadOverview(studentId)} disabled={loading}>{loading ? '불러오는 중...' : '새로고침'}</button>
+          <button type="button" className="secondary" onClick={() => setCollapsed((prev) => !prev)}>{collapsed ? '펼치기' : '접기'}</button>
+        </div>
+      </div>
+
+      {error ? <div className="student-overview-error">{error}</div> : null}
+
+      {!collapsed && overview ? (
+        <>
+          <div className="student-overview-kpi-grid">
+            <div><span>누적 순공시간</span><strong>{totals.totalStudyLabel || '-'}</strong><em>{totals.firstSessionDate ? `${totals.firstSessionDate} 이후` : '기록 없음'}</em></div>
+            <div><span>등원일수</span><strong>{totals.attendDays || 0}일</strong><em>결석 {totals.absentDays || 0}일</em></div>
+            <div><span>일평균 순공</span><strong>{totals.avgStudyLabel || '-'}</strong><em>학습일 기준</em></div>
+            <div><span>최고 순공</span><strong>{totals.bestStudyLabel || '-'}</strong><em>{totals.bestStudyDate || '-'}</em></div>
+            <div className={Number(points.net || 0) < 0 ? 'is-negative' : ''}><span>상벌점 누계</span><strong>{Number(points.net || 0) > 0 ? `+${points.net}` : (points.net || 0)}점</strong><em>상 {points.reward || 0} · 벌 {points.penalty || 0}</em></div>
+            <div><span>코칭 기록</span><strong>데일리 {totals.dailyCommentCount || 0}건</strong><em>위클리 {totals.weeklyReportCount || 0}건</em></div>
+          </div>
+
+          <div className="student-overview-trend">
+            <div className="student-overview-trend-head">
+              <strong>주차별 순공시간 추이</strong>
+              <span>최근 8주 · 월~일 기준</span>
+            </div>
+            <div className="student-overview-trend-bars">
+              {weeks.map((week) => (
+                <div key={week.start} className={week.isCurrent ? 'is-current' : ''} title={`${week.start} ~ ${week.end} · ${week.studyLabel} · 등원 ${week.attendDays}일`}>
+                  <b style={{ height: `${Math.round((Number(week.studyMinutes || 0) / maxWeekMinutes) * 100)}%` }} />
+                  <i>{week.label}</i>
+                  <u>{Math.round(Number(week.studyMinutes || 0) / 60)}h</u>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="student-overview-flag-row">
+            <span className="student-overview-flag-label">최근 {overview.recentDays || 90}일</span>
+            <span className={flags.lateDays ? 'risk-chip warn' : 'risk-chip'}>지각 {flags.lateDays || 0}일</span>
+            <span className={flags.earlyLeaveDays ? 'risk-chip warn' : 'risk-chip'}>조퇴 {flags.earlyLeaveDays || 0}일</span>
+            <span className={flags.absentDays ? 'risk-chip danger' : 'risk-chip'}>결석 {flags.absentDays || 0}일</span>
+            <span className={flags.lowStudyDays ? 'risk-chip warn' : 'risk-chip'}>순공부족 {flags.lowStudyDays || 0}일</span>
+            <span className="risk-chip">외출 {flags.awayCount || 0}회 · {formatMinutes(flags.awayMinutes || 0)}</span>
+            <span className="risk-chip">등원 {flags.attendDays || 0}일</span>
+          </div>
+
+          {student?.admin_note ? (
+            <div className="student-overview-note">
+              <strong>학생 특이사항</strong>
+              <span>{student.admin_note}</span>
+            </div>
+          ) : null}
+
+          <div className="student-overview-detail">
+            <div className="student-overview-detail-tabs">
+              <button type="button" className={detailTab === 'daily' ? 'is-active' : ''} onClick={() => setDetailTab('daily')}>데일리 코칭 {dailyCoaching.length}</button>
+              <button type="button" className={detailTab === 'weekly' ? 'is-active' : ''} onClick={() => setDetailTab('weekly')}>위클리 상담 {weeklyCoaching.length}</button>
+              <button type="button" className={detailTab === 'study' ? 'is-active' : ''} onClick={() => setDetailTab('study')}>차시별 학습</button>
+              <button type="button" className={detailTab === 'points' ? 'is-active' : ''} onClick={() => setDetailTab('points')}>상벌점 {points.count || 0}</button>
+            </div>
+
+            {detailTab === 'daily' ? (
+              dailyCoaching.length ? (
+                <div className="student-overview-log-list">
+                  {dailyCoaching.map((item) => (
+                    <div key={`ov-daily-${item.date}`}>
+                      <b>{formatAttendanceDate(item.date)}{item.by ? <i>{item.by}</i> : null}</b>
+                      <span>{item.comment}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="today-comment-empty">최근 저장된 데일리 코칭 기록이 없습니다.</div>
+            ) : null}
+
+            {detailTab === 'weekly' ? (
+              weeklyCoaching.length ? (
+                <div className="student-overview-log-list">
+                  {weeklyCoaching.map((item) => (
+                    <div key={`ov-weekly-${item.id}`}>
+                      <b>{item.startDate} ~ {item.endDate}{item.sentAt ? <i>발송완료</i> : null}</b>
+                      {item.interview ? <span><u>주간 면담</u>{item.interview}</span> : null}
+                      {!item.interview && item.finalComment ? <span><u>주간 총평</u>{item.finalComment}</span> : null}
+                      {!item.interview && !item.finalComment ? <span className="is-empty">기록된 상담 내용이 없습니다.</span> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="today-comment-empty">저장된 위클리 리포트가 없습니다.</div>
+            ) : null}
+
+            {detailTab === 'study' ? (
+              studyLog.length ? (
+                <div className="student-overview-study-list">
+                  {studyLog.map((day) => (
+                    <div key={`ov-study-${day.date}`}>
+                      <b>{formatAttendanceDate(day.date)}</b>
+                      <ul>
+                        {day.lines.map((line, index) => (
+                          <li key={`ov-study-${day.date}-${index}`}>
+                            <em>{line.time}</em>
+                            <span>{line.subject}</span>
+                            <i>{line.status}</i>
+                            {line.content ? <u>{line.content}</u> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="today-comment-empty">최근 차시별 학습(순찰) 기록이 없습니다.</div>
+            ) : null}
+
+            {detailTab === 'points' ? (
+              (points.rows || []).length ? (
+                <div className="student-overview-point-list">
+                  {(points.rows || []).map((row) => (
+                    <div key={`ov-point-${row.id}`} className={row.point_type === 'reward' ? 'is-reward' : 'is-penalty'}>
+                      <b>{row.point_date}</b>
+                      <strong>{row.point_type === 'reward' ? '+' : '-'}{row.points}</strong>
+                      <span>{row.reason || '-'}</span>
+                      <i>{row.created_by || ''}</i>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="today-comment-empty">등록된 상벌점 기록이 없습니다.</div>
+            ) : null}
+          </div>
+
+          <div className="student-overview-links">
+            <span>더 자세히 보기</span>
+            <button type="button" className="secondary" onClick={() => setActiveTab?.('studentInfo')}>학생 관리</button>
+            <button type="button" className="secondary" onClick={() => setActiveTab?.('weeklyReports')}>위클리 리포트</button>
+            <button type="button" className="secondary" onClick={() => setActiveTab?.('dailyReports')}>데일리 리포트</button>
+            <button type="button" className="secondary" onClick={() => setActiveTab?.('points')}>상벌점 관리</button>
+          </div>
+
+          {(overview.warnings || []).length ? (
+            <div className="student-overview-warnings">
+              {(overview.warnings || []).map((warning, index) => <span key={`ov-warn-${index}`}>{warning}</span>)}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {!collapsed && !overview && loading ? <div className="today-comment-empty">학생 종합 정보를 불러오는 중...</div> : null}
+    </section>
+  );
+}
+
 function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
   const selectedStudentId = attendanceProps.studentFilter || historyProps.focusStudentId || '';
   const [historySummary, setHistorySummary] = useState(null);
+  // v41-136: 종합 카드에서 조회한 담당 코치 정보를 출결/코멘트 영역과 공유합니다.
+  const [overviewData, setOverviewData] = useState(null);
+  const assignedMentorName = overviewData?.assignedMentor?.name || '';
 
   return (
     <section className="student-care-page student-care-unified-page">
@@ -13708,6 +13927,13 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
         </div>
       </div>
 
+      <StudentOverviewPanel
+        studentId={selectedStudentId}
+        apiFetch={historyProps.apiFetch}
+        setActiveTab={historyProps.setActiveTab}
+        onOverviewChange={setOverviewData}
+      />
+
       <div id="student-care-attendance-section" className="student-care-section-block">
         <div className="student-care-section-title today-record-title">
           <span>오늘 기록</span>
@@ -13716,7 +13942,7 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
             <p>오늘 출결 상태와 멘토 코멘트를 먼저 확인하고 저장합니다. 멘토링 시간표에서 넘어온 경우 저장 후 시간표로 바로 돌아갈 수 있습니다.</p>
           </div>
         </div>
-        <AttendanceTab {...attendanceProps} historySummary={historySummary} />
+        <AttendanceTab {...attendanceProps} historySummary={historySummary} assignedMentorName={assignedMentorName} />
       </div>
 
       <div id="student-care-history-section" className="student-care-section-block student-care-history-section">

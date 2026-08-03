@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-135-student-self-report-send",
-  "version": "0.41.135",
+  "name": "beyond-os-v41-136-student-overview-card",
+  "version": "0.41.136",
   "private": true,
   "scripts": {
     "dev": "next dev",
