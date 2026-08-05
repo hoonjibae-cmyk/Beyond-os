@@ -20754,3 +20754,192 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
     font-size: 14.5px !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-141: 학습 관리 안의 '위클리 상담 내용' (센터장 전용)
+   학습멘토 코멘트와 시각적으로 확실히 구분되도록 보라색 계열로 분리하고,
+   소유자 배지와 잠금 상태를 앞세워 실수로 쓰는 일을 막습니다.
+   ───────────────────────────────────────────────────────────── */
+.director-interview-card {
+  margin-top: 14px;
+  border: 1px solid #d9d0f0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fbfaff, #f6f3fe);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+.director-interview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.director-interview-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.director-owner-badge {
+  justify-self: start;
+  display: inline-block;
+  background: #5b3fd1;
+  color: #fff;
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: -0.01em;
+}
+.director-interview-title strong {
+  font-size: 16px;
+  color: #2c2450;
+}
+.director-interview-title em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 850;
+  color: #6d63a0;
+  line-height: 1.45;
+}
+.director-interview-week {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.director-interview-week button {
+  width: auto;
+  min-height: 32px;
+  padding: 0 13px;
+  border-radius: 999px;
+  border: 1px solid #d9d0f0;
+  background: #fff;
+  color: #6d63a0;
+  font-size: 12px;
+  font-weight: 900;
+  font-family: inherit;
+  cursor: pointer;
+}
+.director-interview-week button.is-active {
+  background: #5b3fd1;
+  border-color: #5b3fd1;
+  color: #fff;
+}
+.director-interview-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-radius: 12px;
+  background: rgba(91, 63, 209, 0.07);
+  padding: 8px 12px;
+}
+.director-interview-meta span {
+  font-size: 11.5px;
+  font-weight: 950;
+  color: #6d63a0;
+}
+.director-interview-meta strong {
+  font-size: 13px;
+  color: #2c2450;
+}
+.director-interview-meta i {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #8b83b8;
+}
+.director-interview-textarea {
+  width: 100%;
+  min-height: 132px;
+  border-radius: 14px;
+  border: 1px solid #d9d0f0 !important;
+  background: #fff !important;
+  color: #211f1b !important;
+  padding: 12px 13px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  font-family: inherit;
+  resize: vertical;
+}
+.director-interview-textarea[readonly] {
+  background: #f4f2fb !important;
+  color: #6b6580 !important;
+  cursor: default;
+}
+.director-interview-lock {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.director-interview-lock span {
+  font-size: 12px;
+  font-weight: 850;
+  color: #6d63a0;
+  line-height: 1.45;
+  flex: 1 1 220px;
+}
+.director-interview-lock button {
+  width: auto;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid #5b3fd1;
+  background: #fff;
+  color: #5b3fd1;
+  font-size: 13px;
+  font-weight: 950;
+}
+.director-interview-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.director-interview-actions > span {
+  font-size: 12px;
+  font-weight: 850;
+  color: #6d63a0;
+}
+.director-interview-actions > div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.director-interview-actions button {
+  width: auto;
+  min-height: 38px;
+  min-width: 96px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 950;
+}
+.director-interview-actions button.primary {
+  background: #5b3fd1;
+  border: 0;
+  color: #fff;
+}
+.director-interview-notice {
+  border-radius: 12px;
+  background: rgba(91, 63, 209, 0.09);
+  color: #4a3aa8;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+@media (max-width: 760px) {
+  .director-interview-actions,
+  .director-interview-lock {
+    align-items: stretch;
+  }
+  .director-interview-actions > div button,
+  .director-interview-lock button {
+    flex: 1 1 120px;
+  }
+}

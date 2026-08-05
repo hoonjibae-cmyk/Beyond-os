@@ -214,6 +214,7 @@ const ACTION_LOG_LABELS = {
   'study_check.create': '순찰 체크 저장',
   'study_check.update': '순찰 체크 수정',
   'mentor_comment.save': '학습멘토 코멘트 저장',
+  'weekly_report.interview_save': '위클리 상담 내용 저장',
   'student_points.create': '상벌점 기록',
   'student_points.delete': '상벌점 삭제',
   'student_point_reward.grant': '상벌점 상품 지급 안내 완료(리셋)',
@@ -13571,7 +13572,7 @@ function AttendanceTab({
   students, rows, loading, start, end, studentFilter, setStart, setEnd, setStudentFilter, loadHistory, setPreset,
   operatingRules, statusFilter, setStatusFilter, summaryCollapsed, setSummaryCollapsed, saveMentorComment, focusMentorCommentRequest,
   mentoringContext, onReturnToMentoring, onNavigateMentoringStudent, historySummary = null, assignedMentorName = '',
-  counselingRecorder = null,
+  counselingRecorder = null, apiFetch, currentUser, setMessage,
 }) {
   const rules = normalizeOperatingRules(operatingRules);
   const selectedStudent = (students || []).find((student) => String(student.id) === String(studentFilter));
@@ -13581,6 +13582,89 @@ function AttendanceTab({
   const [mentoringReturnReady, setMentoringReturnReady] = useState(false);
   const mentorCommentTextareaRef = useRef(null);
   const today = getKstDateString();
+
+  // v41-141: 센터장이 위클리 상담 내용을 학습 관리 화면에서 바로 작성할 수 있게 합니다.
+  // 저장 대상은 위클리 리포트의 '주간면담 내용'과 같은 칸(weekly_reports.director_interview)입니다.
+  const [interviewWeekOffset, setInterviewWeekOffset] = useState(0);
+  const [interviewDraft, setInterviewDraft] = useState('');
+  const [interviewSaved, setInterviewSaved] = useState('');
+  const [interviewLoading, setInterviewLoading] = useState(false);
+  const [interviewSaving, setInterviewSaving] = useState(false);
+  const [interviewUnlocked, setInterviewUnlocked] = useState(false);
+  const [interviewNotice, setInterviewNotice] = useState('');
+  const interviewLoadedKeyRef = useRef('');
+
+  const interviewWeek = useMemo(() => {
+    const base = interviewWeekOffset === 0 ? today : addDays(today, -7 * interviewWeekOffset);
+    return getFullWeekRange(base);
+  }, [interviewWeekOffset, today]);
+
+  useEffect(() => {
+    const key = `${studentFilter || ''}|${interviewWeek.start}|${interviewWeek.end}`;
+    if (!studentFilter || !apiFetch) {
+      interviewLoadedKeyRef.current = '';
+      setInterviewDraft('');
+      setInterviewSaved('');
+      setInterviewUnlocked(false);
+      setInterviewNotice('');
+      return;
+    }
+    if (interviewLoadedKeyRef.current === key) return;
+    interviewLoadedKeyRef.current = key;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        setInterviewLoading(true);
+        setInterviewNotice('');
+        const params = new URLSearchParams({ studentId: String(studentFilter), start: interviewWeek.start, end: interviewWeek.end });
+        const data = await apiFetch(`/api/weekly-report?${params.toString()}`);
+        if (cancelled) return;
+        const text = String(data?.report?.director_interview || '');
+        setInterviewDraft(text);
+        setInterviewSaved(text);
+        setInterviewUnlocked(false);
+      } catch (error) {
+        if (cancelled) return;
+        setInterviewDraft('');
+        setInterviewSaved('');
+        setInterviewNotice(error?.message || '위클리 상담 내용을 불러오지 못했습니다.');
+      } finally {
+        if (!cancelled) setInterviewLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentFilter, interviewWeek.start, interviewWeek.end]);
+
+  const interviewDirty = String(interviewDraft || '') !== String(interviewSaved || '');
+
+  async function saveWeeklyInterview() {
+    if (!studentFilter || !apiFetch) return;
+    try {
+      setInterviewSaving(true);
+      setInterviewNotice('');
+      const data = await apiFetch('/api/weekly-report', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'save_interview',
+          studentId: studentFilter,
+          startDate: interviewWeek.start,
+          endDate: interviewWeek.end,
+          directorInterview: interviewDraft,
+          createdBy: currentUser?.displayName || '관리자',
+        }),
+      });
+      setInterviewSaved(String(interviewDraft || ''));
+      setInterviewUnlocked(false);
+      setInterviewNotice(data?.message || '위클리 상담 내용을 저장했습니다.');
+      setMessage?.('위클리 상담 내용 저장 완료');
+    } catch (error) {
+      setInterviewNotice(error?.message || '위클리 상담 내용 저장에 실패했습니다.');
+    } finally {
+      setInterviewSaving(false);
+    }
+  }
 
   const totalStudy = (rows || []).reduce((sum, row) => sum + Number(row.pureStudyMinutes || 0), 0);
   const totalAway = (rows || []).reduce((sum, row) => sum + Number(row.awayCount || 0), 0);
@@ -13800,6 +13884,74 @@ function AttendanceTab({
               )}
             </div>
           </div>
+
+          {/* v41-141: 센터장 전용 위클리 상담 내용. 학습멘토가 혼동하지 않도록 소유자를 크게 표시하고,
+              [센터장 입력 시작]을 누르기 전에는 입력이 잠겨 있어 실수로 적히지 않습니다. */}
+          <section className="director-interview-card">
+            <div className="director-interview-head">
+              <div className="director-interview-title">
+                <span className="director-owner-badge">센터장 전용</span>
+                <strong>위클리 상담 내용</strong>
+                <em>센터장이 주간 면담 후 작성하는 칸입니다. 학습멘토는 위쪽 &quot;오늘 학습멘토 코멘트&quot;에 작성하세요.</em>
+              </div>
+              <div className="director-interview-week">
+                <button type="button" className={interviewWeekOffset === 0 ? 'is-active' : ''} onClick={() => setInterviewWeekOffset(0)}>이번 주</button>
+                <button type="button" className={interviewWeekOffset === 1 ? 'is-active' : ''} onClick={() => setInterviewWeekOffset(1)}>지난주</button>
+              </div>
+            </div>
+
+            <div className="director-interview-meta">
+              <span>대상 주간</span>
+              <strong>{interviewWeek.start} ~ {interviewWeek.end}</strong>
+              <i>위클리 리포트의 &quot;주간면담 내용&quot;과 같은 칸에 저장됩니다.</i>
+            </div>
+
+            {!studentFilter ? (
+              <div className="today-comment-empty">학생을 먼저 선택하면 해당 주차의 상담 내용을 작성할 수 있습니다.</div>
+            ) : (
+              <>
+                <textarea
+                  className="director-interview-textarea"
+                  value={interviewDraft}
+                  readOnly={!interviewUnlocked}
+                  onChange={(event) => setInterviewDraft(event.target.value)}
+                  placeholder={interviewLoading
+                    ? '불러오는 중...'
+                    : '예: 이번 주 면담에서는 자습 시작 후 집중 유지 시간, 단어 복습 루틴, 다음 주 목표를 중심으로 점검했습니다.'}
+                />
+
+                {!interviewUnlocked ? (
+                  <div className="director-interview-lock">
+                    <span>실수로 입력되지 않도록 잠겨 있습니다. 센터장 본인이 작성할 때만 잠금을 해제하세요.</span>
+                    <button type="button" className="secondary" onClick={() => setInterviewUnlocked(true)} disabled={interviewLoading}>센터장 입력 시작</button>
+                  </div>
+                ) : (
+                  <>
+                    <CounselingRecorderPanel
+                      recorder={counselingRecorder}
+                      mode="weekly"
+                      student={selectedStudent}
+                      date={interviewWeek.end}
+                      applyLabel="상담 내용에 반영"
+                      onApply={(text, options = {}) => {
+                        const current = String(interviewDraft || '').trim();
+                        setInterviewDraft(options.replace || !current ? text : `${current}\n\n${text}`);
+                      }}
+                    />
+                    <div className="director-interview-actions">
+                      <span>{interviewDirty ? '저장하지 않은 변경이 있습니다.' : '저장된 내용과 같습니다.'}</span>
+                      <div>
+                        <button type="button" className="secondary" onClick={() => { setInterviewDraft(interviewSaved); setInterviewUnlocked(false); }} disabled={interviewSaving}>취소</button>
+                        <button type="button" className="primary" onClick={saveWeeklyInterview} disabled={interviewSaving || !interviewDirty}>{interviewSaving ? '저장 중...' : '상담 내용 저장'}</button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {interviewNotice ? <div className="director-interview-notice">{interviewNotice}</div> : null}
+              </>
+            )}
+          </section>
 
           <details className="attendance-rule-guide">
             <summary>상태 기준 안내</summary>
@@ -14685,6 +14837,9 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
           historySummary={historySummary}
           assignedMentorName={assignedMentorName}
           counselingRecorder={historyProps.counselingRecorder}
+          apiFetch={historyProps.apiFetch}
+          currentUser={historyProps.currentUser}
+          setMessage={historyProps.setMessage}
         />
       </div>
 

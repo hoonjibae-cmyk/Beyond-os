@@ -116,6 +116,70 @@ export async function POST(request) {
       return Response.json({ error: 'studentId, startDate, endDate are required' }, { status: 400 });
     }
 
+    // v41-141: 학습 관리 화면에서 '위클리 상담 내용'만 따로 저장하는 경로입니다.
+    // 전체 upsert를 쓰면 이미 작성된 리포트 본문과 요약이 빈 값으로 덮이므로,
+    // 여기서는 director_interview 한 칸만 갱신합니다.
+    if (String(body.action || '').trim() === 'save_interview') {
+      const interview = String(body.directorInterview || '').trim() || null;
+
+      const { data: existing, error: findError } = await supabase
+        .from('weekly_reports')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('start_date', startDate)
+        .eq('end_date', endDate)
+        .maybeSingle();
+
+      if (findError) {
+        return Response.json({
+          error: `${findError.message} / Supabase에서 beyond-os-supabase-weekly-reports-v40-10.sql을 먼저 실행하세요.`,
+        }, { status: 500 });
+      }
+
+      const mutation = existing?.id
+        ? supabase
+          .from('weekly_reports')
+          .update({ director_interview: interview, updated_at: new Date().toISOString() })
+          .eq('id', existing.id)
+          .select()
+          .single()
+        : supabase
+          .from('weekly_reports')
+          .insert({
+            student_id: studentId,
+            start_date: startDate,
+            end_date: endDate,
+            summary_payload: {},
+            director_interview: interview,
+            created_by: actorName,
+            updated_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+
+      const { data: saved, error: saveError } = await mutation;
+      if (saveError) {
+        return Response.json({
+          error: `${saveError.message} / Supabase에서 beyond-os-supabase-weekly-reports-v40-10.sql을 먼저 실행하세요.`,
+        }, { status: 500 });
+      }
+
+      await writeUserActionLog(supabase, request, {
+        actionType: 'weekly_report.interview_save',
+        targetType: 'weekly_report',
+        targetId: saved.id,
+        targetName: studentId,
+        payload: { studentId, startDate, endDate },
+      }).catch(() => {});
+
+      return Response.json({
+        ok: true,
+        report: saved,
+        created: !existing?.id,
+        message: '위클리 상담 내용을 저장했습니다.',
+      });
+    }
+
     const payload = {
       student_id: studentId,
       start_date: startDate,
