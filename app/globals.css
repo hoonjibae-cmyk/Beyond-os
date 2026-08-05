@@ -20660,3 +20660,97 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
     max-width: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-140: 멘토링 시간표 배정 카드 가독성
+   좁은 차시 카드(최소 215px)에서 [이동]·[제외] 버튼과 이름이 한 줄에 밀려
+   학생 이름이 "박…"처럼 잘리던 문제를 고칩니다.
+   이름을 독립된 줄로 올려 항상 온전히 보이게 하고, 버튼은 아래 줄로 내립니다.
+   (앞선 has-conflict/drag-enabled 그리드 규칙을 덮어써야 해서 !important를 씁니다.)
+   ───────────────────────────────────────────────────────────── */
+.mentoring-slot-grid-v4131 {
+  grid-template-columns: repeat(auto-fit, minmax(238px, 1fr));
+}
+.mentoring-assignment-row.mentoring-assignment-row-stacked,
+.mentoring-assignment-row.mentoring-assignment-row-stacked.has-conflict,
+.mentoring-assignment-row.mentoring-assignment-row-stacked.drag-enabled,
+.mentoring-assignment-row.mentoring-assignment-row-stacked.drag-enabled.has-conflict {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-areas: none !important;
+  gap: 7px !important;
+  align-items: stretch;
+  padding: 9px 10px;
+}
+.mentoring-assignment-row-stacked .mentoring-assignment-student-button {
+  grid-area: auto !important;
+  display: grid !important;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+/* 학생 이름: 잘리지 않도록 줄바꿈을 허용하고 크기를 키웁니다. */
+.mentoring-assignment-row-stacked .mentoring-assignment-student-button b {
+  display: block !important;
+  font-size: 15px !important;
+  font-weight: 950 !important;
+  line-height: 1.25 !important;
+  color: #211f1b !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: keep-all;
+}
+.mentoring-assignment-row-stacked .mentoring-assignment-student-button span {
+  display: block !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  line-height: 1.35 !important;
+  color: #8a8479 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mentoring-assignment-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mentoring-assignment-row-stacked .mentoring-assignment-controls > * {
+  grid-area: auto !important;
+  justify-self: auto !important;
+  max-width: none !important;
+}
+.mentoring-assignment-row-stacked .mentoring-assignment-controls > button {
+  min-height: 28px;
+  padding: 5px 11px !important;
+  font-size: 11px !important;
+  font-weight: 950;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.mentoring-assignment-row-stacked .mentoring-drag-handle {
+  min-width: 38px;
+  min-height: 28px;
+  padding: 5px 9px !important;
+}
+.mentoring-assignment-row-stacked .mentoring-conflict-pill {
+  min-height: 28px;
+  padding: 5px 10px !important;
+}
+.mentoring-assignment-row-stacked .mentoring-conflict-pill b {
+  font-size: 11px !important;
+  font-weight: 950 !important;
+}
+@media (max-width: 640px) {
+  .mentoring-assignment-row-stacked .mentoring-assignment-student-button b {
+    font-size: 14.5px !important;
+  }
+}

@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-139-recording-background",
-  "version": "0.41.139",
+  "name": "beyond-os-v41-140-mentoring-name-readability",
+  "version": "0.41.140",
   "private": true,
   "scripts": {
     "dev": "next dev",

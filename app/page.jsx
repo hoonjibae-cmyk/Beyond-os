@@ -8919,19 +8919,10 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
                       currentIndex: index,
                       studentSequence,
                     };
+                    // v41-140: 좁은 차시 카드에서 학생 이름이 잘리지 않도록 이름을 독립된 줄로 올리고,
+                    // 이동/주의/제외 버튼은 아래 줄에 모았습니다.
                     return (
-                    <div key={item.id} className={`mentoring-assignment-row ${scheduleConflict ? 'schedule-conflict has-conflict' : ''} ${isDateMode && dateOverrideActive ? 'drag-enabled' : ''}`}>
-                      {isDateMode && dateOverrideActive ? (
-                        <span
-                          className="mentoring-drag-handle"
-                          draggable={!loading}
-                          onDragStart={(event) => handleAssignmentDragStart(event, item, slot)}
-                          onDragEnd={handleAssignmentDragEnd}
-                          title="잡고 다른 차시로 이동"
-                        >
-                          이동
-                        </span>
-                      ) : null}
+                    <div key={item.id} className={`mentoring-assignment-row mentoring-assignment-row-stacked ${scheduleConflict ? 'schedule-conflict has-conflict' : ''} ${isDateMode && dateOverrideActive ? 'drag-enabled' : ''}`}>
                       <button
                         type="button"
                         className="mentoring-assignment-student-button"
@@ -8939,20 +8930,33 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
                         title="출결·관리 이력에서 오늘 멘토 코멘트 입력"
                       >
                         <b>{item.students?.name || '학생'}</b>
-                        <span>{item.mentoring_mentors?.mentor_name || '멘토 미지정'}{item.students?.school ? ` · ${item.students.school}` : ''} · 관리이력 열기</span>
+                        <span>{item.mentoring_mentors?.mentor_name || '멘토 미지정'}{item.students?.school ? ` · ${item.students.school}` : ''}</span>
                       </button>
-                      {scheduleConflict ? (
-                        <button
-                          type="button"
-                          className="mentoring-conflict-pill"
-                          onClick={(event) => showConflictDetail(scheduleConflict, event)}
-                          title="개인일정 주의 상세 보기"
-                        >
-                          <span aria-hidden="true">⚠</span>
-                          <b>주의 상세</b>
-                        </button>
-                      ) : null}
-                      <button type="button" onClick={() => deleteAssignment(item)} disabled={loading || (isDateMode && !dateOverrideActive)} title={isDateMode && !dateOverrideActive ? '먼저 일정 수정 시작을 눌러주세요.' : ''}>{isDateMode ? '이 날짜에서 제외' : '삭제'}</button>
+                      <div className="mentoring-assignment-controls">
+                        {isDateMode && dateOverrideActive ? (
+                          <span
+                            className="mentoring-drag-handle"
+                            draggable={!loading}
+                            onDragStart={(event) => handleAssignmentDragStart(event, item, slot)}
+                            onDragEnd={handleAssignmentDragEnd}
+                            title="잡고 다른 차시로 이동"
+                          >
+                            이동
+                          </span>
+                        ) : null}
+                        {scheduleConflict ? (
+                          <button
+                            type="button"
+                            className="mentoring-conflict-pill"
+                            onClick={(event) => showConflictDetail(scheduleConflict, event)}
+                            title="개인일정 주의 상세 보기"
+                          >
+                            <span aria-hidden="true">⚠</span>
+                            <b>주의</b>
+                          </button>
+                        ) : null}
+                        <button type="button" onClick={() => deleteAssignment(item)} disabled={loading || (isDateMode && !dateOverrideActive)} title={isDateMode && !dateOverrideActive ? '먼저 일정 수정 시작을 눌러주세요.' : ''}>{isDateMode ? '제외' : '삭제'}</button>
+                      </div>
                     </div>
                     );
                   }) : <div className="empty-mini">아직 배정된 학생이 없습니다.</div>}
