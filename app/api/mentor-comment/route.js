@@ -41,7 +41,9 @@ export async function POST(request) {
       mentor_comment: mentorComment || null,
       send_status: existing?.send_status || 'draft',
       sent_channel: existing?.sent_channel || 'kakao_copy',
-      created_by: actorName || existing?.created_by || '관리자',
+      // v41-143: created_by 는 '리포트를 처음 만든 사람'으로 고정합니다.
+      // 코멘트를 저장할 때마다 덮어쓰면 작성자 추적이 더 어긋납니다.
+      created_by: existing?.created_by || actorName || '관리자',
     };
 
     // v41-129: 코멘트를 실제로 작성한 멘토를 별도 컬럼에 기록합니다.
@@ -61,9 +63,11 @@ export async function POST(request) {
 
     let report = null;
     let reportError = null;
+    let authorColumnMissing = false;
     ({ data: report, error: reportError } = await upsertReport(payloadWithAuthor));
     if (reportError) {
       // mentor_comment_by / mentor_comment_at 컬럼이 아직 없는 경우 기존 방식으로 저장합니다.
+      authorColumnMissing = true;
       ({ data: report, error: reportError } = await upsertReport(basePayload));
     }
 
@@ -81,7 +85,14 @@ export async function POST(request) {
       },
     });
 
-    return Response.json({ report });
+    // v41-143: 작성자 컬럼이 없으면 이름이 화면에 뜨지 않으므로 그 사실을 알려줍니다.
+    return Response.json({
+      report,
+      authorColumnMissing,
+      warning: authorColumnMissing
+        ? '코멘트는 저장했지만 작성자 이름은 기록되지 않았습니다. Supabase에서 beyond-os-supabase-mentor-comment-author-v41-129.sql 을 실행하세요.'
+        : '',
+    });
   } catch (error) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
   }

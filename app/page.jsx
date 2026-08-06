@@ -3845,7 +3845,8 @@ export default function Page() {
         const others = (prev || []).filter((report) => report.session_id !== selectedSession.id);
         return [...others, data.report];
       });
-      setMessage('학습멘토 코멘트 저장 완료');
+      // v41-143: 작성자 컬럼이 없으면 이름이 안 뜨는 이유를 알려줍니다.
+      setMessage(data.warning || '학습멘토 코멘트 저장 완료');
     } catch (error) {
       setMessage(error.message);
     }
@@ -4410,7 +4411,8 @@ export default function Page() {
           ...row,
           mentorComment: data.report?.mentor_comment || mentorComment || '',
           // v41-130: 저장 직후에도 작성자가 바로 보이도록 함께 갱신합니다.
-          mentorCommentBy: data.report?.mentor_comment ? (data.report.mentor_comment_by || data.report.created_by || '') : '',
+          // v41-143: created_by 는 리포트 생성·발송 때도 갱신되므로 작성자 표기에 쓰지 않습니다.
+          mentorCommentBy: data.report?.mentor_comment ? (data.report.mentor_comment_by || '') : '',
           mentorCommentAt: data.report?.mentor_comment ? (data.report.mentor_comment_at || '') : '',
         } : row
       )));
@@ -4422,7 +4424,7 @@ export default function Page() {
         });
       }
 
-      setMessage('학습멘토 코멘트 저장 완료');
+      setMessage(data.warning || '학습멘토 코멘트 저장 완료');
       return true;
     } catch (error) {
       setMessage(error.message);
@@ -5719,7 +5721,7 @@ export default function Page() {
           {selectedReport?.mentor_comment ? (
             <div className="mentor-comment-author-line">
               <span>작성</span>
-              <strong>{selectedReport.mentor_comment_by || selectedReport.created_by || '관리자'}</strong>
+              <strong>{selectedReport.mentor_comment_by || '작성자 미기록'}</strong>
               {selectedReport.mentor_comment_at ? <em>{formatKstTime(selectedReport.mentor_comment_at)}</em> : null}
             </div>
           ) : null}

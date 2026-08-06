@@ -223,7 +223,8 @@ function getTimelineRows({ sessions = [], eventsBySession = {}, checksBySession 
       observation: safeText(report?.mentor_comment || session.attendance_memo || '', 220),
       mentorComment: safeText(report?.mentor_comment || '', 240),
       // v41-130: 학습 관리에서도 코멘트 작성자를 표시합니다.
-      mentorCommentBy: report?.mentor_comment ? (report.mentor_comment_by || report.created_by || '') : '',
+      // v41-143: created_by 폴백 제거. 실제 저장자만 표시합니다.
+      mentorCommentBy: report?.mentor_comment ? (report.mentor_comment_by || '') : '',
       mentorCommentAt: report?.mentor_comment ? (report.mentor_comment_at || '') : '',
       attendanceMemo: safeText(session.attendance_memo || '', 200),
       plannerMemo: safeText(planner?.memo || '', 180),

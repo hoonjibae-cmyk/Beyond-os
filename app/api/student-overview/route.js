@@ -271,7 +271,8 @@ export async function GET(request) {
       .map((report) => ({
         date: sessionDateById[report.session_id] || '',
         comment: String(report.mentor_comment || '').trim(),
-        by: report.mentor_comment_by || report.created_by || '',
+        // v41-143: created_by 폴백 제거. 실제 저장자만 표시합니다.
+        by: report.mentor_comment_by || '',
         at: report.mentor_comment_at || '',
       }))
       .filter((item) => item.date)

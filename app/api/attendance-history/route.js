@@ -255,6 +255,8 @@ export async function POST(request) {
       mentor_comment_at: mentorComment ? new Date().toISOString() : null,
     };
 
+    // v41-143: 작성자 컬럼이 없어 이름을 못 남긴 경우를 클라이언트에 알립니다.
+    let authorColumnMissing = false;
     let report;
     if (existingReport?.id) {
       const runUpdate = async (payload) => supabase
@@ -266,6 +268,7 @@ export async function POST(request) {
 
       let { data: updated, error: updateError } = await runUpdate({ mentor_comment: mentorComment || null, ...authorFields });
       if (updateError) {
+        authorColumnMissing = true;
         ({ data: updated, error: updateError } = await runUpdate({ mentor_comment: mentorComment || null }));
       }
       if (updateError) throw updateError;
@@ -292,6 +295,7 @@ export async function POST(request) {
 
       let { data: inserted, error: insertError } = await runInsert({ ...basePayload, ...authorFields });
       if (insertError) {
+        authorColumnMissing = true;
         ({ data: inserted, error: insertError } = await runInsert(basePayload));
       }
       if (insertError) throw insertError;
@@ -303,6 +307,10 @@ export async function POST(request) {
       report,
       sessionId,
       mentorComment: report.mentor_comment || '',
+      authorColumnMissing,
+      warning: authorColumnMissing
+        ? '코멘트는 저장했지만 작성자 이름은 기록되지 않았습니다. Supabase에서 beyond-os-supabase-mentor-comment-author-v41-129.sql 을 실행하세요.'
+        : '',
     });
   } catch (error) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
