@@ -14045,6 +14045,7 @@ function useCounselingRecorder({ apiFetch, apiUpload }) {
   const mimeTypeRef = useRef('');
   const wakeLockRef = useRef(null);
   const recordingRef = useRef(false);
+  const sessionTokenRef = useRef(0);
 
   useEffect(() => {
     setSupported(typeof window !== 'undefined'
@@ -14108,7 +14109,9 @@ function useCounselingRecorder({ apiFetch, apiUpload }) {
     setTranscriptState(transcriptRef.current);
   }
 
-  async function uploadSegment(blob, index) {
+  // v41-142: 이전 상담의 전사 응답이 늦게 도착해 다음 학생의 전사문에 섞이지 않도록
+  // 세션마다 토큰을 부여하고, 응답이 왔을 때 토큰이 바뀌었으면 결과를 버립니다.
+  async function uploadSegment(blob, index, token = sessionTokenRef.current) {
     if (!blob || !blob.size) return;
     setPendingCount((prev) => prev + 1);
     try {
@@ -14119,9 +14122,11 @@ function useCounselingRecorder({ apiFetch, apiUpload }) {
       form.append('language', 'ko');
       form.append('promptHint', transcriptRef.current.slice(-400));
       const data = await apiUpload('/api/counseling-transcribe', form);
+      if (token !== sessionTokenRef.current) return;
       appendTranscript(data?.text || '');
       setStatus(data?.text ? `${index + 1}번째 구간 전사 완료` : `${index + 1}번째 구간에서 인식된 말이 없습니다.`);
     } catch (err) {
+      if (token !== sessionTokenRef.current) return;
       setError(err?.message || `${index + 1}번째 구간 전사에 실패했습니다.`);
     } finally {
       setPendingCount((prev) => Math.max(0, prev - 1));
@@ -14200,6 +14205,8 @@ function useCounselingRecorder({ apiFetch, apiUpload }) {
       mimeTypeRef.current = pickRecorderMimeType();
       stoppingRef.current = false;
       segmentIndexRef.current = 0;
+      // 새 상담 시작 = 새 세션. 이전 세션의 늦은 전사 응답은 이 시점부터 무시됩니다.
+      sessionTokenRef.current += 1;
       transcriptRef.current = '';
       setTranscriptState('');
       setSummary('');
@@ -14298,6 +14305,7 @@ function useCounselingRecorder({ apiFetch, apiUpload }) {
 
   function reset() {
     if (recordingRef.current) stop();
+    sessionTokenRef.current += 1;
     transcriptRef.current = '';
     segmentIndexRef.current = 0;
     setTranscriptState('');
@@ -14312,6 +14320,9 @@ function useCounselingRecorder({ apiFetch, apiUpload }) {
   return {
     session, recording, elapsedMs, segmentCount, pendingCount,
     transcript, summary, summaryMode, summarizing, status, error, supported,
+    // v41-142: '실제로 마이크가 돌고 있거나 전사가 남아 있는' 상태만 busy로 봅니다.
+    // 녹음이 끝난 뒤 남아 있는 세션 정보 때문에 다음 상담이 막히지 않도록 구분합니다.
+    busy: recording || pendingCount > 0,
     start, stop, reset, uploadExternalFile, generateSummary,
     setTranscript, setSummary, setSummaryMode, setError, setStatus,
   };
@@ -14366,8 +14377,16 @@ function CounselingRecorderPanel({
   const isOwner = Boolean(session
     && session.mode === mode
     && String(session.studentId || '') === String(student?.id || ''));
-  const otherSessionActive = Boolean(session && !isOwner);
-  const open = localOpen || isOwner;
+
+  // v41-142: 다른 학생 세션이 남아 있어도, 실제로 녹음/전사가 돌고 있을 때만 막습니다.
+  // 이전에는 종료된 세션 정보만 남아 있어도 "녹음 진행 중"으로 표시돼
+  // 다음 학생 녹음을 시작할 수 없었습니다.
+  const otherSessionBusy = Boolean(session && !isOwner && recorder.busy);
+  // 끝난 다른 학생 기록이 남아 있는 상태. 시작하면 새 상담으로 교체됩니다.
+  const otherSessionIdle = Boolean(session && !isOwner && !recorder.busy);
+  // 남의 상담 전사문/요약이 이 학생 화면에 보이지 않도록 합니다.
+  const showsContent = !session || isOwner;
+  const open = localOpen || (isOwner && recorder.busy);
 
   return (
     <div className={open ? 'counseling-recorder is-open' : 'counseling-recorder'}>
@@ -14385,11 +14404,28 @@ function CounselingRecorderPanel({
 
       {open ? (
         <div className="counseling-recorder-body">
-          {otherSessionActive ? (
-            <div className="counseling-recorder-warning">
-              {session.studentName || '다른 학생'} 학생의 {COUNSELING_MODE_LABEL[session.mode] || '상담'} 녹음이 진행 중입니다.
-              그 녹음은 화면을 옮겨도 계속 진행되며, 오른쪽 아래 표시줄에서 종료할 수 있습니다.
-              종료 후 원래 화면으로 돌아가면 전사문과 요약을 이어서 확인할 수 있습니다.
+          {otherSessionBusy ? (
+            <div className="counseling-recorder-blocked">
+              <div className="counseling-recorder-warning">
+                {session.studentName || '다른 학생'} 학생의 {COUNSELING_MODE_LABEL[session.mode] || '상담'}
+                {recorder.recording ? ' 녹음이 진행 중입니다.' : ` 전사가 남아 있습니다. (${recorder.pendingCount}건)`}
+                {' '}먼저 그 상담을 마무리해야 이 학생 녹음을 시작할 수 있습니다.
+              </div>
+              <div className="counseling-recorder-blocked-actions">
+                {recorder.recording ? (
+                  <button type="button" className="danger-action" onClick={recorder.stop}>이전 상담 녹음 종료</button>
+                ) : null}
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    if (!confirm(`${session.studentName || '이전 학생'} 학생의 녹음/전사 내용을 지우고 이 화면에서 새로 시작할까요?\n\n아직 코멘트에 반영하지 않은 전사문과 요약은 사라집니다.`)) return;
+                    recorder.reset();
+                  }}
+                >
+                  이전 기록 지우고 새로 시작
+                </button>
+              </div>
             </div>
           ) : (
             <>
@@ -14445,15 +14481,26 @@ function CounselingRecorderPanel({
                   다만 브라우저를 완전히 닫거나 새로고침하면 녹음이 중단되니 주의하세요.
                 </div>
               ) : null}
-              {recorder.error ? <div className="counseling-recorder-error">{recorder.error}</div> : null}
-              {recorder.status && !recorder.recording ? <div className="counseling-recorder-status">{recorder.status}</div> : null}
+              {recorder.error && showsContent ? <div className="counseling-recorder-error">{recorder.error}</div> : null}
+              {recorder.status && !recorder.recording && showsContent ? <div className="counseling-recorder-status">{recorder.status}</div> : null}
+
+              {/* v41-142: 끝난 다른 학생 기록이 남아 있으면, 그 내용을 이 학생 화면에 보여주지 않습니다. */}
+              {otherSessionIdle ? (
+                <div className="counseling-recorder-status">
+                  직전에 {session.studentName || '다른 학생'} 학생 상담을 진행한 기록이 남아 있습니다.
+                  여기서 녹음을 시작하면 {student?.name || '이 학생'} 상담으로 새로 시작되며, 이전 전사문과 요약은 지워집니다.
+                </div>
+              ) : null}
 
               <div className="counseling-recorder-field">
                 <label>전사문 (직접 수정 가능)</label>
                 <textarea
-                  value={recorder.transcript}
+                  value={showsContent ? recorder.transcript : ''}
+                  readOnly={!showsContent}
                   onChange={(event) => recorder.setTranscript(event.target.value)}
-                  placeholder="녹음을 시작하면 말한 내용이 여기에 자동으로 채워집니다. 잘못 인식된 부분은 직접 고칠 수 있습니다."
+                  placeholder={showsContent
+                    ? '녹음을 시작하면 말한 내용이 여기에 자동으로 채워집니다. 잘못 인식된 부분은 직접 고칠 수 있습니다.'
+                    : '[녹음 시작]을 누르면 이 학생의 상담 전사문이 여기에 채워집니다.'}
                 />
               </div>
 
@@ -14470,13 +14517,13 @@ function CounselingRecorderPanel({
                   type="button"
                   className="primary"
                   onClick={() => recorder.generateSummary({ student, date })}
-                  disabled={recorder.summarizing || recorder.pendingCount > 0 || !String(recorder.transcript || '').trim()}
+                  disabled={recorder.summarizing || recorder.pendingCount > 0 || !showsContent || !String(recorder.transcript || '').trim()}
                 >
                   {recorder.summarizing ? 'AI 요약 중...' : 'AI 요약'}
                 </button>
               </div>
 
-              {recorder.summary ? (
+              {recorder.summary && showsContent ? (
                 <div className="counseling-recorder-field">
                   <label>AI 요약 (반영 전에 수정할 수 있습니다)</label>
                   <textarea value={recorder.summary} onChange={(event) => recorder.setSummary(event.target.value)} />

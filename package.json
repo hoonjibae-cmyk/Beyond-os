@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-141-director-interview-in-care",
-  "version": "0.41.141",
+  "name": "beyond-os-v41-142-recorder-session-reset-fix",
+  "version": "0.41.142",
   "private": true,
   "scripts": {
     "dev": "next dev",

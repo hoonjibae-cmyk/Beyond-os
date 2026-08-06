@@ -20943,3 +20943,34 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
     flex: 1 1 120px;
   }
 }
+
+/* v41-142: 다른 학생 녹음이 실제로 진행 중일 때만 막고, 빠져나갈 수 있는 버튼을 함께 제공 */
+.counseling-recorder-blocked {
+  display: grid;
+  gap: 10px;
+}
+.counseling-recorder-blocked-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.counseling-recorder-blocked-actions button {
+  width: auto;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 950;
+  font-family: inherit;
+  cursor: pointer;
+}
+.counseling-recorder-blocked-actions .danger-action {
+  border: 0;
+  background: #e0303a;
+  color: #fff;
+}
+.counseling-recorder-blocked-actions .secondary {
+  border: 1px solid #d8d2c6;
+  background: #fff;
+  color: #4f473c;
+}
