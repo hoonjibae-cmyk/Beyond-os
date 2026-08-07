@@ -213,6 +213,7 @@ const ACTION_LOG_LABELS = {
   'attendance.status': '출결 상태 변경',
   'study_check.create': '순찰 체크 저장',
   'study_check.update': '순찰 체크 수정',
+  'study_check.delete': '순찰 체크 삭제',
   'mentor_comment.save': '학습멘토 코멘트 저장',
   'weekly_report.interview_save': '위클리 상담 내용 저장',
   'student_points.create': '상벌점 기록',
@@ -2137,6 +2138,7 @@ export default function Page() {
   const [attendanceSummaryCollapsed, setAttendanceSummaryCollapsed] = useState(false);
   const [studyCheckEditor, setStudyCheckEditor] = useState(null);
   const [studyCheckEditSaving, setStudyCheckEditSaving] = useState(false);
+  const [studyCheckDeletingId, setStudyCheckDeletingId] = useState('');
   const [operatingRules, setOperatingRules] = useState(DEFAULT_OPERATING_RULES);
   const [rulesDraft, setRulesDraft] = useState(DEFAULT_OPERATING_RULES);
   const [rulesLoading, setRulesLoading] = useState(false);
@@ -4119,6 +4121,35 @@ export default function Page() {
     }
   }
 
+  // v41-144: 잘못 입력된 순찰 기록을 한 건씩 삭제합니다.
+  async function deleteStudyCheck(check) {
+    if (!check?.id) return;
+    const timeLabel = formatKstTime(check.checked_at);
+    const detail = [
+      timeLabel && timeLabel !== '-' ? timeLabel : '',
+      check.subject || '',
+      check.study_status || '',
+    ].filter(Boolean).join(' · ');
+    const ok = confirm(`아래 순찰 기록을 삭제할까요?\n\n${detail || '기록 1건'}\n${check.study_content || '학습 내용 미입력'}\n\n삭제하면 되돌릴 수 없습니다.`);
+    if (!ok) return;
+
+    try {
+      setStudyCheckDeletingId(check.id);
+      setMessage('순찰 기록 삭제 중...');
+      const data = await apiFetch('/api/check', {
+        method: 'DELETE',
+        body: JSON.stringify({ checkId: check.id }),
+      });
+      if (studyCheckEditor?.id === check.id) setStudyCheckEditor(null);
+      await loadDashboard({ silent: true, suppressChangeNotice: true });
+      setMessage(data?.message || '순찰 기록 삭제 완료');
+    } catch (error) {
+      setMessage(error.message || '순찰 기록 삭제 실패');
+    } finally {
+      setStudyCheckDeletingId('');
+    }
+  }
+
   async function copyPlannerImageLink() {
     if (!form.reportPlannerImageUrl) return alert('복사할 플래너 이미지 링크가 없습니다.');
     try {
@@ -5825,6 +5856,15 @@ export default function Page() {
                     {check.study_content || '학습 내용 및 특이사항 미입력'}
                     <div className="history-action-row">
                       <button type="button" className="secondary tiny-action" onClick={() => startEditStudyCheck(check)}>수정</button>
+                      {/* v41-144: 잘못 남긴 순찰 기록을 한 건씩 삭제합니다. */}
+                      <button
+                        type="button"
+                        className="danger-lite tiny-action"
+                        onClick={() => deleteStudyCheck(check)}
+                        disabled={studyCheckDeletingId === check.id}
+                      >
+                        {studyCheckDeletingId === check.id ? '삭제 중...' : '삭제'}
+                      </button>
                     </div>
                   </>
                 )}

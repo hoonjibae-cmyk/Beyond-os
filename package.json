@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-143-mentor-comment-author-fix",
-  "version": "0.41.143",
+  "name": "beyond-os-v41-144-study-check-delete",
+  "version": "0.41.144",
   "private": true,
   "scripts": {
     "dev": "next dev",

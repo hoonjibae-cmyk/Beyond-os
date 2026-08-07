@@ -156,3 +156,65 @@ export async function PUT(request) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
   }
 }
+
+// v41-144: 잘못 입력된 순찰 기록을 한 건씩 삭제합니다.
+// 삭제 후에는 좌석 카드에 표시되는 '현재 학습 상태/과목'을 남은 기록 기준으로 다시 맞춥니다.
+export async function DELETE(request) {
+  if (!isAuthorized(request)) return unauthorizedResponse();
+
+  try {
+    const { searchParams } = new URL(request.url);
+    let body = {};
+    try { body = await request.json(); } catch { body = {}; }
+
+    const checkId = body.checkId || body.id || searchParams.get('checkId') || '';
+    if (!checkId) {
+      return Response.json({ error: 'checkId is required' }, { status: 400 });
+    }
+
+    const supabase = getSupabaseAdmin();
+
+    const { data: existing, error: existingError } = await supabase
+      .from('study_checks')
+      .select('*')
+      .eq('id', checkId)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+    if (!existing) return Response.json({ error: '삭제할 순찰 기록을 찾지 못했습니다. 이미 삭제되었을 수 있습니다.' }, { status: 404 });
+
+    const { error: deleteError } = await supabase
+      .from('study_checks')
+      .delete()
+      .eq('id', checkId);
+
+    if (deleteError) throw deleteError;
+
+    const latestStudy = await syncSessionCurrentStudy(supabase, existing.session_id);
+
+    await writeUserActionLog(supabase, request, {
+      actionType: 'study_check.delete',
+      targetType: 'study_check',
+      targetId: checkId,
+      targetName: `${existing.seat_no || '-'}번 좌석`,
+      payload: {
+        sessionId: existing.session_id,
+        studentId: existing.student_id,
+        seatNo: Number(existing.seat_no || 0) || null,
+        checkedAt: existing.checked_at,
+        subject: existing.subject,
+        studyStatus: existing.study_status,
+        studyContent: existing.study_content,
+      },
+    });
+
+    return Response.json({
+      ok: true,
+      deletedId: checkId,
+      latestStudy,
+      message: '순찰 기록을 삭제했습니다.',
+    });
+  } catch (error) {
+    return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
+  }
+}
