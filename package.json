@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-146-modal-layout-fix",
-  "version": "0.41.146",
+  "name": "beyond-os-v41-147-transcript-repetition-fix",
+  "version": "0.41.147",
   "private": true,
   "scripts": {
     "dev": "next dev",

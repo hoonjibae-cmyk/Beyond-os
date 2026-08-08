@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
+import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
@@ -14203,7 +14204,8 @@ function useCounselingRecorder({ apiFetch, apiUpload }) {
   function appendTranscript(text) {
     const clean = String(text || '').trim();
     if (!clean) return;
-    transcriptRef.current = [transcriptRef.current, clean].filter(Boolean).join(' ');
+    // v41-147: 구간 경계에서 같은 문장이 두 번 들어가는 경우를 걸러냅니다.
+    transcriptRef.current = appendTranscriptChunk(transcriptRef.current, clean);
     setTranscriptState(transcriptRef.current);
   }
 
@@ -14223,11 +14225,19 @@ function useCounselingRecorder({ apiFetch, apiUpload }) {
       form.append('audio', blob, `counseling-${index}.${extension}`);
       form.append('segmentIndex', String(index));
       form.append('language', 'ko');
-      form.append('promptHint', transcriptRef.current.slice(-400));
+      // v41-147: 반복이 섞인 원문을 힌트로 넘기면 다음 구간까지 반복이 되먹임되므로
+      // 중복을 제거한 마지막 문장들만 힌트로 사용합니다.
+      form.append('promptHint', buildPromptHint(transcriptRef.current));
       const data = await apiUpload('/api/counseling-transcribe', form);
       if (token !== sessionTokenRef.current) return;
       appendTranscript(data?.text || '');
-      setStatus(data?.text ? `${index + 1}번째 구간 전사 완료` : `${index + 1}번째 구간에서 인식된 말이 없습니다.`);
+      if (data?.degenerate) {
+        setStatus(`${index + 1}번째 구간은 같은 말이 반복 인식되어 정리했습니다. 조용한 구간이었다면 정상이며, 필요하면 전사문을 직접 고치세요.`);
+      } else if (data?.text) {
+        setStatus(`${index + 1}번째 구간 전사 완료${data?.removedWords ? ' (반복 인식 정리됨)' : ''}`);
+      } else {
+        setStatus(`${index + 1}번째 구간에서 인식된 말이 없습니다.`);
+      }
     } catch (err) {
       if (token !== sessionTokenRef.current) return;
       setError(err?.message || `${index + 1}번째 구간 전사에 실패했습니다.`);

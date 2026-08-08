@@ -8,6 +8,7 @@
 //     이 라우트는 조각 하나를 전사해 텍스트만 돌려줍니다.
 
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
+import { cleanTranscriptSegment } from '../../../lib/transcriptCleanup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -72,6 +73,8 @@ export async function POST(request) {
       payload.append('model', model);
       payload.append('language', language);
       payload.append('response_format', 'json');
+      // v41-147: 환각(같은 문장 반복) 발생 확률을 낮추기 위해 무작위성을 없앱니다.
+      payload.append('temperature', '0');
       if (promptHint) payload.append('prompt', promptHint);
 
       const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -85,11 +88,18 @@ export async function POST(request) {
       try { json = JSON.parse(text); } catch {}
 
       if (response.ok) {
+        // v41-147: 무음·잡음 구간에서 같은 문장을 수백 번 반복하거나 '###'만 뱉는
+        // 전사 모델 특유의 환각 결과를 정리한 뒤 돌려줍니다.
+        const cleaned = cleanTranscriptSegment(json?.text || '');
         return Response.json({
           ok: true,
           segmentIndex,
           model,
-          text: String(json?.text || '').trim(),
+          text: cleaned.text,
+          rawLength: String(json?.text || '').trim().length,
+          removedWords: cleaned.removedWords,
+          degenerate: cleaned.degenerate,
+          note: cleaned.note,
         });
       }
 
