@@ -20974,3 +20974,28 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   background: #fff;
   color: #4f473c;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-145: 학부모 알림 중복 발송 방지 표시
+   이미 발송된 건은 버튼을 빨간색 → 회색으로 바꾸고, 마우스를 올리면
+   누가 언제 보냈는지 안내합니다.
+   ───────────────────────────────────────────────────────────── */
+.alert-notify-sent {
+  border: 1px solid #d8d2c6 !important;
+  background: #f1efea !important;
+  color: #8a8479 !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+.alert-notify-sent:hover {
+  background: #e8e5de !important;
+  color: #6f6b62 !important;
+}
+.alert-sent-note {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 900;
+  color: #8a8479;
+}

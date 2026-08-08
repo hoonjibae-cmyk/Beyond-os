@@ -80,6 +80,12 @@ async function buildVersion(supabase, today) {
   // 쉬는 시간 키오스크 HOLD (판정 대기 건수)
   parts.push(`holds:${await countRows(supabase, 'kiosk_attendance_holds', (q) => q.eq('status', 'pending'))}`);
 
+  // v41-145: 학부모 확인 요청 발송 내역.
+  // 한 직원이 알림을 보내면 다른 직원 화면도 곧바로 '발송됨'으로 바뀌어야 중복 발송을 막습니다.
+  parts.push(`parentAlerts:${await countRows(supabase, 'parent_notification_logs', (q) => q
+    .gte('created_at', `${today}T00:00:00+09:00`)
+    .lte('created_at', `${today}T23:59:59+09:00`))}`);
+
   return crypto.createHash('sha1').update(parts.join('\n')).digest('hex');
 }
 

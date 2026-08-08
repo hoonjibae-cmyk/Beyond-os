@@ -313,6 +313,23 @@ export async function GET(request) {
       todayMentoringAssignments = [];
     }
 
+    // v41-145: 오늘 나간 학부모 확인 요청 알림 내역.
+    // 여러 직원이 각자 화면을 보고 있어도 "이미 누가 보냈는지"를 모두가 알 수 있어야
+    // 같은 학부모에게 중복 발송하는 일을 막을 수 있습니다.
+    let parentAlertLogs = [];
+    try {
+      const { data: alertLogs } = await supabase
+        .from('parent_notification_logs')
+        .select('id, student_id, schedule_id, break_id, notification_type, send_status, created_by, created_at')
+        .gte('created_at', `${today}T00:00:00+09:00`)
+        .lte('created_at', `${today}T23:59:59+09:00`)
+        .order('created_at', { ascending: false });
+      // 초안 저장과 실패 건은 "발송됨"으로 보지 않습니다.
+      parentAlertLogs = (alertLogs || []).filter((row) => !['draft', 'failed'].includes(String(row.send_status || '')));
+    } catch {
+      parentAlertLogs = [];
+    }
+
     return Response.json({
       ok: true,
       today,
@@ -325,6 +342,7 @@ export async function GET(request) {
       kioskImportEvents,
       fieldFocusAcknowledgements,
       todayMentoringAssignments,
+      parentAlertLogs,
       warning: studentsError ? `학생 목록 조회 일부 실패: ${studentsError.message}` : undefined,
     });
   } catch (error) {

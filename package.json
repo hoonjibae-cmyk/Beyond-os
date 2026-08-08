@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-144-study-check-delete",
-  "version": "0.41.144",
+  "name": "beyond-os-v41-145-parent-alert-duplicate-guard",
+  "version": "0.41.145",
   "private": true,
   "scripts": {
     "dev": "next dev",

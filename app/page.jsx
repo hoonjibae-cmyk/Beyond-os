@@ -2073,6 +2073,8 @@ export default function Page() {
   const [events, setEvents] = useState([]);
   const [reports, setReports] = useState([]);
   const [kioskImportEvents, setKioskImportEvents] = useState([]);
+  // v41-145: 오늘 나간 학부모 확인 요청 내역(모든 직원 공유). 중복 발송 방지용 표시에 사용합니다.
+  const [parentAlertLogs, setParentAlertLogs] = useState([]);
   const [sendExclusions, setSendExclusions] = useState([]);
   const [planners, setPlanners] = useState([]);
   const [plannerDate, setPlannerDate] = useState(getKstDateString());
@@ -2302,6 +2304,40 @@ export default function Page() {
     return { label: '발송 가능', className: 'done', issues: ['누락 항목 없음'] };
   }, [selectedSession, selectedStudentForPanel, selectedReport, selectedChecks, planners, exclusionsBySession, operatingRules, nowTick, defaultSchedule]);
 
+
+  // v41-145: 알림 한 건에 대해 오늘 이미 학부모 알림이 나갔는지 찾아봅니다.
+  // 같은 학생·같은 알림 종류·같은 시간표(또는 외출) 건이면 동일한 알림으로 봅니다.
+  const parentAlertSentMap = useMemo(() => {
+    const map = {};
+    for (const log of parentAlertLogs || []) {
+      const key = [
+        String(log.student_id || ''),
+        String(log.notification_type || ''),
+        String(log.break_id || log.schedule_id || ''),
+      ].join('|');
+      // 같은 조건이 여러 번이면 가장 최근 것을 보여줍니다.
+      if (!map[key] || new Date(log.created_at || 0) > new Date(map[key].created_at || 0)) {
+        map[key] = log;
+      }
+    }
+    return map;
+  }, [parentAlertLogs]);
+
+  function getParentAlertSentInfo(alert) {
+    if (!alert?.student?.id) return null;
+    const key = [
+      String(alert.student.id),
+      String(alert.type || ''),
+      String(alert.breakItem?.id || alert.schedule?.id || ''),
+    ].join('|');
+    const log = parentAlertSentMap[key];
+    if (!log) return null;
+    return {
+      at: log.created_at,
+      timeLabel: formatKstTime(log.created_at),
+      by: log.created_by || '',
+    };
+  }
 
   const scheduleAlerts = useMemo(() => {
     return createScheduleAlerts({
@@ -2733,6 +2769,7 @@ export default function Page() {
       const hasRemoteChange = Boolean(silent && !suppressChangeNotice && previousSignature && previousSignature !== nextSignature);
       const kioskImports = Array.isArray(data.kioskImportEvents) ? data.kioskImportEvents : [];
       setKioskImportEvents(kioskImports);
+      setParentAlertLogs(Array.isArray(data.parentAlertLogs) ? data.parentAlertLogs : []);
 
       if (!previousSignature) {
         for (const item of kioskImports) {
@@ -3923,7 +3960,15 @@ export default function Page() {
     };
   }
 
-  async function notifyParent(alert) {
+  async function notifyParent(alert, sentInfo = null) {
+    // v41-145: 이미 나간 알림이면 누가 언제 보냈는지 알려주고 한 번 더 확인받습니다.
+    const alreadySent = sentInfo || getParentAlertSentInfo(alert);
+    if (alreadySent) {
+      const ok = window.confirm(
+        `이 알림은 이미 학부모에게 발송되었습니다.\n\n발송 시각: ${alreadySent.timeLabel}${alreadySent.by ? `\n보낸 사람: ${alreadySent.by}` : ''}\n\n다시 보내면 학부모에게 알림톡이 한 번 더 갑니다. 계속할까요?`
+      );
+      if (!ok) return;
+    }
     try {
       setMessage('학부모 확인 요청 알림톡 미리보기 생성 중...');
       const payload = getParentAlertPayload(alert);
@@ -5331,7 +5376,7 @@ export default function Page() {
 
         {isActiveTabAllowed && activeTab === 'dashboard' ? (
           <>
-            <AlertCenter alerts={scheduleAlerts} nowTick={nowTick} onConfirm={confirmScheduleAlert} onNotifyParent={notifyParent} onParentConfirmed={(alert) => dismissFocusAlert(alert, '학부모 확인 완료')} />
+            <AlertCenter alerts={scheduleAlerts} nowTick={nowTick} onConfirm={confirmScheduleAlert} onNotifyParent={notifyParent} onParentConfirmed={(alert) => dismissFocusAlert(alert, '학부모 확인 완료')} getParentAlertSentInfo={getParentAlertSentInfo} />
             <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} checksBySession={checksBySession} defaultSchedule={defaultSchedule} todaySchedules={todaySchedules} todayScheduleBreaks={todayScheduleBreaks} sessions={sessions} onGoSchedule={goToScheduleFromSeat} onGoStudentCare={goToStudentCareFromSeat} onGoStudentInfo={goToStudentInfoFromSeat} />
           </>
         ) : null}
@@ -6273,7 +6318,7 @@ function ParentConfirmationAlertModal({ popup, setPopup, sendPopup, sendConfig }
   );
 }
 
-function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent, onParentConfirmed }) {
+function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent, onParentConfirmed, getParentAlertSentInfo }) {
   return (
     <section className="alert-center">
       <div className="alert-center-head">
@@ -6282,11 +6327,20 @@ function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent, onParentConfi
       </div>
       {alerts.length ? (
         <div className="alert-list">
-          {alerts.map((alert) => (
+          {alerts.map((alert) => {
+            // v41-145: 다른 직원이 이미 학부모 알림을 보냈으면 버튼을 회색으로 바꿔 중복 발송을 막습니다.
+            const sentInfo = alert.mode === 'preview' ? null : getParentAlertSentInfo?.(alert);
+            const sentTooltip = sentInfo
+              ? `이미 발송되었습니다 · ${sentInfo.timeLabel}${sentInfo.by ? ` · ${sentInfo.by}` : ''}\n다시 누르면 학부모에게 한 번 더 발송됩니다.`
+              : '학부모에게 확인 요청 알림톡을 보냅니다.';
+            return (
             <div className="alert-card" key={alert.id}>
               <div>
                 <strong>{alert.title}</strong>
                 <span>{alert.body}</span>
+                {sentInfo ? (
+                  <em className="alert-sent-note">학부모 알림 발송됨 · {sentInfo.timeLabel}{sentInfo.by ? ` · ${sentInfo.by}` : ''}</em>
+                ) : null}
               </div>
               <div className="alert-actions">
                 {alert.mode === 'preview' ? (
@@ -6294,13 +6348,20 @@ function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent, onParentConfi
                 ) : (
                   <>
                     <button className="primary" onClick={() => onConfirm(alert)}>입실확인</button>
-                    <button className="danger" onClick={() => onNotifyParent(alert)}>학부모 알림</button>
+                    <button
+                      className={sentInfo ? 'alert-notify-sent' : 'danger'}
+                      onClick={() => onNotifyParent(alert, sentInfo)}
+                      title={sentTooltip}
+                    >
+                      {sentInfo ? '학부모 알림 발송됨' : '학부모 알림'}
+                    </button>
                     {onParentConfirmed ? <button className="secondary" onClick={() => onParentConfirmed(alert)} title="학부모 확인이 끝난 건은 추가 처리 없이 알림만 지웁니다.">학부모 확인 완료</button> : null}
                   </>
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : <div className="muted">현재 확인이 필요한 시간표 알림이 없습니다.</div>}
     </section>
