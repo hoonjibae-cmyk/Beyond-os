@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-145-parent-alert-duplicate-guard",
-  "version": "0.41.145",
+  "name": "beyond-os-v41-146-modal-layout-fix",
+  "version": "0.41.146",
   "private": true,
   "scripts": {
     "dev": "next dev",

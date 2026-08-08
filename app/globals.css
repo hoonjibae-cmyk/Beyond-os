@@ -20999,3 +20999,141 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   font-weight: 900;
   color: #8a8479;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-146: 공용 모달(.modal-card) 기본 스타일
+   .modal-card / .modal-head / .modal-close 에 CSS가 아예 없어서
+   흰 카드 배경·여백 없이 자식 요소만 배경 위에 흩어져 보이던 문제를 고칩니다.
+   (쉬는 시간 키오스크 HOLD '실제 출결 반영' 창, 멘토링 개인일정 주의 창 공통)
+   ───────────────────────────────────────────────────────────── */
+.modal-card {
+  width: min(560px, 100%);
+  max-height: min(88vh, 860px);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: #fff;
+  border: 1px solid #e2ded6;
+  border-radius: 22px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .26);
+  overflow: hidden;
+}
+.modal-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid #efece5;
+}
+.modal-head > div {
+  min-width: 0;
+}
+.modal-head h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.3;
+  color: #211f1b;
+}
+.modal-head p {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  font-weight: 850;
+  line-height: 1.45;
+  color: #7a756b;
+}
+.modal-close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid #e2ded6;
+  border-radius: 50%;
+  background: #fff;
+  color: #6f6b62;
+  font-size: 17px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+}
+.modal-close:hover:not(:disabled) {
+  background: #f4f2ed;
+  color: #211f1b;
+}
+.modal-close:disabled {
+  opacity: .45;
+  cursor: default;
+}
+/* 본문(머리말/버튼줄을 제외한 영역)만 스크롤합니다. */
+.modal-card > *:not(.modal-head):not(.modal-actions) {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+.modal-card > *:not(.modal-head):not(.modal-actions) + *:not(.modal-head):not(.modal-actions) {
+  padding-top: 0;
+}
+.modal-card .modal-actions {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 14px 20px 18px;
+  border-top: 1px solid #efece5;
+  background: #fffdfa;
+}
+.modal-card .modal-actions button {
+  width: auto;
+  min-height: 40px;
+  min-width: 104px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 950;
+  font-family: inherit;
+  cursor: pointer;
+}
+.modal-card .modal-actions .secondary {
+  border: 1px solid #d8d2c6;
+  background: #fff;
+  color: #4f473c;
+}
+.modal-card .modal-actions .primary {
+  border: 0;
+  background: #211f1b;
+  color: #fff;
+}
+.modal-card .modal-actions .danger {
+  border: 0;
+  background: #e0303a;
+  color: #fff;
+}
+.modal-card .modal-actions button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+/* 본문 자체 패딩은 공용 규칙에서 주므로 중복 패딩을 제거합니다. */
+.kiosk-hold-apply-body {
+  padding: 16px 20px !important;
+}
+@media (max-width: 560px) {
+  .modal-card {
+    max-height: 92vh;
+    border-radius: 18px;
+  }
+  .modal-head,
+  .modal-card > *:not(.modal-head):not(.modal-actions),
+  .modal-card .modal-actions,
+  .kiosk-hold-apply-body {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+  .modal-card .modal-actions button {
+    flex: 1 1 140px;
+  }
+}
