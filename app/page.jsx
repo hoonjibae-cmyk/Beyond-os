@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
+import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
@@ -9617,10 +9618,12 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
     sun: { checkIn: baseTimes.satIn, checkOut: baseTimes.satOut },
   }), [baseTimes]);
 
+  // 특별 일정은 "7/21" 처럼 연도가 없으므로 적용 기간을 기준으로 연도를 정합니다.
   const patterns = useMemo(() => {
     if (!mapping || !rows.length) return [];
-    return matchPatternsToStudents(buildWeeklyPatterns(rows, mapping, baseByDay), students);
-  }, [mapping, rows, students, baseByDay]);
+    const built = buildWeeklyPatterns(rows, mapping, baseByDay, { periodStart: range.start, periodEnd: range.end });
+    return matchPatternsToStudents(built, students);
+  }, [mapping, rows, students, baseByDay, range.start, range.end]);
 
   const ready = patterns.filter((item) => item.matchStatus === 'matched' && item.filledDays > 0);
   const problems = patterns.filter((item) => item.matchStatus !== 'matched' || item.filledDays === 0);
@@ -9636,8 +9639,15 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
     if (!ready.length) return alert('등록할 학생이 없습니다. 항목 연결과 학생 이름을 확인하세요.');
     if (!range.start || !range.end) return alert('적용 기간을 선택하세요.');
     if (range.start > range.end) return alert('종료일이 시작일보다 빠릅니다.');
+    const specialSummary = ready.reduce((sum, item) => {
+      const overrides = buildSpecialOverrides(item.special?.items || [], { periodStart: range.start, periodEnd: range.end });
+      return { absent: sum.absent + overrides.absent.length, away: sum.away + overrides.away.length };
+    }, { absent: 0, away: 0 });
     const ok = confirm(
       `학생 ${ready.length}명의 개인 시간표를 ${range.start} ~ ${range.end} 기간에 등록합니다.\n\n`
+      + (specialSummary.absent || specialSummary.away
+        ? `특별 일정: 결석 ${specialSummary.absent}일 · 외출 ${specialSummary.away}건이 함께 반영됩니다.\n`
+        : '')
       + (conflictMode === 'overwrite'
         ? '이미 저장된 시간표가 있으면 덮어씁니다.'
         : '이미 저장된 시간표가 있는 날짜는 건너뜁니다.')
@@ -9658,6 +9668,7 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
             studentId: item.student.id,
             studentName: item.student.name,
             days: item.days,
+            special: buildSpecialOverrides(item.special?.items || [], { periodStart: range.start, periodEnd: range.end }),
           })),
         }),
       });
@@ -9674,7 +9685,7 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
   async function createConfirmLinks() {
     if (!ready.length) return alert('대상 학생이 없습니다.');
     if (!range.start || !range.end) return alert('적용 기간을 선택하세요.');
-    const ok = confirm(`학생 ${ready.length}명에게 보낼 학부모 확인 링크를 만듭니다.\n\n링크를 열면 주간 시간표가 표로 보이고, 학부모가 그대로 확인하거나 수정해 제출할 수 있습니다.\n\n계속할까요?`);
+    const ok = confirm(`학생 ${ready.length}명에게 보낼 학부모 확인 링크를 만듭니다.\n\n링크를 열면 주간 시간표와 특별 일정(가족여행·병원 등)이 함께 보이고, 학부모가 그대로 확인하거나 수정해 제출할 수 있습니다.\n\n계속할까요?`);
     if (!ok) return;
     try {
       setConfirmBusy('create');
@@ -9688,6 +9699,9 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
             studentId: item.student.id,
             studentName: item.student.name,
             days: item.days,
+            // 학부모가 화면에서 직접 고칠 수 있도록 해석된 항목 그대로 보냅니다.
+            special: item.special?.items || [],
+            specialRaw: item.special?.raw || '',
           })),
         }),
       });
@@ -9782,6 +9796,14 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
                 </div>
               ))}
             </div>
+            <div className="field">
+              <label>특별 일정 항목 (선택)</label>
+              <select value={mapping.specialColumn ?? ''} onChange={(e) => setMapping((prev) => ({ ...prev, specialColumn: e.target.value === '' ? null : Number(e.target.value) }))}>
+                <option value="">사용 안 함</option>
+                {headers.map((header, index) => <option key={index} value={index}>{header || `(${index + 1}번째 열)`}</option>)}
+              </select>
+              <span className="hint">“7/21 방학식 결석”, “8/11(화) 9:00~12:00 병원 예약”처럼 특정 날짜 예외를 적은 자유 서술 칸입니다. 연결하면 해당 날짜만 결석·외출로 자동 등록합니다.</span>
+            </div>
             <div className="schedule-import-base-row">
               <span>설문의 “기본 일정 준수”가 뜻하는 시간</span>
               <label>평일<input type="time" value={baseTimes.weekdayIn} onChange={(e) => setBaseTimes({ ...baseTimes, weekdayIn: e.target.value })} />~<input type="time" value={baseTimes.weekdayOut} onChange={(e) => setBaseTimes({ ...baseTimes, weekdayOut: e.target.value })} /></label>
@@ -9792,8 +9814,10 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
           <div className="schedule-import-step clean-panel">
             <strong>3. 확인</strong>
             <span>
-              등록 가능 {ready.length}명 · 이름 매칭 실패 {problems.length}명 · 해석 확인 필요 {ready.filter((item) => item.reviewDays > 0).length}명.
-              ⚠ 표시된 학생은 등록 후 학생 시간표 화면에서 해당 요일을 확인해 주세요.
+              등록 가능 {ready.length}명 · 이름 매칭 실패 {problems.length}명 · 해석 확인 필요 {ready.filter((item) => item.reviewDays > 0).length}명 ·
+              특별 일정 {ready.filter((item) => (item.special?.items || []).length).length}명(확인 필요 {ready.filter((item) => item.special?.needsReview).length}명).
+              ⚠ 표시된 학생은 등록 후 학생 시간표 화면에서 해당 요일·날짜를 확인해 주세요.
+              특별 일정 날짜는 위 “적용 기간”을 기준으로 연도를 정합니다.
             </span>
             <div className="schedule-import-preview">
               {patterns.map((item) => (
@@ -9806,6 +9830,16 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
                     {item.reviewDays > 0 ? <i className="warn">⚠ 확인 필요 {item.reviewDays}일</i> : null}
                   </div>
                   <span className="schedule-import-row-summary">{formatWeeklySummary(item)}</span>
+                  {(item.special?.items || []).length ? (
+                    <div className="schedule-import-special">
+                      {item.special.items.map((special, index) => (
+                        <span key={index} className={special.needsReview ? 'special-pill warn' : 'special-pill'}>
+                          {special.needsReview ? '⚠ ' : ''}{formatSpecialItem(special)}
+                          {special.reason ? ` — ${special.reason}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   {item.issues.length ? <em className="schedule-import-row-issue">{item.issues.join(' / ')}</em> : null}
                 </div>
               ))}
@@ -9851,7 +9885,7 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
       {mapping ? (
         <div className="schedule-import-step clean-panel">
           <strong>5. 학부모 최종 확인 (선택)</strong>
-          <span>해석된 시간표로 학생별 확인 링크를 만들어 학부모에게 보냅니다. 학부모가 표를 보고 그대로 확인하거나 직접 고쳐 제출하면, 아래 목록에서 확인한 뒤 반영할 수 있습니다.</span>
+          <span>해석된 주간 시간표와 특별 일정으로 학생별 확인 링크를 만들어 학부모에게 보냅니다. 학부모가 표를 보고 그대로 확인하거나 직접 고쳐 제출하면, 아래 목록에서 확인한 뒤 반영할 수 있습니다. 날짜를 읽지 못한 항목(⚠)은 학부모가 링크에서 날짜를 채워 넣을 수 있습니다.</span>
           <div className="schedule-import-apply-row">
             <span>대상 {ready.length}명 · 기간 {range.start} ~ {range.end}</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -9896,7 +9930,12 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
             {(result.perStudent || []).map((item) => (
               <div key={item.studentId}>
                 <b>{item.studentName || '학생'}</b>
-                <span>등록 {item.created}일{item.skipped ? ` · 건너뜀 ${item.skipped}일` : ''}</span>
+                <span>
+                  등록 {item.created}일
+                  {item.absentDays ? ` · 결석 ${item.absentDays}일` : ''}
+                  {item.startFrom ? ` · ${item.startFrom}부터 등원` : ''}
+                  {item.skipped ? ` · 건너뜀 ${item.skipped}일` : ''}
+                </span>
               </div>
             ))}
           </div>

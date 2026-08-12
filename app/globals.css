@@ -21262,6 +21262,13 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-import-row-name i.bad { background: #fdeeee; color: #b4232b; }
 .schedule-import-row-summary { font-size: 12.5px; font-weight: 850; color: #4f473c; line-height: 1.45; }
 .schedule-import-row-issue { font-style: normal; font-size: 11.5px; font-weight: 850; color: #b4740d; line-height: 1.4; }
+/* v41-152: 설문 "특별 일정 상세"에서 읽어낸 날짜별 예외 */
+.schedule-import-special { display: flex; flex-wrap: wrap; gap: 5px; }
+.schedule-import-special .special-pill {
+  font-size: 11px; font-weight: 900; border-radius: 999px; padding: 3px 9px;
+  background: #eef2fb; color: #2c4f8a; line-height: 1.4;
+}
+.schedule-import-special .special-pill.warn { background: #fff4dd; color: #8a5a08; }
 .schedule-import-range-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .schedule-import-apply-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 .schedule-import-apply-row span { font-size: 12px; font-weight: 850; color: #8a8479; }

@@ -6,7 +6,7 @@
 // 관리자가 확인한 뒤 반영합니다.
 
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { normalizeWeekPattern } from '../schedule-confirm/route';
+import { normalizeWeekPattern, normalizeSpecialItems } from '../schedule-confirm/route';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,7 @@ export async function POST(request) {
     const supabase = getSupabaseAdmin();
     const { data: row, error: rowError } = await supabase
       .from('schedule_confirmations')
-      .select('id, status, snapshot')
+      .select('id, status, snapshot, start_date, end_date')
       .eq('token', token)
       .maybeSingle();
     if (rowError) throw rowError;
@@ -41,7 +41,14 @@ export async function POST(request) {
     };
 
     if (decision === 'change') {
-      payload.response = { days: normalizeWeekPattern(body.days || {}) };
+      payload.response = {
+        days: normalizeWeekPattern(body.days || {}),
+        // v41-152: 특별 일정도 학부모가 그 자리에서 고칠 수 있습니다.
+        special: normalizeSpecialItems(body.special, {
+          periodStart: row.start_date || '',
+          periodEnd: row.end_date || '',
+        }),
+      };
     } else {
       payload.response = null;
     }

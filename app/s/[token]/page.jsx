@@ -66,6 +66,31 @@ const styles = `
   .guide{margin:0;font-size:12.5px;color:#86868b;line-height:1.55}
   .notice-box{padding:13px 16px;font-size:13px;color:#8a6a12;background:#fff8e8;font-weight:700}
   .error-box{padding:12px 14px;font-size:13px;color:#b4232b;background:#fdeeee;font-weight:700;box-shadow:none}
+  .special-card{background:#fff;border-radius:20px;box-shadow:0 8px 24px rgba(0,0,0,.05);padding:18px 16px}
+  .special-list{display:grid;gap:9px;margin-top:11px}
+  .special-item{border:1px solid #e9e9ee;border-radius:14px;padding:11px 12px;display:grid;gap:7px;background:#fcfcfd}
+  .special-item.is-off{opacity:.5}
+  .special-item.is-review{border-color:#f2d79a;background:#fffdf6}
+  .special-line{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13.5px;font-weight:700}
+  .special-tag{border-radius:999px;padding:3px 9px;font-size:11px;font-weight:800;color:#fff;background:#0071e3}
+  .special-tag.absent{background:#c8382f}
+  .special-tag.away{background:#c07a10}
+  .special-tag.start_from{background:#2c8a4b}
+  .special-tag.unknown{background:#86868b}
+  .special-when{color:#1d1d1f}
+  .special-why{font-size:12.5px;color:#6e6e73;font-weight:600;line-height:1.5}
+  .special-raw{font-size:12px;color:#86868b;font-weight:600;line-height:1.5;word-break:break-all}
+  .special-review{font-size:12px;color:#8a6a12;font-weight:800}
+  .special-edit-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;font-weight:700;color:#6e6e73}
+  .special-edit-row select,.special-edit-row input[type=date]{font-family:inherit;font-size:13px;border:1px solid #d2d2d7;
+    border-radius:9px;padding:6px 8px;background:#fff;color:#1d1d1f}
+  .special-edit-row input[type=text]{flex:1 1 130px;min-width:110px}
+  .special-dates{display:flex;gap:5px;flex-wrap:wrap}
+  .special-chip{background:#eef4ff;color:#0058b8;border-radius:999px;padding:4px 9px;font-size:11.5px;font-weight:800}
+  .special-chip button{background:none;color:#0058b8;font-size:12px;padding:0 0 0 5px}
+  .special-remove{background:#f5f5f7;color:#86868b;font-size:11.5px;padding:6px 9px}
+  .special-add{background:#f0f6ff;color:#0071e3;font-size:12px;padding:8px 12px;justify-self:start}
+  .special-empty{font-size:13px;color:#86868b;font-weight:600;margin-top:8px}
   .done-card{padding:28px 20px;text-align:center;display:grid;gap:8px}
   .done-card strong{font-size:19px}
   .done-card p{margin:0;font-size:14px;color:#424245;line-height:1.6}
@@ -94,6 +119,12 @@ export default async function ScheduleConfirmPage({ params }) {
 
   const student = row.students || {};
   const snapshotDays = row.snapshot?.days || {};
+  // v41-152: 설문의 "특별 일정 상세"에서 읽어낸 날짜별 예외
+  const responseSpecial = row.status === 'change_requested' && Array.isArray(row.response?.special)
+    ? row.response.special
+    : null;
+  const snapshotSpecial = responseSpecial || (Array.isArray(row.snapshot?.special) ? row.snapshot.special : []);
+  const specialRaw = row.snapshot?.specialRaw || '';
 
   return (
     <>
@@ -108,7 +139,7 @@ export default async function ScheduleConfirmPage({ params }) {
               {student.school || student.grade ? ' · ' : ''}
               {row.start_date} ~ {row.end_date}
               <br />
-              설문에 적어주신 내용을 아래와 같이 정리했습니다. 확인 후 아래 버튼을 눌러주세요.
+              설문에 적어주신 내용을 아래와 같이 정리했습니다. 주간 시간표와 특별 일정을 함께 확인해 주세요.
               수정이 필요하면 직접 고쳐서 제출하실 수 있습니다.
             </p>
           </header>
@@ -118,6 +149,8 @@ export default async function ScheduleConfirmPage({ params }) {
             student={student}
             period={{ start: row.start_date, end: row.end_date }}
             snapshotDays={snapshotDays}
+            snapshotSpecial={snapshotSpecial}
+            specialRaw={specialRaw}
             initialStatus={row.status}
             guardianHint={row.confirmed_by || ''}
           />

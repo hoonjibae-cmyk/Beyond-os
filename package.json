@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-151-parent-schedule-confirm",
-  "version": "0.41.151",
+  "name": "beyond-os-v41-152-special-schedule",
+  "version": "0.41.152",
   "private": true,
   "scripts": {
     "dev": "next dev",

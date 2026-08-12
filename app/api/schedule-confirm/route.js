@@ -12,7 +12,8 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse, requireTabPermission, getAuthorizedUser } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
-import { DAY_KEYS, DAY_LABELS, expandPatternToDates } from '../../../lib/scheduleImport';
+import { DAY_KEYS, DAY_LABELS, expandPatternToDates, applySpecialToDates } from '../../../lib/scheduleImport';
+import { buildSpecialOverrides } from '../../../lib/specialScheduleParse';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +63,39 @@ export function normalizeWeekPattern(days = {}) {
         reason: String(item.reason || '').slice(0, 60),
       }));
     out[dayKey] = { checkIn, checkOut, breaks };
+  }
+  return out;
+}
+
+const SPECIAL_TYPES = ['absent', 'away', 'start_from', 'unknown'];
+
+/**
+ * v41-152: 특별 일정 항목을 저장/전송 전에 다듬습니다.
+ * 학부모 화면에서 되돌아온 값도 같은 함수로 검증합니다.
+ */
+export function normalizeSpecialItems(items = [], { periodStart = '', periodEnd = '' } = {}) {
+  const out = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item) continue;
+    const type = SPECIAL_TYPES.includes(item.type) ? item.type : 'unknown';
+    const dates = [...new Set((Array.isArray(item.dates) ? item.dates : [])
+      .map((date) => String(date || ''))
+      .filter((date) => isValidDate(date))
+      // 기간 밖 날짜는 보여주지도, 반영하지도 않습니다.
+      .filter((date) => (!periodStart || date >= periodStart) && (!periodEnd || date <= periodEnd)))]
+      .sort()
+      .slice(0, 60);
+    out.push({
+      type,
+      dates,
+      start: isValidTime(item.start) ? item.start : '',
+      end: isValidTime(item.end) ? item.end : '',
+      reason: String(item.reason || '').slice(0, 120),
+      raw: String(item.raw || '').slice(0, 200),
+      needsReview: Boolean(item.needsReview),
+      include: item.include === false ? false : true,
+    });
+    if (out.length >= 30) break;
   }
   return out;
 }
@@ -136,7 +170,11 @@ export async function POST(request) {
       for (const entry of entries) {
         const studentId = String(entry.studentId || '').trim();
         if (!studentId) continue;
-        const snapshot = { days: normalizeWeekPattern(entry.days || {}) };
+        const snapshot = {
+          days: normalizeWeekPattern(entry.days || {}),
+          special: normalizeSpecialItems(entry.special, { periodStart: startDate, periodEnd: endDate }),
+          specialRaw: String(entry.specialRaw || '').slice(0, 500),
+        };
 
         // 같은 학생·같은 기간 요청이 이미 있으면 시간표만 갱신하고 링크는 유지합니다.
         const { data: existing } = await supabase
@@ -214,22 +252,47 @@ export async function POST(request) {
       if (!row) return Response.json({ error: '확인 요청을 찾지 못했습니다.' }, { status: 404 });
 
       // 수정 요청이면 학부모가 낸 값을, 그대로 확인이면 원래 시간표를 씁니다.
-      const source = row.status === 'change_requested' && row.response?.days ? row.response.days : row.snapshot?.days;
+      const changed = row.status === 'change_requested' && row.response;
+      const source = changed && row.response.days ? row.response.days : row.snapshot?.days;
       const days = normalizeWeekPattern(source || {});
 
-      const dates = expandPatternToDates({ days }, row.start_date, row.end_date, MAX_RANGE_DAYS + 1);
+      // v41-152: 특별 일정(결석·외출·등원 시작일)도 함께 반영합니다.
+      const specialSource = changed && Array.isArray(row.response.special)
+        ? row.response.special
+        : (row.snapshot?.special || []);
+      const specialItems = normalizeSpecialItems(specialSource, { periodStart: row.start_date, periodEnd: row.end_date });
+      const overrides = buildSpecialOverrides(specialItems, { periodStart: row.start_date, periodEnd: row.end_date });
+
+      let absenceSupported = true;
+      try {
+        const { error } = await supabase.from('student_daily_schedules').select('planned_absent').limit(1);
+        if (error) absenceSupported = false;
+      } catch {
+        absenceSupported = false;
+      }
+
+      const baseDates = expandPatternToDates({ days }, row.start_date, row.end_date, MAX_RANGE_DAYS + 1);
+      const dates = applySpecialToDates(baseDates, overrides);
       if (!dates.length) {
         return Response.json({ error: '반영할 등원일이 없습니다.' }, { status: 400 });
       }
 
-      const payloads = dates.map((item) => ({
-        student_id: row.student_id,
-        schedule_date: item.date,
-        planned_check_in: item.checkIn || '09:00',
-        planned_check_out: item.checkOut || '22:00',
-        schedule_note: '학부모 확인 시간표',
-        created_by: actorName,
-      }));
+      const payloads = dates.map((item) => {
+        const payload = {
+          student_id: row.student_id,
+          schedule_date: item.date,
+          planned_check_in: item.checkIn || '09:00',
+          planned_check_out: item.checkOut || '22:00',
+          schedule_note: '학부모 확인 시간표',
+          created_by: actorName,
+        };
+        if (absenceSupported) {
+          payload.planned_absent = Boolean(item.absent);
+          payload.absent_reason = item.absent ? String(item.absentReason || '').slice(0, 100) || '학부모 확인 특별일정' : null;
+        }
+        return payload;
+      });
+      const absentDays = dates.filter((item) => item.absent).length;
 
       for (const group of chunk(payloads, 300)) {
         const { error } = await supabase
@@ -252,7 +315,7 @@ export async function POST(request) {
         const breakRows = [];
         for (const item of dates) {
           const scheduleId = idByDate[item.date];
-          if (!scheduleId) continue;
+          if (!scheduleId || item.absent) continue;
           for (const gap of item.breaks || []) {
             if (!gap?.start) continue;
             breakRows.push({
@@ -289,13 +352,14 @@ export async function POST(request) {
         actionType: 'schedule_confirm.apply',
         targetType: 'schedule_confirmation',
         targetId: id,
-        payload: { dates: dates.length },
+        payload: { dates: dates.length, absentDays },
       }).catch(() => {});
 
       return Response.json({
         ok: true,
         row: updated,
-        message: `${dates.length}일치 시간표에 반영했습니다.`,
+        message: `${dates.length}일치 시간표에 반영했습니다.${absentDays ? ` (특별일정 결석 ${absentDays}일 포함)` : ''}`
+          + `${overrides.startFrom ? ` 등원 시작일 ${overrides.startFrom} 이전은 제외했습니다.` : ''}`,
       });
     }
 
