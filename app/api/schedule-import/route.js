@@ -92,6 +92,7 @@ export async function POST(request) {
 
     const payloads = [];
     const perStudent = [];
+    const breakPlans = [];
 
     for (const entry of entries) {
       const studentId = String(entry.studentId || '').trim();
@@ -123,6 +124,10 @@ export async function POST(request) {
           schedule_note: String(body.scheduleNote || '설문 응답 기준 자동 등록').slice(0, 200),
           created_by: actorName,
         });
+        // 정기 외출(학원 등)은 별도 테이블에 저장하므로 날짜와 함께 모아둡니다.
+        if (Array.isArray(item.breaks) && item.breaks.length) {
+          breakPlans.push({ studentId, date: item.date, breaks: item.breaks });
+        }
         created += 1;
       }
 
@@ -154,6 +159,52 @@ export async function POST(request) {
       created += group.length;
     }
 
+    // 정기 외출 저장: 방금 만든 시간표의 id를 찾아 연결합니다.
+    let breakCount = 0;
+    if (breakPlans.length) {
+      try {
+        const targetStudentIds = [...new Set(breakPlans.map((item) => item.studentId))];
+        const { data: scheduleRows } = await supabase
+          .from('student_daily_schedules')
+          .select('id, student_id, schedule_date')
+          .in('student_id', targetStudentIds)
+          .gte('schedule_date', startDate)
+          .lte('schedule_date', endDate);
+
+        const idByKey = {};
+        for (const row of scheduleRows || []) idByKey[`${row.student_id}|${row.schedule_date}`] = row.id;
+
+        const breakRows = [];
+        for (const plan of breakPlans) {
+          const scheduleId = idByKey[`${plan.studentId}|${plan.date}`];
+          if (!scheduleId) continue;
+          for (const item of plan.breaks) {
+            if (!item?.start) continue;
+            breakRows.push({
+              schedule_id: scheduleId,
+              leave_start: item.start,
+              return_time: item.end || null,
+              reason: '학원',
+              reason_detail: String(item.reason || '').slice(0, 100) || null,
+            });
+          }
+        }
+
+        if (breakRows.length) {
+          // 같은 시간표에 기존 외출이 있으면 지우고 새로 넣습니다.
+          const scheduleIds = [...new Set(breakRows.map((row) => row.schedule_id))];
+          await supabase.from('student_schedule_breaks').delete().in('schedule_id', scheduleIds);
+          for (const group of chunk(breakRows, CHUNK_SIZE)) {
+            const { error } = await supabase.from('student_schedule_breaks').insert(group);
+            if (error) throw error;
+          }
+          breakCount = breakRows.length;
+        }
+      } catch {
+        // 외출 저장에 실패해도 등하원 시간표는 이미 저장된 상태로 둡니다.
+      }
+    }
+
     await writeUserActionLog(supabase, request, {
       actionType: 'schedule.survey_import',
       targetType: 'schedule',
@@ -173,9 +224,10 @@ export async function POST(request) {
       ok: true,
       created,
       skipped,
+      breakCount,
       students: perStudent.length,
       perStudent,
-      message: `학생 ${perStudent.length}명 · 시간표 ${created}건을 등록했습니다.${skipped ? ` (기존 시간표가 있어 ${skipped}건 건너뜀)` : ''}`,
+      message: `학생 ${perStudent.length}명 · 시간표 ${created}건${breakCount ? ` · 정기 외출 ${breakCount}건` : ''}을 등록했습니다.${skipped ? ` (기존 시간표가 있어 ${skipped}건 건너뜀)` : ''}`,
     });
   } catch (error) {
     return Response.json({ error: error.message || '시간표 일괄 등록 실패' }, { status: 500 });

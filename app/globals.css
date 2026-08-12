@@ -21273,3 +21273,12 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-import-result-list > div { display: flex; gap: 9px; align-items: baseline; border-radius: 10px; background: #f8f5ef; padding: 7px 11px; }
 .schedule-import-result-list b { font-size: 12.5px; color: #211f1b; }
 .schedule-import-result-list span { font-size: 11.5px; font-weight: 850; color: #7a756b; }
+
+/* v41-150: 설문 자유서술 해석 임포터 */
+.schedule-import-base-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-radius: 12px; background: #f8f5ef; padding: 10px 13px;
+}
+.schedule-import-base-row > span { font-size: 12px; font-weight: 950; color: #7a756b; }
+.schedule-import-base-row label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 900; color: #4f473c; }
+.schedule-import-base-row input { min-height: 32px; border: 1px solid #d8d2c6; border-radius: 8px; padding: 0 7px; font-size: 12px; font-family: inherit; }

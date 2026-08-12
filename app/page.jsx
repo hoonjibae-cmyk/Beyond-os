@@ -9557,6 +9557,8 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
   const [mapping, setMapping] = useState(null);
   const [range, setRange] = useState({ start: today, end: today });
   const [conflictMode, setConflictMode] = useState('skip');
+  // 설문의 "기본 일정 준수"가 가리키는 시간. 요일 칸 해석의 기준이 됩니다.
+  const [baseTimes, setBaseTimes] = useState({ weekdayIn: '09:00', weekdayOut: '22:00', satIn: '09:00', satOut: '18:00' });
   const [cohorts, setCohorts] = useState([]);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
@@ -9602,25 +9604,29 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
     }
   }
 
+  const baseByDay = useMemo(() => ({
+    mon: { checkIn: baseTimes.weekdayIn, checkOut: baseTimes.weekdayOut },
+    tue: { checkIn: baseTimes.weekdayIn, checkOut: baseTimes.weekdayOut },
+    wed: { checkIn: baseTimes.weekdayIn, checkOut: baseTimes.weekdayOut },
+    thu: { checkIn: baseTimes.weekdayIn, checkOut: baseTimes.weekdayOut },
+    fri: { checkIn: baseTimes.weekdayIn, checkOut: baseTimes.weekdayOut },
+    sat: { checkIn: baseTimes.satIn, checkOut: baseTimes.satOut },
+    sun: { checkIn: baseTimes.satIn, checkOut: baseTimes.satOut },
+  }), [baseTimes]);
+
   const patterns = useMemo(() => {
     if (!mapping || !rows.length) return [];
-    return matchPatternsToStudents(buildWeeklyPatterns(rows, mapping), students);
-  }, [mapping, rows, students]);
+    return matchPatternsToStudents(buildWeeklyPatterns(rows, mapping, baseByDay), students);
+  }, [mapping, rows, students, baseByDay]);
 
   const ready = patterns.filter((item) => item.matchStatus === 'matched' && item.filledDays > 0);
   const problems = patterns.filter((item) => item.matchStatus !== 'matched' || item.filledDays === 0);
 
-  function setDayColumn(dayKey, field, value) {
-    setMapping((prev) => {
-      const next = { ...prev, days: { ...prev.days } };
-      const day = { ...(next.days[dayKey] || {}) };
-      day[field] = value === '' ? null : Number(value);
-      day.enabled = day.checkIn !== null && day.checkIn !== undefined
-        ? true
-        : (day.checkOut !== null && day.checkOut !== undefined);
-      next.days[dayKey] = day;
-      return next;
-    });
+  function setDayColumn(dayKey, value) {
+    setMapping((prev) => ({
+      ...prev,
+      days: { ...prev.days, [dayKey]: value === '' ? null : Number(value) },
+    }));
   }
 
   async function apply() {
@@ -9693,32 +9699,31 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
               </select>
             </div>
             <div className="schedule-import-day-grid">
-              {DAY_KEYS.map((dayKey) => {
-                const day = mapping.days?.[dayKey] || {};
-                return (
-                  <div key={dayKey} className={day.enabled ? 'schedule-import-day is-on' : 'schedule-import-day'}>
-                    <b>{DAY_LABELS[dayKey]}요일</b>
-                    <label>등원
-                      <select value={day.checkIn ?? ''} onChange={(e) => setDayColumn(dayKey, 'checkIn', e.target.value)}>
-                        <option value="">사용 안 함</option>
-                        {headers.map((header, index) => <option key={index} value={index}>{header || `(${index + 1}번째 열)`}</option>)}
-                      </select>
-                    </label>
-                    <label>하원
-                      <select value={day.checkOut ?? ''} onChange={(e) => setDayColumn(dayKey, 'checkOut', e.target.value)}>
-                        <option value="">사용 안 함</option>
-                        {headers.map((header, index) => <option key={index} value={index}>{header || `(${index + 1}번째 열)`}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                );
-              })}
+              {DAY_KEYS.map((dayKey) => (
+                <div key={dayKey} className={mapping.days?.[dayKey] !== null && mapping.days?.[dayKey] !== undefined ? 'schedule-import-day is-on' : 'schedule-import-day'}>
+                  <b>{DAY_LABELS[dayKey]}요일</b>
+                  <label>응답 항목
+                    <select value={mapping.days?.[dayKey] ?? ''} onChange={(e) => setDayColumn(dayKey, e.target.value)}>
+                      <option value="">사용 안 함</option>
+                      {headers.map((header, index) => <option key={index} value={index}>{header || `(${index + 1}번째 열)`}</option>)}
+                    </select>
+                  </label>
+                </div>
+              ))}
+            </div>
+            <div className="schedule-import-base-row">
+              <span>설문의 “기본 일정 준수”가 뜻하는 시간</span>
+              <label>평일<input type="time" value={baseTimes.weekdayIn} onChange={(e) => setBaseTimes({ ...baseTimes, weekdayIn: e.target.value })} />~<input type="time" value={baseTimes.weekdayOut} onChange={(e) => setBaseTimes({ ...baseTimes, weekdayOut: e.target.value })} /></label>
+              <label>토요일<input type="time" value={baseTimes.satIn} onChange={(e) => setBaseTimes({ ...baseTimes, satIn: e.target.value })} />~<input type="time" value={baseTimes.satOut} onChange={(e) => setBaseTimes({ ...baseTimes, satOut: e.target.value })} /></label>
             </div>
           </div>
 
           <div className="schedule-import-step clean-panel">
             <strong>3. 확인</strong>
-            <span>등록 가능 {ready.length}명 · 확인 필요 {problems.length}명. 학생 이름이 등록 정보와 정확히 같아야 자동 매칭됩니다.</span>
+            <span>
+              등록 가능 {ready.length}명 · 이름 매칭 실패 {problems.length}명 · 해석 확인 필요 {ready.filter((item) => item.reviewDays > 0).length}명.
+              ⚠ 표시된 학생은 등록 후 학생 시간표 화면에서 해당 요일을 확인해 주세요.
+            </span>
             <div className="schedule-import-preview">
               {patterns.map((item) => (
                 <div key={`${item.rowIndex}-${item.name}`} className={`schedule-import-row ${item.matchStatus}`}>
@@ -9727,6 +9732,7 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
                     {item.matchStatus === 'matched' ? <i className="ok">매칭됨</i> : null}
                     {item.matchStatus === 'not_found' ? <i className="bad">학생 없음</i> : null}
                     {item.matchStatus === 'ambiguous' ? <i className="warn">동명이인 {item.candidates.length}명</i> : null}
+                    {item.reviewDays > 0 ? <i className="warn">⚠ 확인 필요 {item.reviewDays}일</i> : null}
                   </div>
                   <span className="schedule-import-row-summary">{formatWeeklySummary(item)}</span>
                   {item.issues.length ? <em className="schedule-import-row-issue">{item.issues.join(' / ')}</em> : null}

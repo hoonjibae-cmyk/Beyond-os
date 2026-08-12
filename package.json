@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-149-schedule-survey-import",
-  "version": "0.41.149",
+  "name": "beyond-os-v41-150-survey-text-parser",
+  "version": "0.41.150",
   "private": true,
   "scripts": {
     "dev": "next dev",
