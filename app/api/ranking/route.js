@@ -4,6 +4,7 @@ import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
+import { loadCohortContext, resolveStudentCohortRange, sortCohorts, isUsableCohort } from '../../../lib/cohorts';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,8 +16,47 @@ export async function GET(request) {
     const scheduleConfig = await getDefaultScheduleConfig(supabase);
     const { searchParams } = new URL(request.url);
     const today = getKstDateString();
-    const start = searchParams.get('start') || today;
-    const end = searchParams.get('end') || today;
+    const requestedCohortId = String(searchParams.get('cohortId') || '').trim();
+
+    // v41-148: 기수를 지정하면 그 기수의 기간·명단으로 랭킹을 분리합니다.
+    // '연속' 정책일 때는 두 기수를 모두 수강한 학생만 이전 기수부터 이어서 집계하므로,
+    // 학생마다 집계 구간이 달라질 수 있어 아래에서 학생별로 판정합니다.
+    let cohortContext = null;
+    let cohort = null;
+    let cohortWarning = '';
+    if (requestedCohortId) {
+      cohortContext = await loadCohortContext(supabase);
+      cohortWarning = cohortContext.warning;
+      cohort = sortCohorts(cohortContext.cohorts).find((item) => String(item.id) === requestedCohortId) || null;
+      if (cohort && !isUsableCohort(cohort)) cohort = null;
+      if (requestedCohortId && !cohort && !cohortWarning) {
+        cohortWarning = '선택한 기수를 찾지 못해 전체 기간으로 조회했습니다.';
+      }
+    }
+
+    const rosterSet = cohort ? (cohortContext.rosterByCohort[String(cohort.id)] || new Set()) : null;
+
+    // 학생별 집계 구간을 미리 계산합니다. (분리 정책이면 모두 동일)
+    const rangeByStudent = {};
+    let start = searchParams.get('start') || today;
+    let end = searchParams.get('end') || today;
+    if (cohort) {
+      let minStart = cohort.startDate;
+      for (const studentId of rosterSet) {
+        const range = resolveStudentCohortRange(
+          cohort,
+          cohortContext.cohorts,
+          cohortContext.cohortIdsByStudent[String(studentId)] || new Set(),
+          cohortContext.settings,
+        );
+        if (!range) continue;
+        rangeByStudent[String(studentId)] = range;
+        if (range.start < minStart) minStart = range.start;
+      }
+      // 조회는 가장 넓은 구간으로 한 번만 하고, 합산할 때 학생별 구간으로 거릅니다.
+      start = minStart;
+      end = cohort.endDate;
+    }
 
     const { data: sessions, error: sessionsError } = await supabase
       .from('daily_sessions')
@@ -55,6 +95,8 @@ export async function GET(request) {
 
     const map = {};
     for (const student of activeStudents || []) {
+      // 기수를 지정하면 그 기수 명단에 있는 학생만 랭킹에 올립니다.
+      if (rosterSet && !rosterSet.has(String(student.id))) continue;
       map[student.id] = {
         studentId: student.id,
         name: student.name,
@@ -75,6 +117,13 @@ export async function GET(request) {
     for (const session of sessions || []) {
       const row = map[session.student_id];
       if (!row) continue;
+      // 연속 정책에서는 학생마다 집계 시작일이 다를 수 있어 여기서 한 번 더 거릅니다.
+      const studentRange = rangeByStudent[String(session.student_id)];
+      if (studentRange) {
+        const date = String(session.session_date || '');
+        if (date < studentRange.start || date > studentRange.end) continue;
+        if (studentRange.continued) row.continuedFromPreviousCohort = true;
+      }
       row.attendanceDays += session.check_in_at ? 1 : 0;
       row.totalStudyMinutes += calculateScheduledPureStudyMinutes(session, { events: eventsBySession[session.id] || [], studyWindows: resolveScheduleForDate(scheduleConfig, session.session_date).studyWindows });
       row.needsAttentionCount += session.seat_status === 'needs_attention' ? 1 : 0;
@@ -92,7 +141,14 @@ export async function GET(request) {
       }))
       .sort((a, b) => b.totalStudyMinutes - a.totalStudyMinutes);
 
-    return Response.json({ start, end, ranking });
+    return Response.json({
+      start,
+      end,
+      ranking,
+      cohort: cohort ? { id: cohort.id, name: cohort.name, startDate: cohort.startDate, endDate: cohort.endDate } : null,
+      cohortPolicy: cohortContext ? cohortContext.settings : null,
+      warning: cohortWarning || undefined,
+    });
   } catch (error) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
   }

@@ -12,6 +12,7 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes, formatMinutes } from '../../../lib/date';
 import { resolvePointCycle } from '../../../lib/studentPointCycle';
+import { loadCohortContext, resolveDefaultCohort, resolveStudentCohortRange, sortCohorts, isUsableCohort, formatCohortLabel } from '../../../lib/cohorts';
 
 export const dynamic = 'force-dynamic';
 
@@ -177,6 +178,32 @@ export async function GET(request) {
     if (!student) return Response.json({ error: '학생을 찾을 수 없습니다.' }, { status: 404 });
 
     const rules = await loadOperatingRules(supabase);
+
+    // v41-148: 기수를 지정하면 그 기수 기간만 누적 집계합니다.
+    // (연속 정책이면 두 기수를 모두 수강한 학생만 이전 기수부터 이어서 봅니다.)
+    const requestedCohortId = String(searchParams.get('cohortId') || '').trim();
+    const cohortContext = await loadCohortContext(supabase);
+    if (cohortContext.warning) warnings.push(cohortContext.warning);
+    const studentCohortIds = cohortContext.cohortIdsByStudent[String(studentId)] || new Set();
+    let cohort = null;
+    if (requestedCohortId === 'all') {
+      cohort = null;
+    } else if (requestedCohortId) {
+      cohort = sortCohorts(cohortContext.cohorts).find((item) => String(item.id) === requestedCohortId) || null;
+    } else {
+      // 지정이 없으면 이 학생이 속한 기수 중 기본 기수를 씁니다.
+      const enrolled = sortCohorts(cohortContext.cohorts).filter((item) => studentCohortIds.has(String(item.id)));
+      cohort = resolveDefaultCohort(enrolled.length ? enrolled : [], cohortContext.settings, today);
+    }
+    if (cohort && !isUsableCohort(cohort)) cohort = null;
+    const cohortRange = cohort
+      ? resolveStudentCohortRange(cohort, cohortContext.cohorts, studentCohortIds, cohortContext.settings)
+      : null;
+    const inCohortRange = (date) => {
+      if (!cohortRange) return true;
+      const value = String(date || '');
+      return value >= cohortRange.start && value <= cohortRange.end;
+    };
     const { mentor: assignedMentor, warning: mentorWarning } = await loadAssignedMentor(supabase, studentId);
     if (mentorWarning) warnings.push(mentorWarning);
 
@@ -189,14 +216,16 @@ export async function GET(request) {
     if (allSessionsResult.warning) warnings.push(allSessionsResult.warning);
     const allSessions = allSessionsResult.rows;
 
-    const attendedSessions = allSessions.filter((session) => session.check_in_at);
-    const totalStudyMinutes = allSessions.reduce((sum, session) => sum + Math.max(0, Number(session.pure_study_minutes || 0)), 0);
-    const studyDays = allSessions.filter((session) => Number(session.pure_study_minutes || 0) > 0);
+    // 기수가 정해져 있으면 그 기간의 세션만 누적 집계에 씁니다.
+    const cohortSessions = allSessions.filter((session) => inCohortRange(session.session_date));
+    const attendedSessions = cohortSessions.filter((session) => session.check_in_at);
+    const totalStudyMinutes = cohortSessions.reduce((sum, session) => sum + Math.max(0, Number(session.pure_study_minutes || 0)), 0);
+    const studyDays = cohortSessions.filter((session) => Number(session.pure_study_minutes || 0) > 0);
     const bestSession = studyDays.reduce(
       (best, session) => (Number(session.pure_study_minutes || 0) > Number(best?.pure_study_minutes || 0) ? session : best),
       null,
     );
-    const dates = allSessions.map((session) => String(session.session_date || '')).filter(Boolean).sort();
+    const dates = cohortSessions.map((session) => String(session.session_date || '')).filter(Boolean).sort();
 
     const recentSessions = allSessions.filter((session) => String(session.session_date || '') >= recentStart);
     const recentSessionIds = recentSessions.map((session) => session.id).filter(Boolean);
@@ -349,12 +378,27 @@ export async function GET(request) {
       student,
       assignedMentor,
       rules,
+      // v41-148: 어떤 기수 기준으로 집계했는지 화면에 표시하기 위한 정보
+      cohort: cohort ? {
+        id: cohort.id,
+        name: cohort.name,
+        label: formatCohortLabel(cohort),
+        startDate: cohort.startDate,
+        endDate: cohort.endDate,
+        rangeStart: cohortRange?.start || cohort.startDate,
+        rangeEnd: cohortRange?.end || cohort.endDate,
+        continued: Boolean(cohortRange?.continued),
+      } : null,
+      cohortOptions: sortCohorts(cohortContext.cohorts)
+        .filter((item) => studentCohortIds.has(String(item.id)))
+        .map((item) => ({ id: item.id, name: item.name, label: formatCohortLabel(item) })),
+      cohortPolicy: cohortContext.settings,
       totals: {
         firstSessionDate: dates[0] || '',
         lastSessionDate: dates[dates.length - 1] || '',
-        sessionCount: allSessions.length,
+        sessionCount: cohortSessions.length,
         attendDays: attendedSessions.length,
-        absentDays: allSessions.filter((session) => session.seat_status === 'absent').length,
+        absentDays: cohortSessions.filter((session) => session.seat_status === 'absent').length,
         totalStudyMinutes,
         totalStudyLabel: formatMinutes(totalStudyMinutes),
         avgStudyMinutes: studyDays.length ? Math.round(totalStudyMinutes / studyDays.length) : 0,

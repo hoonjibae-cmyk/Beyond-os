@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-147-transcript-repetition-fix",
-  "version": "0.41.147",
+  "name": "beyond-os-v41-148-cohorts",
+  "version": "0.41.148",
   "private": true,
   "scripts": {
     "dev": "next dev",

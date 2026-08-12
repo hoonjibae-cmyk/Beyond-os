@@ -2122,6 +2122,10 @@ export default function Page() {
   const defaultRange = getThisWeekRange();
   const [rankingStart, setRankingStart] = useState(defaultRange.start);
   const [rankingEnd, setRankingEnd] = useState(defaultRange.end);
+  // v41-148: 랭킹을 기수 단위로 나눠 보기 위한 상태
+  const [rankingCohortId, setRankingCohortId] = useState('');
+  const [rankingCohortInfo, setRankingCohortInfo] = useState(null);
+  const [cohortOptions, setCohortOptions] = useState([]);
   const [scheduleView, setScheduleView] = useState('day');
   const [scheduleBaseDate, setScheduleBaseDate] = useState(getKstDateString());
   const [scheduleStudentFilter, setScheduleStudentFilter] = useState('all');
@@ -4366,14 +4370,34 @@ export default function Page() {
     }
   }
 
-  async function loadRanking(start = rankingStart, end = rankingEnd) {
+  async function loadRanking(start = rankingStart, end = rankingEnd, cohortId = rankingCohortId) {
     try {
       setMessage('랭킹 조회 중...');
-      const data = await apiFetch(`/api/ranking?start=${start}&end=${end}`);
+      // 기수를 고르면 기간·명단이 기수 기준으로 대체됩니다.
+      const params = new URLSearchParams({ start, end });
+      if (cohortId) params.set('cohortId', cohortId);
+      const data = await apiFetch(`/api/ranking?${params.toString()}`);
       setRanking(data.ranking || []);
-      setMessage('랭킹 조회 완료');
+      setRankingCohortInfo(data.cohort ? { ...data.cohort, policy: data.cohortPolicy } : null);
+      if (data.cohort) {
+        setRankingStart(data.start);
+        setRankingEnd(data.end);
+      }
+      setMessage(data.warning || '랭킹 조회 완료');
     } catch (error) {
       setMessage(error.message);
+    }
+  }
+
+  // v41-148: 기수 목록은 랭킹 등 여러 화면에서 공용으로 씁니다.
+  async function loadCohortOptions() {
+    try {
+      const data = await apiFetch('/api/cohorts');
+      setCohortOptions(data.cohorts || []);
+      return data;
+    } catch {
+      setCohortOptions([]);
+      return null;
     }
   }
 
@@ -5474,7 +5498,7 @@ export default function Page() {
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'ranking' ? (
-          <RankingTab ranking={ranking} rankingStart={rankingStart} rankingEnd={rankingEnd} setRankingStart={setRankingStart} setRankingEnd={setRankingEnd} loadRanking={loadRanking} setRankingPreset={setRankingPreset} apiFetch={apiFetch} setMessage={setMessage} />
+          <RankingTab ranking={ranking} rankingStart={rankingStart} rankingEnd={rankingEnd} setRankingStart={setRankingStart} setRankingEnd={setRankingEnd} loadRanking={loadRanking} setRankingPreset={setRankingPreset} apiFetch={apiFetch} setMessage={setMessage} cohortOptions={cohortOptions} loadCohortOptions={loadCohortOptions} rankingCohortId={rankingCohortId} setRankingCohortId={setRankingCohortId} rankingCohortInfo={rankingCohortInfo} />
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'points' ? (
@@ -9242,6 +9266,281 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
           </div>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+// v41-148: 기수(코호트) 관리 화면
+// 기수 = 기간 + 수강 명단. 학생 원본 정보는 건드리지 않고 명단만 관리합니다.
+function CohortSettingsTab({ apiFetch, setMessage }) {
+  const today = getKstDateString();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState('');
+  const [selectedId, setSelectedId] = useState('');
+  const [form, setForm] = useState({ id: '', name: '', startDate: today, endDate: today, memo: '' });
+  const [rosterDraft, setRosterDraft] = useState([]);
+  const [rosterSearch, setRosterSearch] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const load = useCallback(async (keepId = '') => {
+    try {
+      setLoading(true);
+      const result = await apiFetch('/api/cohorts');
+      setData(result);
+      const nextId = keepId || selectedId || result.defaultCohortId || result.cohorts?.[0]?.id || '';
+      setSelectedId(nextId);
+      setRosterDraft(result.rosters?.[nextId] || []);
+      setNotice(result.warning || '');
+    } catch (error) {
+      setNotice(error?.message || '기수 정보를 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch, selectedId]);
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const cohorts = data?.cohorts || [];
+  const students = data?.students || [];
+  const settings = data?.settings || { separateAcrossCohorts: true };
+  const selected = cohorts.find((item) => String(item.id) === String(selectedId)) || null;
+  const savedRoster = data?.rosters?.[selectedId] || [];
+  const rosterSet = useMemo(() => new Set((rosterDraft || []).map(String)), [rosterDraft]);
+  const rosterDirty = useMemo(() => {
+    const a = [...savedRoster].map(String).sort().join(',');
+    const b = [...(rosterDraft || [])].map(String).sort().join(',');
+    return a !== b;
+  }, [savedRoster, rosterDraft]);
+
+  // 어떤 학생이 어느 기수에 속했는지 (중복 수강 표시용)
+  const cohortIdsByStudent = useMemo(() => {
+    const map = {};
+    for (const [cohortId, ids] of Object.entries(data?.rosters || {})) {
+      for (const id of ids) {
+        const key = String(id);
+        if (!map[key]) map[key] = [];
+        map[key].push(cohortId);
+      }
+    }
+    return map;
+  }, [data?.rosters]);
+
+  const visibleStudents = useMemo(() => {
+    const keyword = rosterSearch.trim().toLowerCase();
+    return students
+      .filter((student) => {
+        if (!keyword) return true;
+        return [student.name, student.school, student.grade].filter(Boolean).join(' ').toLowerCase().includes(keyword);
+      })
+      .sort((a, b) => {
+        // 명단에 든 학생 → 활성 → 이름순
+        const ain = rosterSet.has(String(a.id)) ? 0 : 1;
+        const bin = rosterSet.has(String(b.id)) ? 0 : 1;
+        if (ain !== bin) return ain - bin;
+        const aoff = a.status === 'inactive' ? 1 : 0;
+        const boff = b.status === 'inactive' ? 1 : 0;
+        if (aoff !== boff) return aoff - boff;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'ko');
+      });
+  }, [students, rosterSearch, rosterSet]);
+
+  function selectCohort(id) {
+    setSelectedId(id);
+    setRosterDraft(data?.rosters?.[id] || []);
+    const cohort = (data?.cohorts || []).find((item) => String(item.id) === String(id));
+    if (cohort) setForm({ id: cohort.id, name: cohort.name, startDate: cohort.startDate, endDate: cohort.endDate, memo: cohort.memo || '' });
+  }
+
+  function startNewCohort() {
+    setSelectedId('');
+    setRosterDraft([]);
+    setForm({ id: '', name: '', startDate: today, endDate: today, memo: '' });
+  }
+
+  async function submit(action, payload = {}, workingKey = action) {
+    try {
+      setSaving(workingKey);
+      const result = await apiFetch('/api/cohorts', {
+        method: 'POST',
+        body: JSON.stringify({ action, ...payload }),
+      });
+      setMessage?.(result.message || '저장 완료');
+      if (result.warning) setNotice(result.warning);
+      await load(result.cohort?.id || selectedId);
+      return result;
+    } catch (error) {
+      setMessage?.(error?.message || '저장 실패');
+      return null;
+    } finally {
+      setSaving('');
+    }
+  }
+
+  async function saveCohort() {
+    if (!form.name.trim()) return alert('기수 이름을 입력하세요.');
+    if (!form.startDate || !form.endDate) return alert('시작일과 종료일을 입력하세요.');
+    if (form.startDate > form.endDate) return alert('종료일이 시작일보다 빠릅니다.');
+    await submit(form.id ? 'update' : 'create', {
+      id: form.id || undefined,
+      name: form.name,
+      startDate: form.startDate,
+      endDate: form.endDate,
+      memo: form.memo,
+    }, 'cohort');
+  }
+
+  async function removeCohort(cohort) {
+    if (!confirm(`"${cohort.name}" 기수를 삭제할까요?\n\n학생 정보와 출결·순공 기록은 그대로 남고, 기수 묶음과 명단만 사라집니다.`)) return;
+    await submit('delete', { id: cohort.id }, 'delete');
+    startNewCohort();
+  }
+
+  return (
+    <section className="content-card cohort-settings-tab">
+      <div className="section-head">
+        <div>
+          <h2>기수 관리</h2>
+          <p>특정 기간을 하나의 기수로 묶고 수강 명단을 관리합니다. 순공시간·랭킹·리포트를 기수별로 나눠 볼 수 있습니다.</p>
+        </div>
+        <div className="planner-head-actions">
+          <button className="secondary section-action" onClick={() => load(selectedId)} disabled={loading}>{loading ? '불러오는 중...' : '새로고침'}</button>
+          <button className="primary section-action" onClick={startNewCohort}>새 기수 추가</button>
+        </div>
+      </div>
+
+      {notice ? <div className="cohort-notice">{notice}</div> : null}
+
+      <div className="cohort-policy-card">
+        <div>
+          <strong>두 기수를 모두 수강하는 학생 처리</strong>
+          <span>
+            {settings.separateAcrossCohorts
+              ? '분리: 새 기수의 순공시간·랭킹·리포트를 0부터 다시 집계합니다. (기수별 경쟁에 적합)'
+              : '연속: 이전 기수부터 누적해서 이어갑니다. 이번 기수부터 등록한 신규 학생은 이번 기수부터 집계합니다.'}
+          </span>
+        </div>
+        <div className="cohort-policy-actions">
+          <button
+            type="button"
+            className={settings.separateAcrossCohorts ? 'primary' : 'secondary'}
+            onClick={() => submit('set_settings', { settings: { ...settings, separateAcrossCohorts: true } }, 'policy')}
+            disabled={saving === 'policy'}
+          >
+            기수별 분리
+          </button>
+          <button
+            type="button"
+            className={!settings.separateAcrossCohorts ? 'primary' : 'secondary'}
+            onClick={() => submit('set_settings', { settings: { ...settings, separateAcrossCohorts: false } }, 'policy')}
+            disabled={saving === 'policy'}
+          >
+            이어서 누적
+          </button>
+        </div>
+      </div>
+
+      <div className="cohort-layout">
+        <div className="cohort-list-panel clean-panel">
+          <strong>기수 목록</strong>
+          {cohorts.length ? (
+            <div className="cohort-list">
+              {cohorts.map((cohort) => (
+                <button
+                  type="button"
+                  key={cohort.id}
+                  className={String(cohort.id) === String(selectedId) ? 'cohort-list-item is-active' : 'cohort-list-item'}
+                  onClick={() => selectCohort(cohort.id)}
+                >
+                  <b>{cohort.name}{cohort.isCurrent ? <i className="cohort-current-badge">진행 중</i> : null}</b>
+                  <span>{cohort.startDate} ~ {cohort.endDate}</span>
+                  <em>{cohort.studentCount}명</em>
+                </button>
+              ))}
+            </div>
+          ) : <div className="today-comment-empty">등록된 기수가 없습니다. [새 기수 추가]로 첫 기수를 만드세요.</div>}
+        </div>
+
+        <div className="cohort-detail-panel">
+          <div className="cohort-form-card clean-panel">
+            <strong>{form.id ? '기수 정보 수정' : '새 기수 추가'}</strong>
+            <div className="cohort-form-grid">
+              <div className="field full"><label>기수 이름</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="예: 비욘드 1기" /></div>
+              <div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
+              <div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></div>
+              <div className="field full"><label>메모(선택)</label><input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="내부 참고 메모" /></div>
+            </div>
+            <div className="cohort-form-actions">
+              {form.id && selected ? <button type="button" className="danger-lite" onClick={() => removeCohort(selected)} disabled={saving === 'delete'}>기수 삭제</button> : null}
+              <button type="button" className="primary" onClick={saveCohort} disabled={saving === 'cohort'}>{saving === 'cohort' ? '저장 중...' : form.id ? '기수 정보 저장' : '기수 추가'}</button>
+            </div>
+          </div>
+
+          {selected ? (
+            <div className="cohort-roster-card clean-panel">
+              <div className="cohort-roster-head">
+                <div>
+                  <strong>{selected.name} 수강 명단</strong>
+                  <span>선택 {rosterSet.size}명 · 저장된 명단 {savedRoster.length}명. 학생 정보는 그대로 두고 이 기수의 명단만 정합니다.</span>
+                </div>
+                <div className="cohort-roster-head-actions">
+                  {cohorts.filter((item) => String(item.id) !== String(selectedId)).length ? (
+                    <select
+                      value=""
+                      onChange={(e) => { if (e.target.value) submit('carry_over', { cohortId: selectedId, fromCohortId: e.target.value }, 'carry'); }}
+                      disabled={saving === 'carry'}
+                    >
+                      <option value="">이전 기수 명단 이관...</option>
+                      {cohorts.filter((item) => String(item.id) !== String(selectedId)).map((item) => (
+                        <option key={item.id} value={item.id}>{item.name} ({item.studentCount}명)</option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <button type="button" className="secondary" onClick={() => setRosterDraft(students.filter((s) => s.status !== 'inactive').map((s) => String(s.id)))}>활성 학생 전체</button>
+                  <button type="button" className="secondary" onClick={() => setRosterDraft([])}>전체 해제</button>
+                </div>
+              </div>
+
+              <input className="cohort-roster-search" value={rosterSearch} onChange={(e) => setRosterSearch(e.target.value)} placeholder="학생 이름·학교 검색" />
+
+              <div className="cohort-roster-list">
+                {visibleStudents.map((student) => {
+                  const checked = rosterSet.has(String(student.id));
+                  const otherCohorts = (cohortIdsByStudent[String(student.id)] || []).filter((id) => String(id) !== String(selectedId));
+                  return (
+                    <label key={student.id} className={checked ? 'cohort-roster-row is-checked' : 'cohort-roster-row'}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setRosterDraft((prev) => {
+                            const set = new Set((prev || []).map(String));
+                            if (e.target.checked) set.add(String(student.id)); else set.delete(String(student.id));
+                            return [...set];
+                          });
+                        }}
+                      />
+                      <b>{student.name}</b>
+                      <span>{[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}</span>
+                      {student.status === 'inactive' ? <i className="cohort-inactive-badge">비활성</i> : null}
+                      {otherCohorts.length ? <em className="cohort-other-badge">다른 기수 {otherCohorts.length}개</em> : null}
+                    </label>
+                  );
+                })}
+                {!visibleStudents.length ? <div className="today-comment-empty">검색 결과가 없습니다.</div> : null}
+              </div>
+
+              <div className="cohort-roster-actions">
+                <span>{rosterDirty ? '저장하지 않은 변경이 있습니다.' : '저장된 명단과 같습니다.'}</span>
+                <div>
+                  <button type="button" className="secondary" onClick={() => setRosterDraft(savedRoster)} disabled={!rosterDirty || saving === 'roster'}>되돌리기</button>
+                  <button type="button" className="primary" onClick={() => submit('set_roster', { cohortId: selectedId, studentIds: rosterDraft }, 'roster')} disabled={!rosterDirty || saving === 'roster'}>{saving === 'roster' ? '저장 중...' : '명단 저장'}</button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
     </section>
   );
 }
@@ -13346,8 +13645,41 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
   );
 }
 
-function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRankingEnd, loadRanking, setRankingPreset, apiFetch, setMessage }) {
+function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRankingEnd, loadRanking, setRankingPreset, apiFetch, setMessage, cohortOptions = [], loadCohortOptions, rankingCohortId = '', setRankingCohortId, rankingCohortInfo = null }) {
   const [mode, setMode] = useState('admin'); // 'admin' | 'broadcast'
+
+  // v41-148: 기수 목록을 한 번 불러와 선택지로 씁니다.
+  useEffect(() => { loadCohortOptions?.(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const cohortPicker = (cohortOptions || []).length ? (
+    <div className="ranking-cohort-row">
+      <div className="field">
+        <label>기수</label>
+        <select
+          value={rankingCohortId}
+          onChange={(e) => { setRankingCohortId?.(e.target.value); loadRanking(rankingStart, rankingEnd, e.target.value); }}
+        >
+          <option value="">기수 사용 안 함 (기간 직접 지정)</option>
+          {(cohortOptions || []).map((cohort) => (
+            <option key={cohort.id} value={cohort.id}>
+              {cohort.name} ({cohort.startDate} ~ {cohort.endDate}) · {cohort.studentCount}명
+            </option>
+          ))}
+        </select>
+      </div>
+      {rankingCohortInfo ? (
+        <div className="ranking-cohort-note">
+          <strong>{rankingCohortInfo.name}</strong>
+          <span>
+            {rankingCohortInfo.startDate} ~ {rankingCohortInfo.endDate} · 이 기수 명단만 집계
+            {rankingCohortInfo.policy && rankingCohortInfo.policy.separateAcrossCohorts === false
+              ? ' · 연속 수강생은 이전 기수부터 누적'
+              : ' · 기수별 분리 집계'}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <section className="content-card ranking-tab-shell">
@@ -13361,6 +13693,8 @@ function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRan
           <button type="button" className={mode === 'broadcast' ? 'active' : ''} onClick={() => setMode('broadcast')}>게시용 (TV)</button>
         </div>
       </div>
+
+      {cohortPicker}
 
       {mode === 'admin' ? (
         <>
@@ -14670,12 +15004,14 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
   const [rewardWorking, setRewardWorking] = useState('');
   const loadedKeyRef = useRef('');
 
-  const loadOverview = useCallback(async (targetId) => {
+  const loadOverview = useCallback(async (targetId, cohortId = '') => {
     if (!targetId || !apiFetch) return;
     try {
       setLoading(true);
       setError('');
-      const data = await apiFetch(`/api/student-overview?studentId=${encodeURIComponent(targetId)}`);
+      const params = new URLSearchParams({ studentId: String(targetId) });
+      if (cohortId) params.set('cohortId', cohortId);
+      const data = await apiFetch(`/api/student-overview?${params.toString()}`);
       setOverview(data);
       onOverviewChange?.(data);
     } catch (err) {
@@ -14758,6 +15094,28 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
 
       {!collapsed && overview ? (
         <>
+          {/* v41-148: 어느 기수 기준으로 집계된 수치인지 명시합니다. */}
+          {overview.cohort ? (
+            <div className="student-overview-cohort-line">
+              <span className="student-overview-cohort-badge">{overview.cohort.name}</span>
+              <em>
+                {overview.cohort.rangeStart} ~ {overview.cohort.rangeEnd} 기준 집계
+                {overview.cohort.continued ? ' · 이전 기수부터 이어서 누적' : ''}
+              </em>
+              {(overview.cohortOptions || []).length > 1 ? (
+                <select
+                  value={overview.cohort.id}
+                  onChange={(event) => loadOverview(studentId, event.target.value)}
+                >
+                  {(overview.cohortOptions || []).map((item) => (
+                    <option key={item.id} value={item.id}>{item.label}</option>
+                  ))}
+                  <option value="all">전체 기간</option>
+                </select>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="student-overview-kpi-grid">
             <div><span>누적 순공시간</span><strong>{totals.totalStudyLabel || '-'}</strong><em>{totals.firstSessionDate ? `${totals.firstSessionDate} 이후` : '기록 없음'}</em></div>
             <div><span>등원일수</span><strong>{totals.attendDays || 0}일</strong><em>결석 {totals.absentDays || 0}일</em></div>
@@ -16898,12 +17256,17 @@ function SettingsTab({
         <button className={settingsView === 'attendanceNotifications' ? 'active' : ''} onClick={() => setSettingsView('attendanceNotifications')}>출결 알림 로그</button>
         <button className={settingsView === 'rules' ? 'active' : ''} onClick={() => setSettingsView('rules')}>운영 기준 설정</button>
         <button className={settingsView === 'defaultSchedule' ? 'active' : ''} onClick={() => setSettingsView('defaultSchedule')}>기본 시간표 설정</button>
+        <button className={settingsView === 'cohorts' ? 'active' : ''} onClick={() => setSettingsView('cohorts')}>기수 관리</button>
         <button className={settingsView === 'mentoring' ? 'active' : ''} onClick={() => setSettingsView('mentoring')}>멘토링 기본 설정</button>
         <button className={settingsView === 'kioskBridge' ? 'active' : ''} onClick={() => setSettingsView('kioskBridge')}>키오스크 브릿지</button>
       </div>
 
       {settingsView === 'students' ? (
         <StudentsTab students={students} seatsForDisplay={seatsForDisplay} openStudentEditor={openStudentEditor} />
+      ) : null}
+
+      {settingsView === 'cohorts' ? (
+        <CohortSettingsTab apiFetch={apiFetch} setMessage={setMessage} />
       ) : null}
 
       {settingsView === 'users' && canUseUserManagement ? (

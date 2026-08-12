@@ -21137,3 +21137,91 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
     flex: 1 1 140px;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   v41-148: 기수(코호트) 관리
+   ───────────────────────────────────────────────────────────── */
+.cohort-settings-tab { display: grid; gap: 14px; }
+.cohort-notice {
+  border-radius: 14px; background: #fff8e8; border: 1px solid #f0e0bb;
+  color: #a8834b; padding: 11px 13px; font-size: 12.5px; font-weight: 850; line-height: 1.5;
+}
+.cohort-policy-card {
+  display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap;
+  border: 1px solid #d9d0f0; border-radius: 18px;
+  background: linear-gradient(180deg, #fbfaff, #f6f3fe); padding: 14px 16px;
+}
+.cohort-policy-card strong { display: block; font-size: 14.5px; color: #2c2450; }
+.cohort-policy-card span { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 850; color: #6d63a0; line-height: 1.45; }
+.cohort-policy-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.cohort-policy-actions button {
+  width: auto; min-height: 38px; padding: 0 16px; border-radius: 12px;
+  font-size: 13px; font-weight: 950; font-family: inherit; cursor: pointer;
+}
+.cohort-policy-actions .primary { border: 0; background: #5b3fd1; color: #fff; }
+.cohort-policy-actions .secondary { border: 1px solid #d9d0f0; background: #fff; color: #6d63a0; }
+.cohort-layout { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.cohort-list-panel { display: grid; gap: 10px; padding: 14px; }
+.cohort-list-panel > strong { font-size: 13px; color: #7a756b; }
+.cohort-list { display: grid; gap: 8px; }
+.cohort-list-item {
+  display: grid; gap: 3px; text-align: left; width: 100%;
+  border: 1px solid #e2ded6; border-radius: 14px; background: #fff;
+  padding: 11px 13px; cursor: pointer; font-family: inherit;
+}
+.cohort-list-item.is-active { border-color: #211f1b; box-shadow: 0 0 0 2px rgba(33,31,27,.08); }
+.cohort-list-item b { display: flex; align-items: center; gap: 7px; font-size: 14px; color: #211f1b; }
+.cohort-list-item span { font-size: 11.5px; font-weight: 850; color: #8a8479; }
+.cohort-list-item em { font-style: normal; font-size: 11.5px; font-weight: 950; color: #2f6fe0; }
+.cohort-current-badge {
+  font-style: normal; font-size: 10.5px; font-weight: 950; color: #1f7a44;
+  background: #e4f3ea; border-radius: 999px; padding: 2px 8px;
+}
+.cohort-detail-panel { display: grid; gap: 14px; min-width: 0; }
+.cohort-form-card, .cohort-roster-card { display: grid; gap: 12px; padding: 16px; }
+.cohort-form-card > strong, .cohort-roster-head strong { font-size: 14.5px; color: #211f1b; }
+.cohort-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cohort-form-grid .full { grid-column: 1 / -1; }
+.cohort-form-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.cohort-form-actions button { width: auto; min-height: 40px; min-width: 110px; padding: 0 18px; border-radius: 12px; font-size: 13.5px; font-weight: 950; }
+.cohort-roster-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.cohort-roster-head span { display: block; margin-top: 3px; font-size: 12px; font-weight: 850; color: #8a8479; line-height: 1.45; }
+.cohort-roster-head-actions { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+.cohort-roster-head-actions select { min-height: 34px; border-radius: 10px; border: 1px solid #d8d2c6; padding: 0 10px; font-size: 12.5px; font-family: inherit; background: #fff; }
+.cohort-roster-head-actions button { width: auto; min-height: 34px; padding: 0 12px; border-radius: 10px; font-size: 12.5px; font-weight: 900; }
+.cohort-roster-search { width: 100%; min-height: 38px; border: 1px solid #d8d2c6; border-radius: 12px; padding: 0 12px; font-size: 13px; font-family: inherit; }
+.cohort-roster-list { display: grid; gap: 6px; max-height: 420px; overflow-y: auto; padding-right: 3px; }
+.cohort-roster-row {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  border: 1px solid #e2ded6; border-radius: 12px; background: #fff;
+  padding: 9px 12px; cursor: pointer;
+}
+.cohort-roster-row.is-checked { border-color: #2f6fe0; background: #f5f9ff; }
+.cohort-roster-row input { margin: 0; }
+.cohort-roster-row b { font-size: 13.5px; color: #211f1b; }
+.cohort-roster-row span { font-size: 11.5px; font-weight: 850; color: #8a8479; }
+.cohort-inactive-badge, .cohort-other-badge {
+  font-style: normal; font-size: 10.5px; font-weight: 950; border-radius: 999px; padding: 2px 8px;
+}
+.cohort-inactive-badge { background: #f4f2ed; color: #8a8479; }
+.cohort-other-badge { background: #eef4ff; color: #1d4ed8; }
+.cohort-roster-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cohort-roster-actions > span { font-size: 12px; font-weight: 850; color: #8a8479; }
+.cohort-roster-actions > div { display: flex; gap: 8px; }
+.cohort-roster-actions button { width: auto; min-height: 38px; min-width: 100px; padding: 0 16px; border-radius: 12px; font-size: 13px; font-weight: 950; }
+.ranking-cohort-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.ranking-cohort-row .field { flex: 1 1 320px; margin-bottom: 0; }
+.ranking-cohort-note { flex: 1 1 260px; border-radius: 12px; background: #f4f2ed; padding: 9px 12px; }
+.ranking-cohort-note strong { display: block; font-size: 13px; color: #211f1b; }
+.ranking-cohort-note span { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 850; color: #7a756b; line-height: 1.4; }
+.student-overview-cohort-line { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.student-overview-cohort-badge {
+  display: inline-block; background: #1d4ed8; color: #fff; border-radius: 999px;
+  padding: 4px 12px; font-size: 11.5px; font-weight: 950;
+}
+.student-overview-cohort-line em { font-style: normal; font-size: 11.5px; font-weight: 850; color: #7a756b; }
+.student-overview-cohort-line select { min-height: 32px; border-radius: 10px; border: 1px solid #d8d2c6; padding: 0 10px; font-size: 12px; font-family: inherit; background: #fff; }
+@media (max-width: 1080px) {
+  .cohort-layout { grid-template-columns: minmax(0, 1fr); }
+  .cohort-form-grid { grid-template-columns: minmax(0, 1fr); }
+}
