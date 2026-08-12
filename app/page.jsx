@@ -9563,6 +9563,9 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
   const [notice, setNotice] = useState('');
+  // v41-151: 학부모 최종 확인 링크
+  const [confirmRows, setConfirmRows] = useState([]);
+  const [confirmBusy, setConfirmBusy] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -9666,6 +9669,74 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
       setApplying(false);
     }
   }
+
+  // v41-151: 해석된 시간표로 학부모 확인 링크를 만듭니다.
+  async function createConfirmLinks() {
+    if (!ready.length) return alert('대상 학생이 없습니다.');
+    if (!range.start || !range.end) return alert('적용 기간을 선택하세요.');
+    const ok = confirm(`학생 ${ready.length}명에게 보낼 학부모 확인 링크를 만듭니다.\n\n링크를 열면 주간 시간표가 표로 보이고, 학부모가 그대로 확인하거나 수정해 제출할 수 있습니다.\n\n계속할까요?`);
+    if (!ok) return;
+    try {
+      setConfirmBusy('create');
+      const data = await apiFetch('/api/schedule-confirm', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'create_links',
+          startDate: range.start,
+          endDate: range.end,
+          entries: ready.map((item) => ({
+            studentId: item.student.id,
+            studentName: item.student.name,
+            days: item.days,
+          })),
+        }),
+      });
+      setMessage?.(data.message || '확인 링크 생성 완료');
+      await loadConfirmRows();
+    } catch (error) {
+      setMessage?.(error?.message || '확인 링크 생성 실패');
+    } finally {
+      setConfirmBusy('');
+    }
+  }
+
+  async function loadConfirmRows() {
+    try {
+      const params = new URLSearchParams();
+      if (range.start) params.set('start', range.start);
+      if (range.end) params.set('end', range.end);
+      const data = await apiFetch(`/api/schedule-confirm?${params.toString()}`);
+      setConfirmRows(data.rows || []);
+    } catch {
+      setConfirmRows([]);
+    }
+  }
+
+  async function applyConfirmRow(row) {
+    const label = row.status === 'change_requested' ? '학부모가 수정한 내용' : '확인된 시간표';
+    if (!confirm(`${row.students?.name || '학생'} — ${label}을 실제 개인 시간표에 반영할까요?`)) return;
+    try {
+      setConfirmBusy(row.id);
+      const data = await apiFetch('/api/schedule-confirm', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'apply', id: row.id }),
+      });
+      setMessage?.(data.message || '반영 완료');
+      await loadConfirmRows();
+    } catch (error) {
+      setMessage?.(error?.message || '반영 실패');
+    } finally {
+      setConfirmBusy('');
+    }
+  }
+
+  function copyConfirmLink(row) {
+    if (!row.url) return alert('링크 주소를 만들지 못했습니다.');
+    navigator.clipboard?.writeText(row.url);
+    setMessage?.(`${row.students?.name || '학생'} 확인 링크를 복사했습니다.`);
+  }
+
+  const confirmStatusLabel = { pending: '대기', confirmed: '확인 완료', change_requested: '수정 요청' };
 
   return (
     <section className="content-card schedule-import-tab">
@@ -9775,6 +9846,46 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
             </div>
           </div>
         </>
+      ) : null}
+
+      {mapping ? (
+        <div className="schedule-import-step clean-panel">
+          <strong>5. 학부모 최종 확인 (선택)</strong>
+          <span>해석된 시간표로 학생별 확인 링크를 만들어 학부모에게 보냅니다. 학부모가 표를 보고 그대로 확인하거나 직접 고쳐 제출하면, 아래 목록에서 확인한 뒤 반영할 수 있습니다.</span>
+          <div className="schedule-import-apply-row">
+            <span>대상 {ready.length}명 · 기간 {range.start} ~ {range.end}</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="secondary" onClick={loadConfirmRows} disabled={Boolean(confirmBusy)}>목록 새로고침</button>
+              <button type="button" className="primary" onClick={createConfirmLinks} disabled={confirmBusy === 'create' || !ready.length}>
+                {confirmBusy === 'create' ? '생성 중...' : '학부모 확인 링크 만들기'}
+              </button>
+            </div>
+          </div>
+
+          {confirmRows.length ? (
+            <div className="confirm-row-list">
+              {confirmRows.map((row) => (
+                <div key={row.id} className={`confirm-row status-${row.status}`}>
+                  <div className="confirm-row-main">
+                    <b>{row.students?.name || '학생'}</b>
+                    <i className={`confirm-status ${row.status}`}>{confirmStatusLabel[row.status] || row.status}</i>
+                    {row.applied_at ? <i className="confirm-status applied">반영됨</i> : null}
+                    {row.confirmed_by ? <em>{row.confirmed_by} · {String(row.confirmed_at || '').slice(0, 10)}</em> : null}
+                  </div>
+                  {row.parent_note ? <p className="confirm-row-note">“{row.parent_note}”</p> : null}
+                  <div className="confirm-row-actions">
+                    <button type="button" className="secondary" onClick={() => copyConfirmLink(row)}>링크 복사</button>
+                    {row.status !== 'pending' && !row.applied_at ? (
+                      <button type="button" className="primary" onClick={() => applyConfirmRow(row)} disabled={confirmBusy === row.id}>
+                        {confirmBusy === row.id ? '반영 중...' : '시간표에 반영'}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <div className="today-comment-empty">아직 만든 확인 링크가 없습니다.</div>}
+        </div>
       ) : null}
 
       {result ? (

@@ -21282,3 +21282,19 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-import-base-row > span { font-size: 12px; font-weight: 950; color: #7a756b; }
 .schedule-import-base-row label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 900; color: #4f473c; }
 .schedule-import-base-row input { min-height: 32px; border: 1px solid #d8d2c6; border-radius: 8px; padding: 0 7px; font-size: 12px; font-family: inherit; }
+
+/* v41-151: 학부모 시간표 확인 관리 목록 */
+.confirm-row-list { display: grid; gap: 8px; max-height: 400px; overflow-y: auto; }
+.confirm-row { border: 1px solid #e2ded6; border-radius: 14px; background: #fff; padding: 11px 13px; display: grid; gap: 6px; }
+.confirm-row.status-change_requested { border-color: #f0dcb4; background: #fffbf2; }
+.confirm-row.status-confirmed { border-color: #cfe8d8; background: #f7fdf9; }
+.confirm-row-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.confirm-row-main b { font-size: 13.5px; color: #211f1b; }
+.confirm-row-main em { font-style: normal; font-size: 11.5px; font-weight: 850; color: #8a8479; }
+.confirm-status { font-style: normal; font-size: 10.5px; font-weight: 950; border-radius: 999px; padding: 2px 9px; background: #f4f2ed; color: #8a8479; }
+.confirm-status.confirmed { background: #e4f3ea; color: #1f7a44; }
+.confirm-status.change_requested { background: #fff4dd; color: #8a5a08; }
+.confirm-status.applied { background: #eef4ff; color: #1d4ed8; }
+.confirm-row-note { margin: 0; font-size: 12.5px; color: #4f473c; line-height: 1.45; }
+.confirm-row-actions { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+.confirm-row-actions button { width: auto; min-height: 34px; padding: 0 13px; border-radius: 10px; font-size: 12.5px; font-weight: 900; }
