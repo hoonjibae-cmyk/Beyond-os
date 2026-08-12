@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
+import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
@@ -9545,6 +9546,249 @@ function CohortSettingsTab({ apiFetch, setMessage }) {
   );
 }
 
+// v41-149: 설문 응답 엑셀 → 학생 개인 시간표 일괄 등록
+// 설문 양식이 기수마다 달라도 쓸 수 있도록, 헤더를 읽어 사용자가 컬럼을 직접 연결합니다.
+function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
+  const today = getKstDateString();
+  const fileRef = useRef(null);
+  const [fileName, setFileName] = useState('');
+  const [headers, setHeaders] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [mapping, setMapping] = useState(null);
+  const [range, setRange] = useState({ start: today, end: today });
+  const [conflictMode, setConflictMode] = useState('skip');
+  const [cohorts, setCohorts] = useState([]);
+  const [applying, setApplying] = useState(false);
+  const [result, setResult] = useState(null);
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiFetch('/api/cohorts');
+        setCohorts(data.cohorts || []);
+      } catch { setCohorts([]); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleFile() {
+    const file = fileRef.current?.files?.[0];
+    if (!file) return;
+    try {
+      setNotice('');
+      setResult(null);
+      setFileName(file.name);
+      const XLSX = await import('xlsx');
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const headerRow = (matrix[0] || []).map((item) => String(item ?? '').trim());
+      const bodyRows = matrix.slice(1).filter((row) => (row || []).some((cell) => String(cell ?? '').trim()));
+      if (!headerRow.length || !bodyRows.length) {
+        setNotice('시트에서 응답을 찾지 못했습니다. 첫 줄이 항목 이름(헤더)인지 확인하세요.');
+        setHeaders([]); setRows([]); setMapping(null);
+        return;
+      }
+      setHeaders(headerRow);
+      setRows(bodyRows);
+      setMapping(guessColumnMapping(headerRow));
+      setNotice(`응답 ${bodyRows.length}건을 읽었습니다. 아래에서 항목 연결을 확인하세요.`);
+    } catch (error) {
+      setNotice(error?.message || '엑셀 파일을 읽지 못했습니다.');
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
+  const patterns = useMemo(() => {
+    if (!mapping || !rows.length) return [];
+    return matchPatternsToStudents(buildWeeklyPatterns(rows, mapping), students);
+  }, [mapping, rows, students]);
+
+  const ready = patterns.filter((item) => item.matchStatus === 'matched' && item.filledDays > 0);
+  const problems = patterns.filter((item) => item.matchStatus !== 'matched' || item.filledDays === 0);
+
+  function setDayColumn(dayKey, field, value) {
+    setMapping((prev) => {
+      const next = { ...prev, days: { ...prev.days } };
+      const day = { ...(next.days[dayKey] || {}) };
+      day[field] = value === '' ? null : Number(value);
+      day.enabled = day.checkIn !== null && day.checkIn !== undefined
+        ? true
+        : (day.checkOut !== null && day.checkOut !== undefined);
+      next.days[dayKey] = day;
+      return next;
+    });
+  }
+
+  async function apply() {
+    if (!ready.length) return alert('등록할 학생이 없습니다. 항목 연결과 학생 이름을 확인하세요.');
+    if (!range.start || !range.end) return alert('적용 기간을 선택하세요.');
+    if (range.start > range.end) return alert('종료일이 시작일보다 빠릅니다.');
+    const ok = confirm(
+      `학생 ${ready.length}명의 개인 시간표를 ${range.start} ~ ${range.end} 기간에 등록합니다.\n\n`
+      + (conflictMode === 'overwrite'
+        ? '이미 저장된 시간표가 있으면 덮어씁니다.'
+        : '이미 저장된 시간표가 있는 날짜는 건너뜁니다.')
+      + '\n\n계속할까요?'
+    );
+    if (!ok) return;
+
+    try {
+      setApplying(true);
+      const data = await apiFetch('/api/schedule-import', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'apply',
+          startDate: range.start,
+          endDate: range.end,
+          conflictMode,
+          entries: ready.map((item) => ({
+            studentId: item.student.id,
+            studentName: item.student.name,
+            days: item.days,
+          })),
+        }),
+      });
+      setResult(data);
+      setMessage?.(data.message || '시간표 일괄 등록 완료');
+    } catch (error) {
+      setMessage?.(error?.message || '시간표 일괄 등록 실패');
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  return (
+    <section className="content-card schedule-import-tab">
+      <div className="section-head">
+        <div>
+          <h2>설문 시간표 일괄 등록</h2>
+          <p>구글폼 등으로 받은 등하원 설문 응답을 엑셀로 올리면, 요일별 패턴을 읽어 기간 내 개인 시간표를 한 번에 만듭니다.</p>
+        </div>
+      </div>
+
+      <div className="schedule-import-step clean-panel">
+        <strong>1. 설문 응답 엑셀 업로드</strong>
+        <span>첫 줄이 항목 이름(헤더)인 .xlsx 파일을 올리세요. 구글폼 응답 시트를 엑셀로 내려받으면 그대로 맞습니다.</span>
+        <div className="schedule-import-file-row">
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} />
+          {fileName ? <em>{fileName} · 응답 {rows.length}건</em> : null}
+        </div>
+        {notice ? <div className="schedule-import-notice">{notice}</div> : null}
+      </div>
+
+      {mapping ? (
+        <>
+          <div className="schedule-import-step clean-panel">
+            <strong>2. 항목 연결</strong>
+            <span>업로드한 파일의 어떤 항목이 학생 이름·요일별 등하원인지 연결합니다. 자동으로 추측한 값을 확인하고 필요하면 바꾸세요.</span>
+            <div className="field">
+              <label>학생 이름 항목</label>
+              <select value={mapping.nameColumn ?? ''} onChange={(e) => setMapping((prev) => ({ ...prev, nameColumn: e.target.value === '' ? null : Number(e.target.value) }))}>
+                <option value="">선택하세요</option>
+                {headers.map((header, index) => <option key={index} value={index}>{header || `(${index + 1}번째 열)`}</option>)}
+              </select>
+            </div>
+            <div className="schedule-import-day-grid">
+              {DAY_KEYS.map((dayKey) => {
+                const day = mapping.days?.[dayKey] || {};
+                return (
+                  <div key={dayKey} className={day.enabled ? 'schedule-import-day is-on' : 'schedule-import-day'}>
+                    <b>{DAY_LABELS[dayKey]}요일</b>
+                    <label>등원
+                      <select value={day.checkIn ?? ''} onChange={(e) => setDayColumn(dayKey, 'checkIn', e.target.value)}>
+                        <option value="">사용 안 함</option>
+                        {headers.map((header, index) => <option key={index} value={index}>{header || `(${index + 1}번째 열)`}</option>)}
+                      </select>
+                    </label>
+                    <label>하원
+                      <select value={day.checkOut ?? ''} onChange={(e) => setDayColumn(dayKey, 'checkOut', e.target.value)}>
+                        <option value="">사용 안 함</option>
+                        {headers.map((header, index) => <option key={index} value={index}>{header || `(${index + 1}번째 열)`}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="schedule-import-step clean-panel">
+            <strong>3. 확인</strong>
+            <span>등록 가능 {ready.length}명 · 확인 필요 {problems.length}명. 학생 이름이 등록 정보와 정확히 같아야 자동 매칭됩니다.</span>
+            <div className="schedule-import-preview">
+              {patterns.map((item) => (
+                <div key={`${item.rowIndex}-${item.name}`} className={`schedule-import-row ${item.matchStatus}`}>
+                  <div className="schedule-import-row-name">
+                    <b>{item.name}</b>
+                    {item.matchStatus === 'matched' ? <i className="ok">매칭됨</i> : null}
+                    {item.matchStatus === 'not_found' ? <i className="bad">학생 없음</i> : null}
+                    {item.matchStatus === 'ambiguous' ? <i className="warn">동명이인 {item.candidates.length}명</i> : null}
+                  </div>
+                  <span className="schedule-import-row-summary">{formatWeeklySummary(item)}</span>
+                  {item.issues.length ? <em className="schedule-import-row-issue">{item.issues.join(' / ')}</em> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="schedule-import-step clean-panel">
+            <strong>4. 적용 기간과 방식</strong>
+            <span>기수를 고르면 그 기수의 기간이 자동으로 채워집니다. 요일 패턴을 이 기간의 해당 요일마다 펼쳐 넣습니다.</span>
+            <div className="schedule-import-range-grid">
+              {cohorts.length ? (
+                <div className="field">
+                  <label>기수 선택</label>
+                  <select value="" onChange={(e) => {
+                    const cohort = cohorts.find((item) => String(item.id) === e.target.value);
+                    if (cohort) setRange({ start: cohort.startDate, end: cohort.endDate });
+                  }}>
+                    <option value="">기수에서 기간 가져오기...</option>
+                    {cohorts.map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.name} ({cohort.startDate}~{cohort.endDate})</option>)}
+                  </select>
+                </div>
+              ) : null}
+              <div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={range.start} onChange={(e) => setRange({ ...range, start: e.target.value })} /></div>
+              <div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} /></div>
+              <div className="field">
+                <label>기존 시간표가 있으면</label>
+                <select value={conflictMode} onChange={(e) => setConflictMode(e.target.value)}>
+                  <option value="skip">건너뛰기 (기존 값 보존)</option>
+                  <option value="overwrite">덮어쓰기</option>
+                </select>
+              </div>
+            </div>
+            <div className="schedule-import-apply-row">
+              <span>등록 가능한 {ready.length}명에게만 적용됩니다.</span>
+              <button type="button" className="primary" onClick={apply} disabled={applying || !ready.length}>
+                {applying ? '등록 중...' : '개인 시간표 일괄 등록'}
+              </button>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {result ? (
+        <div className="schedule-import-result clean-panel">
+          <strong>등록 결과</strong>
+          <span>{result.message}</span>
+          <div className="schedule-import-result-list">
+            {(result.perStudent || []).map((item) => (
+              <div key={item.studentId}>
+                <b>{item.studentName || '학생'}</b>
+                <span>등록 {item.created}일{item.skipped ? ` · 건너뜀 ${item.skipped}일` : ''}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function StudentsTab({ students, seatsForDisplay, openStudentEditor }) {
   const [statusFilter, setStatusFilter] = useState('active');
   const [searchText, setSearchText] = useState('');
@@ -17257,6 +17501,7 @@ function SettingsTab({
         <button className={settingsView === 'rules' ? 'active' : ''} onClick={() => setSettingsView('rules')}>운영 기준 설정</button>
         <button className={settingsView === 'defaultSchedule' ? 'active' : ''} onClick={() => setSettingsView('defaultSchedule')}>기본 시간표 설정</button>
         <button className={settingsView === 'cohorts' ? 'active' : ''} onClick={() => setSettingsView('cohorts')}>기수 관리</button>
+        <button className={settingsView === 'scheduleImport' ? 'active' : ''} onClick={() => setSettingsView('scheduleImport')}>설문 시간표 일괄 등록</button>
         <button className={settingsView === 'mentoring' ? 'active' : ''} onClick={() => setSettingsView('mentoring')}>멘토링 기본 설정</button>
         <button className={settingsView === 'kioskBridge' ? 'active' : ''} onClick={() => setSettingsView('kioskBridge')}>키오스크 브릿지</button>
       </div>
@@ -17267,6 +17512,10 @@ function SettingsTab({
 
       {settingsView === 'cohorts' ? (
         <CohortSettingsTab apiFetch={apiFetch} setMessage={setMessage} />
+      ) : null}
+
+      {settingsView === 'scheduleImport' ? (
+        <ScheduleImportTab students={students} apiFetch={apiFetch} setMessage={setMessage} />
       ) : null}
 
       {settingsView === 'users' && canUseUserManagement ? (

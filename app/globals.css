@@ -21225,3 +21225,51 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .cohort-layout { grid-template-columns: minmax(0, 1fr); }
   .cohort-form-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* v41-149: 설문 시간표 일괄 등록 */
+.schedule-import-tab { display: grid; gap: 14px; }
+.schedule-import-step { display: grid; gap: 10px; padding: 16px; }
+.schedule-import-step > strong { font-size: 14.5px; color: #211f1b; }
+.schedule-import-step > span { font-size: 12.5px; font-weight: 850; color: #8a8479; line-height: 1.5; }
+.schedule-import-file-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.schedule-import-file-row em { font-style: normal; font-size: 12px; font-weight: 900; color: #2f6fe0; }
+.schedule-import-notice {
+  border-radius: 12px; background: #eef4ff; color: #1d4ed8;
+  padding: 9px 12px; font-size: 12.5px; font-weight: 850; line-height: 1.45;
+}
+.schedule-import-day-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.schedule-import-day {
+  display: grid; gap: 6px; border: 1px solid #e2ded6; border-radius: 14px;
+  background: #fffdfa; padding: 11px 12px;
+}
+.schedule-import-day.is-on { border-color: #2f6fe0; background: #f5f9ff; }
+.schedule-import-day b { font-size: 13px; color: #211f1b; }
+.schedule-import-day label { display: grid; gap: 3px; font-size: 11.5px; font-weight: 900; color: #7a756b; }
+.schedule-import-day select { min-height: 34px; border: 1px solid #d8d2c6; border-radius: 10px; padding: 0 8px; font-size: 12px; font-family: inherit; background: #fff; }
+.schedule-import-preview { display: grid; gap: 7px; max-height: 380px; overflow-y: auto; }
+.schedule-import-row {
+  display: grid; gap: 3px; border: 1px solid #e2ded6; border-radius: 12px;
+  background: #fff; padding: 10px 12px;
+}
+.schedule-import-row.not_found, .schedule-import-row.ambiguous { border-color: #f0dcb4; background: #fffbf2; }
+.schedule-import-row-name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.schedule-import-row-name b { font-size: 13.5px; color: #211f1b; }
+.schedule-import-row-name i {
+  font-style: normal; font-size: 10.5px; font-weight: 950; border-radius: 999px; padding: 2px 8px;
+}
+.schedule-import-row-name i.ok { background: #e4f3ea; color: #1f7a44; }
+.schedule-import-row-name i.warn { background: #fff4dd; color: #8a5a08; }
+.schedule-import-row-name i.bad { background: #fdeeee; color: #b4232b; }
+.schedule-import-row-summary { font-size: 12.5px; font-weight: 850; color: #4f473c; line-height: 1.45; }
+.schedule-import-row-issue { font-style: normal; font-size: 11.5px; font-weight: 850; color: #b4740d; line-height: 1.4; }
+.schedule-import-range-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.schedule-import-apply-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.schedule-import-apply-row span { font-size: 12px; font-weight: 850; color: #8a8479; }
+.schedule-import-apply-row button { width: auto; min-height: 42px; min-width: 180px; padding: 0 20px; border-radius: 12px; font-size: 14px; font-weight: 950; }
+.schedule-import-result { display: grid; gap: 8px; padding: 16px; }
+.schedule-import-result > strong { font-size: 14px; color: #211f1b; }
+.schedule-import-result > span { font-size: 12.5px; font-weight: 900; color: #1f7a44; }
+.schedule-import-result-list { display: grid; gap: 5px; max-height: 260px; overflow-y: auto; }
+.schedule-import-result-list > div { display: flex; gap: 9px; align-items: baseline; border-radius: 10px; background: #f8f5ef; padding: 7px 11px; }
+.schedule-import-result-list b { font-size: 12.5px; color: #211f1b; }
+.schedule-import-result-list span { font-size: 11.5px; font-weight: 850; color: #7a756b; }
