@@ -1942,6 +1942,14 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
       nowMinutes: now,
       defaultSchedule,
     });
+
+    // v41-153: 개별 일정으로 결석이 등록된 날은 시간표 기반 알림
+    // (등원 확인·조기 하원·외출 예정·복귀 확인)을 띄우지 않습니다.
+    // 다만 결석인데 좌석에 앉아 있으면 확인이 필요하므로 출결상태 알림만 남깁니다.
+    if (schedule.planned_absent) {
+      if (presenceMismatch) alerts.push(presenceMismatch);
+      continue;
+    }
     // v41-118: 같은 학생에게 '복귀 확인 필요'(return_check)가 함께 뜨는 경우,
     // 더 구체적인 복귀 알림만 남기고 일반 '출결상태 확인 필요'는 중복이므로 억제합니다.
     // (외출/퇴실 상태일 때만 — 미입실 상태의 mismatch는 복귀 알림과 성격이 달라 유지)
@@ -5130,6 +5138,17 @@ export default function Page() {
       return [{ label: '오늘은 개인 시간표가 없습니다. (등원 예정 없음 · 학생 시간표 탭에서 추가)', kind: 'info' }];
     }
 
+    // v41-153: 개별 일정으로 결석이 등록된 날은 평소 등하원 시간표 대신 결석을 보여줍니다.
+    // (결석이어도 planned_check_in/out 값은 그대로 남아 있어, 확인하지 않으면
+    //  평소 시간표가 그대로 그려집니다.)
+    if (schedule.planned_absent) {
+      const absentReason = String(schedule.absent_reason || '').trim();
+      return [
+        { label: `🚫 오늘은 결석 예정입니다${absentReason ? ` · ${absentReason}` : ''}`, kind: 'absent' },
+        { label: '개인 시간표에 결석으로 등록된 날입니다. (학생 시간표 탭에서 변경)', kind: 'info' },
+      ];
+    }
+
     const scheduleDefaults = normalizeDefaultScheduleSettings(defaultSchedule);
     const start = schedule?.planned_check_in?.slice(0, 5) || scheduleDefaults.plannedCheckIn;
     const end = schedule?.planned_check_out?.slice(0, 5) || scheduleDefaults.plannedCheckOut;
@@ -7273,6 +7292,8 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
 
     for (const schedule of todaySchedules || []) {
       if (schedule?.schedule_date !== today || !schedule?.student_id) continue;
+      // v41-153: 결석으로 등록된 날은 조퇴·외출 예정 배지를 띄우지 않습니다.
+      if (schedule.planned_absent) continue;
       const session = sessionByStudentId[schedule.student_id];
       if (session?.seat_status === 'absent' || session?.seat_status === 'out') continue;
 

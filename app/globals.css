@@ -1474,6 +1474,12 @@ textarea { min-height: 78px; resize: vertical; }
   color: #ffe6aa;
   border: 1px solid #d99b1d;
 }
+/* v41-153: 개별 일정으로 등록된 결석 */
+.today-schedule-line.absent {
+  background: #4a1d1c;
+  color: #ffd9d6;
+  border: 1px solid #c8382f;
+}
 
 @media (max-width: 980px) {
   .student-editor-grid {
@@ -19055,6 +19061,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .today-schedule-line.match{ background:#ececef !important; color:#1c1c1e !important; border:1px solid #e3e3e6 !important; }
 .today-schedule-line.deviation{ background:#5b9bf3 !important; color:#ffffff !important; border:1px solid #5b9bf3 !important; }
 .today-schedule-line.info{ background:#f2f2f4 !important; color:#6b6b70 !important; border:1px solid #e3e3e6 !important; }
+.today-schedule-line.absent{ background:#fdecea !important; color:#a3231b !important; border:1px solid #f3c4bf !important; }
 /* 하위호환: 이전 클래스명(study/break/adjusted) → 새 2색으로 매핑 */
 .today-schedule-line.study{ background:#ececef !important; color:#1c1c1e !important; border:1px solid #e3e3e6 !important; }
 .today-schedule-line.break, .today-schedule-line.adjusted{ background:#5b9bf3 !important; color:#ffffff !important; border:1px solid #5b9bf3 !important; }

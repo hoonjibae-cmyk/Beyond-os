@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-152-special-schedule",
-  "version": "0.41.152",
+  "name": "beyond-os-v41-153-today-schedule-absent",
+  "version": "0.41.153",
   "private": true,
   "scripts": {
     "dev": "next dev",
