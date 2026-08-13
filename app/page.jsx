@@ -9581,23 +9581,61 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
   const [conflictMode, setConflictMode] = useState('skip');
   // 설문의 "기본 일정 준수"가 가리키는 시간. 요일 칸 해석의 기준이 됩니다.
   const [baseTimes, setBaseTimes] = useState({ weekdayIn: '09:00', weekdayOut: '22:00', satIn: '09:00', satOut: '18:00' });
-  const [cohorts, setCohorts] = useState([]);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
   const [notice, setNotice] = useState('');
   // v41-151: 학부모 최종 확인 링크
   const [confirmRows, setConfirmRows] = useState([]);
   const [confirmBusy, setConfirmBusy] = useState('');
+  // v41-154: 어느 기수의 설문인지 먼저 고르고, 그 기수 일정·명단에 맞춰 등록합니다.
+  const [cohorts, setCohorts] = useState([]);
+  const [rosters, setRosters] = useState({});
+  const [cohortId, setCohortId] = useState('');
+  const [cohortState, setCohortState] = useState({ loading: true, available: true, warning: '' });
+  // 기수를 고르면 기간은 기수 일정으로 고정합니다. 필요할 때만 직접 수정합니다.
+  const [rangeUnlocked, setRangeUnlocked] = useState(false);
+  const [rosterBusy, setRosterBusy] = useState(false);
+
+  const loadCohorts = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/cohorts');
+      setCohorts(data.cohorts || []);
+      setRosters(data.rosters || {});
+      setCohortState({ loading: false, available: data.available !== false, warning: data.warning || '' });
+      return data;
+    } catch (error) {
+      setCohorts([]);
+      setRosters({});
+      setCohortState({ loading: false, available: false, warning: error?.message || '기수 정보를 읽지 못했습니다.' });
+      return null;
+    }
+  }, [apiFetch]);
 
   useEffect(() => {
     (async () => {
-      try {
-        const data = await apiFetch('/api/cohorts');
-        setCohorts(data.cohorts || []);
-      } catch { setCohorts([]); }
+      const data = await loadCohorts();
+      // 오늘이 속한 기수(없으면 다음 기수)를 미리 골라 둡니다.
+      const preferred = data?.defaultCohortId
+        || (data?.cohorts || []).find((item) => item.isCurrent)?.id
+        || '';
+      if (preferred) selectCohort(preferred, data?.cohorts || []);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const selectedCohort = useMemo(
+    () => cohorts.find((item) => String(item.id) === String(cohortId)) || null,
+    [cohorts, cohortId],
+  );
+
+  function selectCohort(nextId, cohortList) {
+    const list = cohortList || cohorts;
+    setCohortId(nextId);
+    setRangeUnlocked(false);
+    setResult(null);
+    const cohort = list.find((item) => String(item.id) === String(nextId));
+    if (cohort?.startDate && cohort?.endDate) setRange({ start: cohort.startDate, end: cohort.endDate });
+  }
 
   async function handleFile() {
     const file = fileRef.current?.files?.[0];
@@ -9640,14 +9678,56 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
   }), [baseTimes]);
 
   // 특별 일정은 "7/21" 처럼 연도가 없으므로 적용 기간을 기준으로 연도를 정합니다.
+  // 기수를 골랐으면 그 기수 명단에 있는지도 함께 표시합니다.
   const patterns = useMemo(() => {
     if (!mapping || !rows.length) return [];
     const built = buildWeeklyPatterns(rows, mapping, baseByDay, { periodStart: range.start, periodEnd: range.end });
-    return matchPatternsToStudents(built, students);
-  }, [mapping, rows, students, baseByDay, range.start, range.end]);
+    const matched = matchPatternsToStudents(built, students);
+    if (!cohortId) return matched.map((item) => ({ ...item, inCohort: true }));
+    const roster = new Set((rosters[cohortId] || []).map(String));
+    return matched.map((item) => ({
+      ...item,
+      inCohort: item.student ? roster.has(String(item.student.id)) : false,
+    }));
+  }, [mapping, rows, students, baseByDay, range.start, range.end, cohortId, rosters]);
 
-  const ready = patterns.filter((item) => item.matchStatus === 'matched' && item.filledDays > 0);
+  const ready = patterns.filter((item) => item.matchStatus === 'matched' && item.filledDays > 0 && item.inCohort);
+  // 학생 DB에는 있지만 이 기수 명단에 없는 학생 — 명단에 넣을지 결정해야 합니다.
+  const notInCohort = patterns.filter((item) => item.matchStatus === 'matched' && !item.inCohort);
   const problems = patterns.filter((item) => item.matchStatus !== 'matched' || item.filledDays === 0);
+  const rosterCount = (rosters[cohortId] || []).length;
+  // 명단에는 있는데 이번 엑셀에 응답이 없는 학생 (설문 미제출)
+  const missingFromSurvey = useMemo(() => {
+    if (!cohortId || !patterns.length) return [];
+    const answered = new Set(ready.map((item) => String(item.student.id)));
+    const roster = new Set((rosters[cohortId] || []).map(String));
+    return students.filter((student) => roster.has(String(student.id)) && !answered.has(String(student.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cohortId, rosters, students, patterns]);
+
+  // 기수 명단에 없는 응답자를 이번 기수 명단에 추가합니다.
+  async function addToRoster() {
+    if (!cohortId || !notInCohort.length) return;
+    const names = notInCohort.map((item) => item.student.name).join(', ');
+    if (!confirm(`${selectedCohort?.name || '이번 기수'} 명단에 아래 ${notInCohort.length}명을 추가할까요?\n\n${names}`)) return;
+    try {
+      setRosterBusy(true);
+      const merged = [...new Set([
+        ...(rosters[cohortId] || []).map(String),
+        ...notInCohort.map((item) => String(item.student.id)),
+      ])];
+      const data = await apiFetch('/api/cohorts', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'set_roster', cohortId, studentIds: merged }),
+      });
+      setMessage?.(data.message || '명단을 저장했습니다.');
+      await loadCohorts();
+    } catch (error) {
+      setMessage?.(error?.message || '명단 저장 실패');
+    } finally {
+      setRosterBusy(false);
+    }
+  }
 
   function setDayColumn(dayKey, value) {
     setMapping((prev) => ({
@@ -9665,9 +9745,12 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
       return { absent: sum.absent + overrides.absent.length, away: sum.away + overrides.away.length };
     }, { absent: 0, away: 0 });
     const ok = confirm(
-      `학생 ${ready.length}명의 개인 시간표를 ${range.start} ~ ${range.end} 기간에 등록합니다.\n\n`
+      `${selectedCohort ? `[${selectedCohort.name}] ` : ''}학생 ${ready.length}명의 개인 시간표를 ${range.start} ~ ${range.end} 기간에 등록합니다.\n\n`
       + (specialSummary.absent || specialSummary.away
         ? `특별 일정: 결석 ${specialSummary.absent}일 · 외출 ${specialSummary.away}건이 함께 반영됩니다.\n`
+        : '')
+      + (notInCohort.length
+        ? `기수 명단에 없는 ${notInCohort.length}명(${notInCohort.map((item) => item.name).join(', ')})은 등록되지 않습니다.\n`
         : '')
       + (conflictMode === 'overwrite'
         ? '이미 저장된 시간표가 있으면 덮어씁니다.'
@@ -9682,6 +9765,7 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
         method: 'POST',
         body: JSON.stringify({
           action: 'apply',
+          cohortId: cohortId || null,
           startDate: range.start,
           endDate: range.end,
           conflictMode,
@@ -9714,6 +9798,7 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
         method: 'POST',
         body: JSON.stringify({
           action: 'create_links',
+          cohortId: cohortId || null,
           startDate: range.start,
           endDate: range.end,
           entries: ready.map((item) => ({
@@ -9778,24 +9863,84 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
       <div className="section-head">
         <div>
           <h2>설문 시간표 일괄 등록</h2>
-          <p>구글폼 등으로 받은 등하원 설문 응답을 엑셀로 올리면, 요일별 패턴을 읽어 기간 내 개인 시간표를 한 번에 만듭니다.</p>
+          <p>어느 기수의 설문인지 먼저 고르고 엑셀을 올리면, 요일별 패턴을 읽어 그 기수 기간의 개인 시간표를 한 번에 만듭니다.</p>
         </div>
       </div>
 
       <div className="schedule-import-step clean-panel">
-        <strong>1. 설문 응답 엑셀 업로드</strong>
+        <strong>1. 기수 선택</strong>
+        <span>여기서 고른 기수의 기간과 명단을 기준으로 등록합니다. 기수 기간 밖 날짜는 등록되지 않습니다.</span>
+
+        {cohortState.loading ? <div className="schedule-import-notice">기수 정보를 불러오는 중...</div> : null}
+
+        {!cohortState.loading && !cohortState.available ? (
+          <div className="schedule-import-notice warn">
+            기수 정보를 읽지 못했습니다. Supabase에서 <b>beyond-os-supabase-cohorts-v41-148.sql</b>을 먼저 실행하세요.
+            그전까지는 기수 없이 아래에서 기간을 직접 정해 등록할 수 있습니다.
+            {cohortState.warning ? <><br />{cohortState.warning}</> : null}
+          </div>
+        ) : null}
+
+        {!cohortState.loading && cohortState.available && !cohorts.length ? (
+          <div className="schedule-import-notice warn">
+            등록된 기수가 없습니다. 설정 · <b>기수 관리</b>에서 기수(예: 비욘드2기 8/18~9/13)를 먼저 만들어 주세요.
+          </div>
+        ) : null}
+
+        {cohorts.length ? (
+          <>
+            <div className="cohort-pick-grid">
+              {cohorts.map((cohort) => (
+                <button
+                  key={cohort.id}
+                  type="button"
+                  className={`cohort-pick ${String(cohort.id) === String(cohortId) ? 'is-on' : ''}`}
+                  onClick={() => selectCohort(cohort.id)}
+                >
+                  <b>
+                    {cohort.name}
+                    {cohort.isCurrent ? <i className="cohort-pick-now">진행 중</i> : null}
+                  </b>
+                  <span>{cohort.startDate} ~ {cohort.endDate}</span>
+                  <em>명단 {cohort.studentCount}명</em>
+                </button>
+              ))}
+            </div>
+            {selectedCohort ? (
+              <div className="schedule-import-notice">
+                <b>{selectedCohort.name}</b> · {selectedCohort.startDate} ~ {selectedCohort.endDate} · 명단 {rosterCount}명
+                {' '}— 이 기간의 요일에만 시간표를 만듭니다.
+              </div>
+            ) : (
+              <div className="schedule-import-notice warn">기수를 선택하면 엑셀을 올릴 수 있습니다.</div>
+            )}
+          </>
+        ) : null}
+      </div>
+
+      <div className="schedule-import-step clean-panel">
+        <strong>2. 설문 응답 엑셀 업로드</strong>
         <span>첫 줄이 항목 이름(헤더)인 .xlsx 파일을 올리세요. 구글폼 응답 시트를 엑셀로 내려받으면 그대로 맞습니다.</span>
         <div className="schedule-import-file-row">
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} />
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleFile}
+            disabled={cohorts.length > 0 && !cohortId}
+          />
           {fileName ? <em>{fileName} · 응답 {rows.length}건</em> : null}
         </div>
+        {cohorts.length > 0 && !cohortId
+          ? <div className="schedule-import-notice warn">위에서 기수를 먼저 선택하세요.</div>
+          : null}
         {notice ? <div className="schedule-import-notice">{notice}</div> : null}
       </div>
 
       {mapping ? (
         <>
           <div className="schedule-import-step clean-panel">
-            <strong>2. 항목 연결</strong>
+            <strong>3. 항목 연결</strong>
             <span>업로드한 파일의 어떤 항목이 학생 이름·요일별 등하원인지 연결합니다. 자동으로 추측한 값을 확인하고 필요하면 바꾸세요.</span>
             <div className="field">
               <label>학생 이름 항목</label>
@@ -9833,19 +9978,45 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
           </div>
 
           <div className="schedule-import-step clean-panel">
-            <strong>3. 확인</strong>
+            <strong>4. 확인</strong>
             <span>
-              등록 가능 {ready.length}명 · 이름 매칭 실패 {problems.length}명 · 해석 확인 필요 {ready.filter((item) => item.reviewDays > 0).length}명 ·
+              등록 가능 {ready.length}명 · 이름 매칭 실패 {problems.length}명
+              {selectedCohort ? ` · ${selectedCohort.name} 명단 밖 ${notInCohort.length}명` : ''} ·
+              해석 확인 필요 {ready.filter((item) => item.reviewDays > 0).length}명 ·
               특별 일정 {ready.filter((item) => (item.special?.items || []).length).length}명(확인 필요 {ready.filter((item) => item.special?.needsReview).length}명).
               ⚠ 표시된 학생은 등록 후 학생 시간표 화면에서 해당 요일·날짜를 확인해 주세요.
-              특별 일정 날짜는 위 “적용 기간”을 기준으로 연도를 정합니다.
             </span>
+
+            {notInCohort.length ? (
+              <div className="schedule-import-notice warn">
+                <b>{selectedCohort?.name || '이번 기수'} 명단에 없는 응답 {notInCohort.length}명</b>
+                {' — '}{notInCohort.map((item) => item.name).join(', ')}
+                <br />
+                이대로 등록하면 이 학생들은 빠집니다. 이번 기수를 신청한 학생이라면 명단에 추가하세요.
+                <div style={{ marginTop: 8 }}>
+                  <button type="button" className="secondary" onClick={addToRoster} disabled={rosterBusy}>
+                    {rosterBusy ? '추가 중...' : `${selectedCohort?.name || '기수'} 명단에 ${notInCohort.length}명 추가`}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {missingFromSurvey.length ? (
+              <div className="schedule-import-notice">
+                명단에는 있는데 이번 엑셀에 응답이 없는 학생 {missingFromSurvey.length}명 —
+                {' '}{missingFromSurvey.slice(0, 12).map((student) => student.name).join(', ')}
+                {missingFromSurvey.length > 12 ? ` 외 ${missingFromSurvey.length - 12}명` : ''}.
+                {' '}이 학생들은 시간표가 만들어지지 않습니다.
+              </div>
+            ) : null}
+
             <div className="schedule-import-preview">
               {patterns.map((item) => (
-                <div key={`${item.rowIndex}-${item.name}`} className={`schedule-import-row ${item.matchStatus}`}>
+                <div key={`${item.rowIndex}-${item.name}`} className={`schedule-import-row ${item.matchStatus === 'matched' && !item.inCohort ? 'ambiguous' : item.matchStatus}`}>
                   <div className="schedule-import-row-name">
                     <b>{item.name}</b>
-                    {item.matchStatus === 'matched' ? <i className="ok">매칭됨</i> : null}
+                    {item.matchStatus === 'matched' && item.inCohort ? <i className="ok">매칭됨</i> : null}
+                    {item.matchStatus === 'matched' && !item.inCohort ? <i className="warn">기수 명단에 없음</i> : null}
                     {item.matchStatus === 'not_found' ? <i className="bad">학생 없음</i> : null}
                     {item.matchStatus === 'ambiguous' ? <i className="warn">동명이인 {item.candidates.length}명</i> : null}
                     {item.reviewDays > 0 ? <i className="warn">⚠ 확인 필요 {item.reviewDays}일</i> : null}
@@ -9868,23 +10039,30 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
           </div>
 
           <div className="schedule-import-step clean-panel">
-            <strong>4. 적용 기간과 방식</strong>
-            <span>기수를 고르면 그 기수의 기간이 자동으로 채워집니다. 요일 패턴을 이 기간의 해당 요일마다 펼쳐 넣습니다.</span>
-            <div className="schedule-import-range-grid">
-              {cohorts.length ? (
-                <div className="field">
-                  <label>기수 선택</label>
-                  <select value="" onChange={(e) => {
-                    const cohort = cohorts.find((item) => String(item.id) === e.target.value);
-                    if (cohort) setRange({ start: cohort.startDate, end: cohort.endDate });
-                  }}>
-                    <option value="">기수에서 기간 가져오기...</option>
-                    {cohorts.map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.name} ({cohort.startDate}~{cohort.endDate})</option>)}
-                  </select>
+            <strong>5. 적용 기간과 방식</strong>
+            <span>
+              {selectedCohort
+                ? `${selectedCohort.name} 기간(${selectedCohort.startDate} ~ ${selectedCohort.endDate})에 맞춰 등록합니다. 요일 패턴을 이 기간의 해당 요일마다 펼쳐 넣습니다.`
+                : '요일 패턴을 아래 기간의 해당 요일마다 펼쳐 넣습니다.'}
+            </span>
+
+            {selectedCohort && !rangeUnlocked ? (
+              <div className="schedule-import-range-locked">
+                <div>
+                  <b>{selectedCohort.name}</b>
+                  <span>{range.start} ~ {range.end}</span>
                 </div>
+                <button type="button" className="secondary" onClick={() => setRangeUnlocked(true)}>기간 직접 수정</button>
+              </div>
+            ) : null}
+
+            <div className="schedule-import-range-grid">
+              {!selectedCohort || rangeUnlocked ? (
+                <>
+                  <div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={range.start} onChange={(e) => setRange({ ...range, start: e.target.value })} /></div>
+                  <div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} /></div>
+                </>
               ) : null}
-              <div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={range.start} onChange={(e) => setRange({ ...range, start: e.target.value })} /></div>
-              <div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} /></div>
               <div className="field">
                 <label>기존 시간표가 있으면</label>
                 <select value={conflictMode} onChange={(e) => setConflictMode(e.target.value)}>
@@ -9893,8 +10071,18 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
                 </select>
               </div>
             </div>
+
+            {selectedCohort && rangeUnlocked
+              && (range.start < selectedCohort.startDate || range.end > selectedCohort.endDate) ? (
+                <div className="schedule-import-notice warn">
+                  기수 기간({selectedCohort.startDate} ~ {selectedCohort.endDate}) 밖 날짜는 등록되지 않습니다.
+                </div>
+              ) : null}
+
             <div className="schedule-import-apply-row">
-              <span>등록 가능한 {ready.length}명에게만 적용됩니다.</span>
+              <span>
+                {selectedCohort ? `${selectedCohort.name} 명단의 ` : ''}등록 가능한 {ready.length}명에게만 적용됩니다.
+              </span>
               <button type="button" className="primary" onClick={apply} disabled={applying || !ready.length}>
                 {applying ? '등록 중...' : '개인 시간표 일괄 등록'}
               </button>
@@ -9905,10 +10093,10 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
 
       {mapping ? (
         <div className="schedule-import-step clean-panel">
-          <strong>5. 학부모 최종 확인 (선택)</strong>
+          <strong>6. 학부모 최종 확인 (선택)</strong>
           <span>해석된 주간 시간표와 특별 일정으로 학생별 확인 링크를 만들어 학부모에게 보냅니다. 학부모가 표를 보고 그대로 확인하거나 직접 고쳐 제출하면, 아래 목록에서 확인한 뒤 반영할 수 있습니다. 날짜를 읽지 못한 항목(⚠)은 학부모가 링크에서 날짜를 채워 넣을 수 있습니다.</span>
           <div className="schedule-import-apply-row">
-            <span>대상 {ready.length}명 · 기간 {range.start} ~ {range.end}</span>
+            <span>{selectedCohort ? `${selectedCohort.name} · ` : ''}대상 {ready.length}명 · 기간 {range.start} ~ {range.end}</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" className="secondary" onClick={loadConfirmRows} disabled={Boolean(confirmBusy)}>목록 새로고침</button>
               <button type="button" className="primary" onClick={createConfirmLinks} disabled={confirmBusy === 'create' || !ready.length}>

@@ -14,6 +14,7 @@ import {
   normalizeSpecialOverrides,
   DAY_KEYS,
 } from '../../../lib/scheduleImport';
+import { normalizeCohort, formatCohortLabel } from '../../../lib/cohorts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -57,8 +58,32 @@ export async function POST(request) {
       return Response.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
 
-    const startDate = isValidDate(body.startDate) ? body.startDate : today;
-    const endDate = isValidDate(body.endDate) ? body.endDate : startDate;
+    // v41-154: 기수를 지정하면 그 기수의 기간·명단을 기준으로 등록합니다.
+    // 화면에서 기간을 잘못 건드려도 기수 기간 밖으로는 나가지 않도록 서버에서 자릅니다.
+    const cohortId = String(body.cohortId || '').trim();
+    let cohort = null;
+    if (cohortId) {
+      const { data: cohortRow, error: cohortError } = await supabase
+        .from('cohorts')
+        .select('*')
+        .eq('id', cohortId)
+        .maybeSingle();
+      if (cohortError || !cohortRow) {
+        return Response.json({ error: '선택한 기수를 찾지 못했습니다. 설정 · 기수 관리에서 기수를 확인하세요.' }, { status: 400 });
+      }
+      cohort = normalizeCohort(cohortRow);
+    }
+
+    let startDate = isValidDate(body.startDate) ? body.startDate : (cohort?.startDate || today);
+    let endDate = isValidDate(body.endDate) ? body.endDate : (cohort?.endDate || startDate);
+    let clampedToCohort = false;
+    if (cohort?.startDate && cohort?.endDate) {
+      const clampedStart = startDate < cohort.startDate ? cohort.startDate : startDate;
+      const clampedEnd = endDate > cohort.endDate ? cohort.endDate : endDate;
+      if (clampedStart !== startDate || clampedEnd !== endDate) clampedToCohort = true;
+      startDate = clampedStart;
+      endDate = clampedEnd;
+    }
     if (endDate < startDate) {
       return Response.json({ error: '종료일은 시작일보다 빠를 수 없습니다.' }, { status: 400 });
     }
@@ -69,9 +94,37 @@ export async function POST(request) {
     // 이미 저장된 개인 시간표를 어떻게 할지: 'skip'(보존) | 'overwrite'(덮어쓰기)
     const conflictMode = body.conflictMode === 'overwrite' ? 'overwrite' : 'skip';
 
-    const entries = Array.isArray(body.entries) ? body.entries : [];
-    if (!entries.length) {
+    const allEntries = Array.isArray(body.entries) ? body.entries : [];
+    if (!allEntries.length) {
       return Response.json({ error: '등록할 학생이 없습니다.' }, { status: 400 });
+    }
+
+    // 기수를 지정했다면 그 기수 명단에 있는 학생만 등록합니다.
+    // 명단 밖 학생은 조용히 빼지 않고 응답에 이름을 담아 돌려줍니다.
+    let entries = allEntries;
+    const notInRoster = [];
+    if (cohort) {
+      const { data: rosterRows, error: rosterError } = await supabase
+        .from('cohort_students')
+        .select('student_id')
+        .eq('cohort_id', cohort.id)
+        .eq('is_active', true);
+      if (rosterError) {
+        return Response.json({ error: `기수 명단을 읽지 못했습니다: ${rosterError.message}` }, { status: 500 });
+      }
+      const roster = new Set((rosterRows || []).map((row) => String(row.student_id)));
+      entries = [];
+      for (const entry of allEntries) {
+        if (roster.has(String(entry.studentId || ''))) entries.push(entry);
+        else notInRoster.push(entry.studentName || String(entry.studentId || ''));
+      }
+      if (!entries.length) {
+        return Response.json({
+          error: `${formatCohortLabel(cohort)} 명단에 있는 학생이 없습니다.`
+            + ` 설정 · 기수 관리에서 명단을 먼저 만들어 주세요.`
+            + (notInRoster.length ? ` (명단 밖: ${notInRoster.slice(0, 10).join(', ')}${notInRoster.length > 10 ? ' 외' : ''})` : ''),
+        }, { status: 400 });
+      }
     }
 
     // 기존 시간표를 한 번에 읽어 (학생,날짜) 중복 여부를 판단합니다.
@@ -145,7 +198,9 @@ export async function POST(request) {
           schedule_date: item.date,
           planned_check_in: item.checkIn || '09:00',
           planned_check_out: item.checkOut || '22:00',
-          schedule_note: String(body.scheduleNote || '설문 응답 기준 자동 등록').slice(0, 200),
+          schedule_note: String(
+            body.scheduleNote || (cohort ? `${cohort.name} 설문 응답 기준 자동 등록` : '설문 응답 기준 자동 등록'),
+          ).slice(0, 200),
           created_by: actorName,
         };
         if (absenceSupported) {
@@ -255,14 +310,17 @@ export async function POST(request) {
       actionType: 'schedule.survey_import',
       targetType: 'schedule',
       targetId: null,
-      targetName: `${startDate}~${endDate}`,
+      targetName: cohort ? `${cohort.name} ${startDate}~${endDate}` : `${startDate}~${endDate}`,
       payload: {
+        cohortId: cohort?.id || null,
+        cohortName: cohort?.name || '',
         startDate,
         endDate,
         students: perStudent.length,
         created,
         absentCount,
         conflictMode,
+        notInRoster: notInRoster.length,
       },
     }).catch(() => {});
 
@@ -275,8 +333,15 @@ export async function POST(request) {
       absentCount,
       students: perStudent.length,
       perStudent,
-      message: `학생 ${perStudent.length}명 · 시간표 ${created}건${breakCount ? ` · 외출 ${breakCount}건` : ''}${absentCount ? ` · 결석 ${absentCount}일` : ''}을 등록했습니다.`
+      cohort: cohort ? { id: cohort.id, name: cohort.name, startDate: cohort.startDate, endDate: cohort.endDate } : null,
+      startDate,
+      endDate,
+      notInRoster,
+      message: `${cohort ? `${cohort.name} · ` : ''}${startDate}~${endDate} 기간에 `
+        + `학생 ${perStudent.length}명 · 시간표 ${created}건${breakCount ? ` · 외출 ${breakCount}건` : ''}${absentCount ? ` · 결석 ${absentCount}일` : ''}을 등록했습니다.`
         + `${skipped ? ` (기존 시간표가 있어 ${skipped}건 건너뜀)` : ''}`
+        + `${clampedToCohort ? ` ※ 기간이 기수 일정(${cohort.startDate}~${cohort.endDate})에 맞춰 조정되었습니다.` : ''}`
+        + `${notInRoster.length ? ` ※ 기수 명단에 없어 제외: ${notInRoster.slice(0, 5).join(', ')}${notInRoster.length > 5 ? ` 외 ${notInRoster.length - 5}명` : ''}` : ''}`
         + `${specialSkipped ? ` ※ 결석 ${specialSkipped}건은 beyond-os-supabase-planned-absence-v41-73.sql 미실행으로 반영되지 않았습니다.` : ''}`,
     });
   } catch (error) {

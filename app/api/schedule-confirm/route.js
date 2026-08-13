@@ -14,6 +14,7 @@ import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
 import { DAY_KEYS, DAY_LABELS, expandPatternToDates, applySpecialToDates } from '../../../lib/scheduleImport';
 import { buildSpecialOverrides } from '../../../lib/specialScheduleParse';
+import { normalizeCohort } from '../../../lib/cohorts';
 
 export const dynamic = 'force-dynamic';
 
@@ -157,8 +158,20 @@ export async function POST(request) {
 
     // ── 확인 링크 생성 ────────────────────────────────────────
     if (action === 'create_links') {
-      const startDate = isValidDate(body.startDate) ? body.startDate : today;
-      const endDate = isValidDate(body.endDate) ? body.endDate : startDate;
+      // v41-154: 기수를 지정하면 확인 링크에 담기는 기간도 기수 일정으로 맞춥니다.
+      const cohortId = String(body.cohortId || '').trim();
+      let cohort = null;
+      if (cohortId) {
+        const { data: cohortRow } = await supabase.from('cohorts').select('*').eq('id', cohortId).maybeSingle();
+        if (cohortRow) cohort = normalizeCohort(cohortRow);
+      }
+
+      let startDate = isValidDate(body.startDate) ? body.startDate : (cohort?.startDate || today);
+      let endDate = isValidDate(body.endDate) ? body.endDate : (cohort?.endDate || startDate);
+      if (cohort?.startDate && cohort?.endDate) {
+        if (startDate < cohort.startDate) startDate = cohort.startDate;
+        if (endDate > cohort.endDate) endDate = cohort.endDate;
+      }
       if (endDate < startDate) return Response.json({ error: '종료일은 시작일보다 빠를 수 없습니다.' }, { status: 400 });
 
       const entries = Array.isArray(body.entries) ? body.entries : [];
@@ -189,7 +202,7 @@ export async function POST(request) {
         if (existing?.id) {
           const { data, error } = await supabase
             .from('schedule_confirmations')
-            .update({ snapshot, cohort_id: body.cohortId || null, updated_at: new Date().toISOString() })
+            .update({ snapshot, cohort_id: cohort?.id || null, updated_at: new Date().toISOString() })
             .eq('id', existing.id)
             .select()
             .single();
@@ -201,7 +214,7 @@ export async function POST(request) {
             .insert({
               token: createToken(),
               student_id: studentId,
-              cohort_id: body.cohortId || null,
+              cohort_id: cohort?.id || null,
               start_date: startDate,
               end_date: endDate,
               status: 'pending',
