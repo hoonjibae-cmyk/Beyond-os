@@ -167,8 +167,21 @@ function getBreakHoldWindow(receivedAt, studyWindows = [], bufferMinutes = 1) {
   return null;
 }
 
+// 쉬는 시간(차시 사이)에 들어온 키오스크 신호 중 운영자 확인이 필요한 종류입니다.
+//
+//   away(외출) · check_out(퇴실)
+//     쉬는 시간에 잠깐 나갔다 오는 이동인지, 진짜 나가는 것인지 신호만으로는
+//     구분되지 않아 HOLD로 보내 운영자가 판단합니다.
+//   check_in(입실)
+//     그 날 첫 등원은 아래 isFirstCheckIn으로 빼고, 퇴실 후 재입실만 확인 대상입니다.
+//
+// v41-155: return(재입장)은 HOLD하지 않고 바로 반영합니다.
+//   복귀는 "들어온다"는 뜻이 분명해 운영자가 판단할 여지가 없고,
+//   보류하면 복귀 시각이 늦게 찍혀 그 사이 순공시간이 빠진 채로 집계됩니다.
+//   복귀 신호 자체의 타당성(입실 기록 유무·현재 외출 상태 여부)은
+//   아래 자동반영 검증에서 이미 걸러집니다.
 function shouldHoldBreakSignal(eventType) {
-  return ['away', 'return', 'check_out', 'check_in'].includes(String(eventType || ''));
+  return ['away', 'check_out', 'check_in'].includes(String(eventType || ''));
 }
 
 async function findRecentDuplicateBreakHold({ supabase, studentId, eventType, receivedAt, windowSeconds = 30, breakWindow }) {
@@ -1131,6 +1144,7 @@ export async function POST(request) {
 
 
     // 그 날 아직 출결 기록이 없는 학생의 첫 등원(입실)은 쉬는 시간이라도 HOLD로 보내지 않고 바로 반영합니다.
+    // (복귀는 shouldHoldBreakSignal에서 이미 HOLD 대상에서 빠집니다.)
     const isFirstCheckIn = parsed.eventType === 'check_in' && !currentSession?.check_in_at;
     const breakHoldWindow = (shouldHoldBreakSignal(parsed.eventType) && !isFirstCheckIn)
       ? getBreakHoldWindow(receivedAt, defaultSchedule.studyWindows, bridgeSettings.breakHoldBufferMinutes)

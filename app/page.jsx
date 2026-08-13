@@ -7571,7 +7571,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
           <div className="kiosk-hold-head">
             <div>
               <h3>쉬는 시간 키오스크 HOLD <b>{kioskHolds.length}</b></h3>
-              {kioskHoldOpen ? <p>같은 학생의 외출·복귀 신호는 한 줄로 묶고, 쉬는 시간 구간별로 정리합니다. 미완결 신호는 먼저 표시됩니다.</p> : null}
+              {kioskHoldOpen ? <p>쉬는 시간의 외출·퇴실·재입실 신호만 모읍니다. 외출 후 복귀(재입장)는 HOLD 없이 바로 출결에 반영됩니다. 같은 학생의 신호는 한 줄로 묶고, 쉬는 시간 구간별로 정리합니다. 미완결 신호는 먼저 표시됩니다.</p> : null}
             </div>
             <div className="kiosk-hold-head-actions">
               {kioskHoldOpen ? (
@@ -20065,12 +20065,12 @@ function KioskBridgeSettingsTab({ apiFetch, setMessage }) {
           <div className="field">
             <label>쉬는 시간 HOLD buffer(분)</label>
             <input type="number" min="0" max="30" value={draftSettings.breakHoldBufferMinutes ?? 1} onChange={(e) => setBridgeSettingsDraft({ ...(draftSettings || {}), breakHoldBufferMinutes: Number(e.target.value || 0) })} />
-            <div className="hint">기본값 1분. 차시 종료부터 다음 차시 시작 후 설정한 시간까지 키오스크 외출·복귀·퇴실·재입실 신호를 HOLD합니다. 마지막 차시 종료 후에는 HOLD하지 않고 즉시 출결 반영합니다.</div>
+            <div className="hint">기본값 1분. 차시 종료부터 다음 차시 시작 후 설정한 시간까지 키오스크 외출·퇴실·재입실 신호를 HOLD합니다. 외출 후 <b>복귀(재입장)</b>와 그 날 첫 등원, 마지막 차시 종료 후 신호는 HOLD하지 않고 즉시 출결 반영합니다.</div>
           </div>
           <div className="field">
             <label>HOLD 중복 신호 판단 시간(초)</label>
             <input type="number" min="5" max="120" value={draftSettings.breakHoldDuplicateWindowSeconds ?? 30} onChange={(e) => setBridgeSettingsDraft({ ...(draftSettings || {}), breakHoldDuplicateWindowSeconds: Number(e.target.value || 30) })} />
-            <div className="hint">기본값 30초. 같은 학생의 같은 외출·복귀·퇴실·입실 신호가 설정 시간 안에 반복되면 첫 신호만 HOLD하고 나머지는 중복으로 무시합니다.</div>
+            <div className="hint">기본값 30초. 같은 학생의 같은 외출·퇴실·입실 신호가 설정 시간 안에 반복되면 첫 신호만 HOLD하고 나머지는 중복으로 무시합니다.</div>
           </div>
           <div className="field">
             <label>자정 이후 실제 퇴실 보정 허용(분)</label>

@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-154-cohort-schedule-import",
-  "version": "0.41.154",
+  "name": "beyond-os-v41-155-kiosk-return-instant",
+  "version": "0.41.155",
   "private": true,
   "scripts": {
     "dev": "next dev",
