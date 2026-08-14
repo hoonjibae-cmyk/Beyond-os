@@ -21806,3 +21806,8 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .report-card-actions.send-focused-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .report-card-actions .send-button { grid-column: 1 / -1; }
 }
+
+/* v41-170.1: 링크 점검 줄에 발송 버튼까지 들어와, 설명 글이 버튼을 밀어내지 않도록
+   글은 줄어들 수 있게 하고 버튼 묶음은 줄어들지 않게 고정합니다. */
+.closeout-link-row > div:first-child { min-width: 0; flex: 1 1 auto; }
+.closeout-link-row > div:last-child { flex: 0 0 auto; }

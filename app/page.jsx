@@ -12458,25 +12458,17 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
         <div className="closeout-link-row">
           <div>
             <strong>발송 링크 점검</strong>
-            <span>
-              링크 정상 {shareLinkSummary.ready}명 · 생성/재생성 필요 {shareLinkSummary.needsLink + shareLinkSummary.needsReport}명.
-              {' '}전체 발송 전 학부모 공개 리포트 링크를 미리 생성·재생성할 수 있습니다.
-            </span>
+            <span>링크 정상 {shareLinkSummary.ready}명 · 생성/재생성 필요 {shareLinkSummary.needsLink + shareLinkSummary.needsReport}명</span>
           </div>
           <div>
             <button className="secondary" onClick={() => loadDailyShareLinkStatuses(targetReports)} disabled={shareLinkWorking}>링크 상태 새로고침</button>
             <button className="secondary" onClick={() => bulkEnsureDailyShareLinks(recommendedTargets, '발송 가능 학생 링크 생성')} disabled={shareLinkWorking || !recommendedTargets.length}>발송 가능 링크 생성</button>
-            <button className="primary" onClick={() => bulkEnsureDailyShareLinks(decisionTargets, '전체 발송 대상 링크 생성')} disabled={shareLinkWorking || !decisionTargets.length}>{shareLinkWorking ? '링크 처리 중...' : '전체 발송 대상 링크 생성'}</button>
+            <button className="secondary" onClick={() => bulkEnsureDailyShareLinks(decisionTargets, '전체 발송 대상 링크 생성')} disabled={shareLinkWorking || !decisionTargets.length}>{shareLinkWorking ? '링크 처리 중...' : '전체 발송 대상 링크 생성'}</button>
+            {/* v41-170.1: 학생 보기 버튼 3개(아래 [처리 기준] 드롭다운과 중복)와
+                [발송 가능 전체 발송]을 없애고, 남은 두 발송 버튼을 이 줄로 옮겼습니다. */}
+            <button className="secondary" onClick={() => openSendConfirm('실패 건 재발송', failedRetryTargets, 'retry_failed')} disabled={!failedRetryTargets.length}>실패 건만 재발송</button>
+            <button className="primary" onClick={() => openSendConfirm('확인 필요 포함 전체 발송', decisionTargets, 'decision')}>확인 필요 포함 전체 발송</button>
           </div>
-        </div>
-
-        <div className="closeout-action-row">
-          <button className="secondary" onClick={() => setQuickFilter('recommended')}>발송 가능 학생만 보기</button>
-          <button className="secondary" onClick={() => setQuickFilter('decision')}>확인 필요 학생 보기</button>
-          <button className="secondary" onClick={() => setQuickFilter('blocked')}>발송 불가 학생 보기</button>
-          <button className="secondary" onClick={() => openSendConfirm('실패 건 재발송', failedRetryTargets, 'retry_failed')} disabled={!failedRetryTargets.length}>실패 건만 재발송</button>
-          <button className="secondary" onClick={() => openSendConfirm('발송 가능 대상 전체 발송', recommendedTargets, 'recommended')}>발송 가능 전체 발송</button>
-          <button className="primary" onClick={() => openSendConfirm('확인 필요 포함 전체 발송', decisionTargets, 'decision')}>확인 필요 포함 전체 발송</button>
         </div>
 
         {/* v41-158: 예약해 둔 데일리 리포트 발송 */}
