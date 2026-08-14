@@ -2210,8 +2210,7 @@ export default function Page() {
   const defaultRange = getThisWeekRange();
   const [rankingStart, setRankingStart] = useState(defaultRange.start);
   const [rankingEnd, setRankingEnd] = useState(defaultRange.end);
-  // v41-148: 랭킹을 기수 단위로 나눠 보기 위한 상태
-  const [rankingCohortId, setRankingCohortId] = useState('');
+  // v41-148 / v41-171: 랭킹 집계 기수는 헤더의 [기수 보기]를 따릅니다.
   const [rankingCohortInfo, setRankingCohortInfo] = useState(null);
   const [cohortOptions, setCohortOptions] = useState([]);
   // v41-168: 기수별 수강 명단(기수 id → 학생 id 배열)과 기본 기수.
@@ -2366,6 +2365,11 @@ export default function Page() {
     cohortScopeIds ? (list || []).filter((student) => cohortScopeIds.has(String(student.id))) : (list || [])
   ), [cohortScopeIds]);
   const scopedStudents = useMemo(() => scopeStudentList(students), [students, scopeStudentList]);
+  // v41-171: 학생 목록이 아니라 서버에서 받은 기록(세션·알림 등)을 거를 때 쓰는 학생 id 집합입니다.
+  // 전체 기수를 보고 있으면 null 이라 아무것도 거르지 않습니다.
+  const cohortScopeStudentIds = useMemo(() => (
+    cohortScopeIds ? Array.from(cohortScopeIds) : null
+  ), [cohortScopeIds]);
   const cohortScopeInfo = cohortOptions.find((cohort) => String(cohort.id) === String(cohortScopeId)) || null;
 
   const seatsForDisplay = seats?.length ? seats : STATIC_SEATS;
@@ -2664,6 +2668,13 @@ export default function Page() {
     cohortScopeAutoRef.current = true;
     if (defaultCohortId) setCohortScopeId(String(defaultCohortId));
   }, [cohortOptions, defaultCohortId]);
+
+  // v41-171: 랭킹은 서버에서 기수 기준으로 집계하므로, 기수 보기가 바뀌면 다시 조회합니다.
+  useEffect(() => {
+    if (!isLoggedIn || activeTab !== 'ranking') return;
+    loadRanking(rankingStart, rankingEnd, cohortScopeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, activeTab, cohortScopeId]);
 
   useEffect(() => {
     if (isLoggedIn && activeTab === 'schedules') loadSchedules();
@@ -4493,19 +4504,15 @@ export default function Page() {
     }
   }
 
-  async function loadRanking(start = rankingStart, end = rankingEnd, cohortId = rankingCohortId) {
+  async function loadRanking(start = rankingStart, end = rankingEnd, cohortId = cohortScopeId) {
     try {
       setMessage('랭킹 조회 중...');
-      // 기수를 고르면 기간·명단이 기수 기준으로 대체됩니다.
+      // v41-171: 기수는 명단을 좁히는 데만 쓰고 기간은 화면에서 고른 값을 그대로 씁니다.
       const params = new URLSearchParams({ start, end });
-      if (cohortId) params.set('cohortId', cohortId);
+      if (cohortId) { params.set('cohortId', cohortId); params.set('keepRange', '1'); }
       const data = await apiFetch(`/api/ranking?${params.toString()}`);
       setRanking(data.ranking || []);
       setRankingCohortInfo(data.cohort ? { ...data.cohort, policy: data.cohortPolicy } : null);
-      if (data.cohort) {
-        setRankingStart(data.start);
-        setRankingEnd(data.end);
-      }
       setMessage(data.warning || '랭킹 조회 완료');
     } catch (error) {
       setMessage(error.message);
@@ -5623,6 +5630,8 @@ export default function Page() {
 
         {isActiveTabAllowed && activeTab === 'dailyReports' ? (
           <DailyReportsTab
+            cohortStudentIds={cohortScopeStudentIds}
+            cohortScopeName={cohortScopeInfo?.name || ''}
             sessions={reportReadySessions}
             reportsBySession={reportsBySession}
             checksBySession={checksBySession}
@@ -5663,12 +5672,13 @@ export default function Page() {
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'ranking' ? (
-          <RankingTab ranking={ranking} rankingStart={rankingStart} rankingEnd={rankingEnd} setRankingStart={setRankingStart} setRankingEnd={setRankingEnd} loadRanking={loadRanking} setRankingPreset={setRankingPreset} apiFetch={apiFetch} setMessage={setMessage} cohortOptions={cohortOptions} loadCohortOptions={loadCohortOptions} rankingCohortId={rankingCohortId} setRankingCohortId={setRankingCohortId} rankingCohortInfo={rankingCohortInfo} />
+          <RankingTab ranking={ranking} rankingStart={rankingStart} rankingEnd={rankingEnd} setRankingStart={setRankingStart} setRankingEnd={setRankingEnd} loadRanking={loadRanking} setRankingPreset={setRankingPreset} apiFetch={apiFetch} setMessage={setMessage} rankingCohortInfo={rankingCohortInfo} />
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'points' ? (
           <StudentPointsTab
             students={scopedStudents}
+            cohortStudentIds={cohortScopeStudentIds}
             apiFetch={apiFetch}
             currentUser={currentUser}
             setMessage={setMessage}
@@ -5756,6 +5766,7 @@ export default function Page() {
         {isActiveTabAllowed && activeTab === 'mentoring' ? (
           <MentoringTab
             students={scopedStudents}
+            cohortStudentIds={cohortScopeStudentIds}
             apiFetch={apiFetch}
             setMessage={setMessage}
             currentUser={currentUser}
@@ -5776,6 +5787,7 @@ export default function Page() {
             fieldFocusAcknowledgements={fieldFocusAcknowledgements}
             selectSeat={selectSeat}
             setActiveTab={setActiveTab}
+            cohortStudentIds={cohortScopeStudentIds}
           />
         ) : null}
 
@@ -8181,7 +8193,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
 
 
 
-function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged, onOpenStudentCare, onOpenMentoringSettings, initialActiveDay = 1 }) {
+function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged, onOpenStudentCare, onOpenMentoringSettings, initialActiveDay = 1, cohortStudentIds = null }) {
   const dayOptions = [
     [1, '월요일'],
     [2, '화요일'],
@@ -8199,6 +8211,15 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
     for (const student of students || []) map[String(student.id)] = student.product_tier || '';
     return map;
   }, [students]);
+
+  // v41-171: 헤더 [기수 보기]로 좁힌 경우 배정 목록도 그 기수 학생만 보여줍니다.
+  // 저장/삭제는 원본(assignments)을 그대로 쓰고, 화면에 그릴 때만 걸러냅니다.
+  const cohortScopeIdSet = useMemo(() => (
+    cohortStudentIds ? new Set(cohortStudentIds.map(String)) : null
+  ), [cohortStudentIds]);
+  const inCohortScope = useCallback((item) => (
+    !cohortScopeIdSet || cohortScopeIdSet.has(String(item?.student_id || item?.students?.id || ''))
+  ), [cohortScopeIdSet]);
   const getInitialMentoringDay = () => {
     const parsedDay = Number(initialActiveDay);
     return allowedMentoringDays.includes(parsedDay) ? parsedDay : 1;
@@ -8278,34 +8299,34 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
 
   const assignmentsBySlot = useMemo(() => {
     const grouped = {};
-    for (const item of assignments || []) {
+    for (const item of (assignments || []).filter(inCohortScope)) {
       if (!item.slot_id) continue;
       if (!grouped[item.slot_id]) grouped[item.slot_id] = [];
       grouped[item.slot_id].push(item);
     }
     Object.values(grouped).forEach((rows) => rows.sort((a, b) => String(a.students?.name || '').localeCompare(String(b.students?.name || ''), 'ko')));
     return grouped;
-  }, [assignments]);
+  }, [assignments, inCohortScope]);
 
   const assignmentsByMentor = useMemo(() => {
     const grouped = {};
-    for (const item of assignments || []) {
+    for (const item of (assignments || []).filter(inCohortScope)) {
       if (!item.mentor_id) continue;
       grouped[item.mentor_id] = (grouped[item.mentor_id] || 0) + 1;
     }
     return grouped;
-  }, [assignments]);
+  }, [assignments, inCohortScope]);
 
   const assignmentsByStudentDay = useMemo(() => {
     const map = {};
-    for (const item of assignments || []) {
+    for (const item of (assignments || []).filter(inCohortScope)) {
       const studentId = item.student_id;
       const day = item.mentoring_slots?.day_of_week;
       if (!studentId || !day) continue;
       if (!map[`${studentId}-${day}`]) map[`${studentId}-${day}`] = item;
     }
     return map;
-  }, [assignments]);
+  }, [assignments, inCohortScope]);
 
   const selectedSlot = useMemo(() => {
     const sourceSlots = scheduleMode === 'date' ? activeDateSlots : activeSlots;
@@ -8459,7 +8480,7 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
   function hasDateSlotAssignmentChanges(slot = {}, rows = []) {
     if (!isDateMode || !dateOverrideActive) return false;
     if (!slot.template_slot_id) return rows.length > 0;
-    const weeklyRows = (assignments || [])
+    const weeklyRows = (assignments || []).filter(inCohortScope)
       .filter((item) => String(item.slot_id) === String(slot.template_slot_id) && isAssignmentActiveForSelectedDate(item));
     const weeklyIds = new Set(weeklyRows.map((item) => String(item.id)));
     const dateTemplateIds = new Set((rows || []).map((item) => item.template_assignment_id).filter(Boolean).map(String));
@@ -9046,7 +9067,7 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
 
   const dateAssignmentsBySlot = useMemo(() => {
     const grouped = {};
-    for (const item of dateAssignments || []) {
+    for (const item of (dateAssignments || []).filter(inCohortScope)) {
       const slotId = item.date_slot_id || item.slot_id;
       if (!slotId) continue;
       if (!grouped[slotId]) grouped[slotId] = [];
@@ -9054,16 +9075,16 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
     }
     Object.values(grouped).forEach((rows) => rows.sort((a, b) => String(a.students?.name || '').localeCompare(String(b.students?.name || ''), 'ko')));
     return grouped;
-  }, [dateAssignments]);
+  }, [dateAssignments, inCohortScope]);
 
   const dateAssignmentsByStudent = useMemo(() => {
     const map = {};
-    for (const item of dateAssignments || []) {
+    for (const item of (dateAssignments || []).filter(inCohortScope)) {
       if (!item.student_id || item.is_active === false) continue;
       map[String(item.student_id)] = item;
     }
     return map;
-  }, [dateAssignments]);
+  }, [dateAssignments, inCohortScope]);
 
   const conflictByAssignmentId = useMemo(() => {
     const map = {};
@@ -11362,8 +11383,14 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
   const [memo, setMemo] = useState('');
   const [file, setFile] = useState(null);
 
+  // v41-171: 업로드 집계는 지금 보고 있는 기수 학생 기준으로만 셉니다.
+  // (플래너는 날짜 기준으로 내려와 다른 기수 학생이 섞이면 '미제출' 수가 어긋납니다)
+  const plannerStudentIdSet = new Set((students || []).map((student) => String(student.id)));
   const plannerByStudentId = {};
-  for (const planner of planners || []) plannerByStudentId[planner.student_id] = planner;
+  for (const planner of planners || []) {
+    if (!plannerStudentIdSet.has(String(planner.student_id))) continue;
+    plannerByStudentId[planner.student_id] = planner;
+  }
 
   async function submitUpload() {
     const saved = await uploadPlannerFile({ studentId, date: plannerDate, file, memo });
@@ -11587,7 +11614,7 @@ function ReportScheduleSection({ reportType, apiFetch, setMessage, refreshKey = 
   );
 }
 
-function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBySession, nowTick, planners, plannerDate, setPlannerDate, generateReport, generateAllReports, openSendPreview, sendReportToParent, prepareReportSend, markReportManualSent, exclusionsBySession, updateReportExclusion, operatingRules, todaySchedules, apiFetch, sendConfig, currentUser, setMessage, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS }) {
+function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessions, reportsBySession, checksBySession, eventsBySession, nowTick, planners, plannerDate, setPlannerDate, generateReport, generateAllReports, openSendPreview, sendReportToParent, prepareReportSend, markReportManualSent, exclusionsBySession, updateReportExclusion, operatingRules, todaySchedules, apiFetch, sendConfig, currentUser, setMessage, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [issueFilter, setIssueFilter] = useState('all');
   const [confirmSend, setConfirmSend] = useState(null);
@@ -11626,7 +11653,16 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
     return grouped;
   }, [targetReports]);
 
-  const sessionsForReport = targetsLoaded ? targetSessions : sessions;
+  // v41-171: 헤더 [기수 보기]로 좁힌 경우, 서버에서 받은 세션도 그 기수 명단만 남깁니다.
+  // 데일리 리포트 대상은 날짜 기준으로 내려오기 때문에 학생 목록을 좁히는 것만으로는 걸러지지 않습니다.
+  const cohortScopeIdSet = useMemo(() => (
+    cohortStudentIds ? new Set(cohortStudentIds.map(String)) : null
+  ), [cohortStudentIds]);
+  const sessionsForReport = useMemo(() => {
+    const base = targetsLoaded ? targetSessions : sessions;
+    if (!cohortScopeIdSet) return base || [];
+    return (base || []).filter((session) => cohortScopeIdSet.has(String(session.student_id || session.students?.id || '')));
+  }, [targetsLoaded, targetSessions, sessions, cohortScopeIdSet]);
   const checksBySessionForReport = targetsLoaded ? dailyChecksBySession : checksBySession;
   const eventsBySessionForReport = targetsLoaded ? dailyEventsBySession : eventsBySession;
   const reportsBySessionForReport = targetsLoaded ? dailyReportsBySession : reportsBySession;
@@ -14661,7 +14697,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   );
 }
 
-function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
+function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortStudentIds = null }) {
   const today = getKstDateString();
   const week = getThisWeekRange();
   const activeStudents = (students || []).filter((student) => student.status !== 'inactive');
@@ -14678,9 +14714,24 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
   const [rewardWorkingId, setRewardWorkingId] = useState('');
 
   // v41-127: 상벌점 기록을 '일자별 나열'에서 '학생별 대분류 → 학생 안에서 일자별'로 재구성합니다.
+  // v41-171: 헤더 [기수 보기]로 좁힌 경우 상벌점 기록도 그 기수 학생만 보여줍니다.
+  const cohortScopeIdSet = useMemo(() => (
+    cohortStudentIds ? new Set(cohortStudentIds.map(String)) : null
+  ), [cohortStudentIds]);
+
+  // v41-171: 단계 알림/상품 지급 대상도 보고 있는 기수 학생만 남깁니다.
+  const scopeRows = useCallback((list) => (
+    !cohortScopeIdSet ? (list || []) : (list || []).filter((item) => {
+      const id = String(item?.studentId || item?.student_id || item?.student?.id || '');
+      return !id || cohortScopeIdSet.has(id);
+    })
+  ), [cohortScopeIdSet]);
+
   const pointStudentGroups = useMemo(() => {
     const map = new Map();
     for (const row of rows || []) {
+      const studentId = String(row.student_id || row.student?.id || '');
+      if (cohortScopeIdSet && studentId && !cohortScopeIdSet.has(studentId)) continue;
       const key = String(row.student_id || row.student?.id || row.student_name || row.id);
       if (!map.has(key)) {
         map.set(key, {
@@ -14701,7 +14752,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
       })
       // 최근 기록이 있는 학생을 위로, 같은 날짜면 이름순으로 정렬합니다.
       .sort((a, b) => String(b.latestDate).localeCompare(String(a.latestDate)) || String(a.name).localeCompare(String(b.name), 'ko'));
-  }, [rows]);
+  }, [rows, cohortScopeIdSet]);
 
   useEffect(() => {
     loadPoints();
@@ -14883,14 +14934,14 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
 
       {/* v41-156: 누적 벌점이 10/20/30점을 넘으면 단계별 조치 대상으로 알립니다.
           상품 지급(순점수) 사이클과 별개로, 상점을 받아도 이 단계는 내려가지 않습니다. */}
-      {(rewardState?.penaltyAlerts || []).length ? (
+      {scopeRows(rewardState?.penaltyAlerts).length ? (
         <div className="penalty-stage-alert-card">
           <div className="penalty-stage-alert-head">
-            <strong>벌점 단계 조치 대상 {rewardState.penaltyAlerts.length}명</strong>
+            <strong>벌점 단계 조치 대상 {scopeRows(rewardState.penaltyAlerts).length}명</strong>
             <span>순벌점(벌점 - 상점) 10점 초과 → 학부모 알림 · 20점 초과 → 센터장 면담 · 30점 초과 → 제적 검토. 상점을 받으면 그만큼 상계됩니다. <b>[알림톡 발송]을 누르면 학부모·학생에게 상벌점 누적 안내가 발송</b>되고 이 단계 알림이 내려갑니다.</span>
           </div>
           <div className="penalty-stage-alert-list">
-            {rewardState.penaltyAlerts.map((item) => (
+            {scopeRows(rewardState.penaltyAlerts).map((item) => (
               <article key={`penalty-${item.studentId}`} className={`tone-${item.tone}`}>
                 <div className="penalty-stage-alert-student">
                   <strong>{item.name}</strong>
@@ -14931,14 +14982,14 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
       ) : null}
 
       {/* v41-137: 순점수가 기준(10점)을 초과한 학생은 상품 지급 대상으로 알립니다. */}
-      {(rewardState?.eligible || []).length ? (
+      {scopeRows(rewardState?.eligible).length ? (
         <div className="point-reward-alert-card">
           <div className="point-reward-alert-head">
-            <strong>상품 지급 대상 {rewardState.eligible.length}명</strong>
+            <strong>상품 지급 대상 {scopeRows(rewardState.eligible).length}명</strong>
             <span>순점수가 {rewardState.threshold || 10}점을 초과했습니다. <b>[알림톡 발송]을 누르면 학부모·학생에게 상품 지급 안내가 발송</b>되고 카운팅이 리셋됩니다. 상벌점 기록 자체는 그대로 보관됩니다.</span>
           </div>
           <div className="point-reward-alert-list">
-            {rewardState.eligible.map((item) => (
+            {scopeRows(rewardState.eligible).map((item) => (
               <article key={`reward-${item.studentId}`}>
                 <div className="point-reward-alert-student">
                   <strong>{item.name}</strong>
@@ -15068,39 +15119,24 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
   );
 }
 
-function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRankingEnd, loadRanking, setRankingPreset, apiFetch, setMessage, cohortOptions = [], loadCohortOptions, rankingCohortId = '', setRankingCohortId, rankingCohortInfo = null }) {
+function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRankingEnd, loadRanking, setRankingPreset, apiFetch, setMessage, rankingCohortInfo = null }) {
   const [mode, setMode] = useState('admin'); // 'admin' | 'broadcast'
 
-  // v41-148: 기수 목록을 한 번 불러와 선택지로 씁니다.
-  useEffect(() => { loadCohortOptions?.(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-
-  const cohortPicker = (cohortOptions || []).length ? (
+  // v41-171: 화면 안에 있던 기수 선택칸을 없앴습니다. 헤더의 [기수 보기] 하나만 씁니다.
+  // (같은 화면에 기수 드롭다운이 두 개라 어느 쪽이 적용된 건지 알 수 없었습니다)
+  const cohortPicker = rankingCohortInfo ? (
     <div className="ranking-cohort-row">
-      <div className="field">
-        <label>기수</label>
-        <select
-          value={rankingCohortId}
-          onChange={(e) => { setRankingCohortId?.(e.target.value); loadRanking(rankingStart, rankingEnd, e.target.value); }}
-        >
-          <option value="">기수 사용 안 함 (기간 직접 지정)</option>
-          {(cohortOptions || []).map((cohort) => (
-            <option key={cohort.id} value={cohort.id}>
-              {cohort.name} ({cohort.startDate} ~ {cohort.endDate}) · {cohort.studentCount}명
-            </option>
-          ))}
-        </select>
+      <div className="ranking-cohort-note">
+        <strong>{rankingCohortInfo.name}</strong>
+        <span>
+          이 기수 명단만 집계 · 기수 기간 {rankingCohortInfo.startDate} ~ {rankingCohortInfo.endDate} 안에서
+          {' '}아래 조회 기간과 겹치는 날만 셉니다
+          {rankingCohortInfo.policy && rankingCohortInfo.policy.separateAcrossCohorts === false
+            ? ' · 연속 수강생은 이전 기수부터 누적'
+            : ''}
+          {' '}· 기수는 화면 위 [기수 보기]에서 바꿉니다
+        </span>
       </div>
-      {rankingCohortInfo ? (
-        <div className="ranking-cohort-note">
-          <strong>{rankingCohortInfo.name}</strong>
-          <span>
-            {rankingCohortInfo.startDate} ~ {rankingCohortInfo.endDate} · 이 기수 명단만 집계
-            {rankingCohortInfo.policy && rankingCohortInfo.policy.separateAcrossCohorts === false
-              ? ' · 연속 수강생은 이전 기수부터 누적'
-              : ' · 기수별 분리 집계'}
-          </span>
-        </div>
-      ) : null}
     </div>
   ) : null;
 
@@ -17770,7 +17806,7 @@ function StudentHistoryTab({ students = [], apiFetch, currentUser, setMessage, s
 
 
 
-function AttentionTab({ apiFetch, students = [], scheduleAlerts = [], dismissedAlertMemos = {}, fieldFocusAcknowledgements = [], selectSeat, setActiveTab }) {
+function AttentionTab({ apiFetch, students = [], scheduleAlerts = [], dismissedAlertMemos = {}, fieldFocusAcknowledgements = [], selectSeat, setActiveTab, cohortStudentIds = null }) {
   const defaultRange = getThisWeekRange();
   const [start, setStart] = useState(defaultRange.start);
   const [end, setEnd] = useState(defaultRange.end);
@@ -17823,9 +17859,16 @@ function AttentionTab({ apiFetch, students = [], scheduleAlerts = [], dismissedA
     });
   }, [activeAlerts, historyRows]);
 
+  // v41-171: 헤더 [기수 보기]로 좁힌 경우 이력도 그 기수 학생만 남깁니다.
+  // 학생을 못 찾은(이름만 남은) 줄은 걸러내지 않고 그대로 둡니다.
+  const cohortScopeIdSet = useMemo(() => (
+    cohortStudentIds ? new Set(cohortStudentIds.map(String)) : null
+  ), [cohortStudentIds]);
+
   const filteredRows = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
     return rows.filter((row) => {
+      if (cohortScopeIdSet && row.student_id && !cohortScopeIdSet.has(String(row.student_id))) return false;
       if (studentFilter !== 'all' && String(row.student_id || '') !== String(studentFilter)) return false;
       if (statusFilter === 'open' && row.source !== 'open') return false;
       if (statusFilter === 'resolved' && row.source !== 'resolved') return false;
@@ -18221,12 +18264,12 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
 
   const assignmentsByMentor = useMemo(() => {
     const grouped = {};
-    for (const item of assignments || []) {
+    for (const item of (assignments || []).filter(inCohortScope)) {
       if (!item.mentor_id) continue;
       grouped[item.mentor_id] = (grouped[item.mentor_id] || 0) + 1;
     }
     return grouped;
-  }, [assignments]);
+  }, [assignments, inCohortScope]);
 
   const mentorStudentIdsByMentor = useMemo(() => {
     const grouped = {};

@@ -38,8 +38,14 @@ export async function GET(request) {
 
     // 학생별 집계 구간을 미리 계산합니다. (분리 정책이면 모두 동일)
     const rangeByStudent = {};
-    let start = searchParams.get('start') || today;
-    let end = searchParams.get('end') || today;
+    const requestedStart = searchParams.get('start') || today;
+    const requestedEnd = searchParams.get('end') || today;
+    // v41-171: keepRange=1 이면 기수는 '명단을 좁히는 용도'로만 쓰고,
+    // 집계 기간은 화면에서 고른 시작일~종료일을 그대로 씁니다.
+    // (기수를 고르면 기간이 기수 전체로 덮여, 오늘/이번 주 같은 기간 선택이 먹히지 않았습니다)
+    const keepRange = searchParams.get('keepRange') === '1';
+    let start = requestedStart;
+    let end = requestedEnd;
     if (cohort) {
       let minStart = cohort.startDate;
       for (const studentId of rosterSet) {
@@ -53,9 +59,20 @@ export async function GET(request) {
         rangeByStudent[String(studentId)] = range;
         if (range.start < minStart) minStart = range.start;
       }
-      // 조회는 가장 넓은 구간으로 한 번만 하고, 합산할 때 학생별 구간으로 거릅니다.
-      start = minStart;
-      end = cohort.endDate;
+      if (keepRange) {
+        // 학생별 기수 구간과 요청 기간이 겹치는 부분만 집계합니다.
+        for (const key of Object.keys(rangeByStudent)) {
+          const range = rangeByStudent[key];
+          rangeByStudent[key] = {
+            start: range.start > requestedStart ? range.start : requestedStart,
+            end: range.end < requestedEnd ? range.end : requestedEnd,
+          };
+        }
+      } else {
+        // 조회는 가장 넓은 구간으로 한 번만 하고, 합산할 때 학생별 구간으로 거릅니다.
+        start = minStart;
+        end = cohort.endDate;
+      }
     }
 
     const { data: sessions, error: sessionsError } = await supabase
