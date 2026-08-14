@@ -18870,6 +18870,10 @@ button{ border-width:1px !important; }
 .student-care-picker-presets button{ white-space:nowrap; }
 /* v41-168: 기수 필터가 붙으면 칸이 하나 늘어납니다. */
 .student-care-picker-row.has-cohort{ grid-template-columns:1.2fr 2fr 1fr 1fr auto; }
+/* v41-168: 날짜 입력칸이 선택칸보다 기본 높이가 커서 윗변이 어긋나 보였습니다.
+   이 줄의 입력칸 높이를 하나로 맞춥니다. */
+.student-care-picker-row .field select,
+.student-care-picker-row .field input{ box-sizing:border-box; height:46px; min-height:46px; }
 .student-care-picker-note{
   margin-top:10px; font-size:var(--fs-cap); font-weight:700; color:#8a5a08;
   background:#fff7e8; border:1px solid #f0dcb4; border-radius:9px; padding:6px 9px; line-height:1.45;
@@ -19269,6 +19273,15 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .sinfo-picker-head strong{ font-size:15px; color:#1d1d1f; }
 .sinfo-picker-head span{ font-size:12.5px; color:#6e6e73; line-height:1.5; }
 .sinfo-picker-field{ max-width:520px; }
+/* v41-168: 학생 앞에 기수 필터를 두고 두 칸을 나란히 놓습니다. */
+.sinfo-picker-row{ display:grid; grid-template-columns:minmax(0, 520px); gap:12px; align-items:end; }
+.sinfo-picker-row.has-cohort{ grid-template-columns:minmax(0, 260px) minmax(0, 520px); }
+.sinfo-picker-row .field label{ display:block; font-size:12.5px; color:#6e6e73; margin-bottom:6px; font-weight:600; }
+.sinfo-picker-row .field select{ box-sizing:border-box; height:46px; min-height:46px; }
+.sinfo-picker-row .sinfo-picker-field{ max-width:none; }
+@media (max-width:760px){
+  .sinfo-picker-row, .sinfo-picker-row.has-cohort{ grid-template-columns:1fr; }
+}
 .sinfo-select-note{ margin:0; padding:24px; text-align:center; color:#86868b; font-size:13px; background:#fff; border:1px solid #e3e3e6; border-radius:16px; }
 .sinfo-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; align-items:start; }
 .sinfo-card-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }

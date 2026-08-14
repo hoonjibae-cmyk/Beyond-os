@@ -599,6 +599,76 @@ function ProductTierBadge({ tier, size = '' }) {
   );
 }
 
+// v41-168: 학생을 고르기 전에 기수로 먼저 좁히는 공용 로직입니다.
+// 학습관리·학생정보처럼 학생 선택 드롭다운이 있는 화면에서 함께 씁니다.
+function useCohortStudentFilter({
+  cohortOptions = [],
+  cohortRosters = {},
+  defaultCohortId = '',
+  loadCohortOptions,
+  students = [],
+  selectedStudentId = '',
+}) {
+  const [cohortFilter, setCohortFilter] = useState('');
+  const autoSetRef = useRef(false);
+
+  useEffect(() => { loadCohortOptions?.(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // 기수 목록이 도착하면 진행 중인 기수로 한 번만 맞춰 둡니다.
+  // 이미 학생을 고른 상태면 그 선택이 사라지지 않도록 건드리지 않습니다.
+  useEffect(() => {
+    if (autoSetRef.current) return;
+    if (!cohortOptions.length) return;
+    autoSetRef.current = true;
+    if (selectedStudentId) return;
+    if (defaultCohortId) setCohortFilter(String(defaultCohortId));
+  }, [cohortOptions, defaultCohortId, selectedStudentId]);
+
+  const cohortStudentIds = cohortFilter ? new Set((cohortRosters[cohortFilter] || []).map(String)) : null;
+  const visibleStudents = cohortStudentIds
+    ? students.filter((student) => cohortStudentIds.has(String(student.id)))
+    : students;
+
+  // 고른 학생이 이 기수 명단에 없더라도 선택이 풀리지 않도록 목록에 남겨 둡니다.
+  const selectedOutsideCohort = Boolean(
+    selectedStudentId
+    && cohortStudentIds
+    && !cohortStudentIds.has(String(selectedStudentId))
+    && students.some((student) => String(student.id) === String(selectedStudentId)),
+  );
+  const studentOptions = selectedOutsideCohort
+    ? [...visibleStudents, ...students.filter((student) => String(student.id) === String(selectedStudentId))]
+    : visibleStudents;
+
+  return {
+    hasCohorts: cohortOptions.length > 0,
+    cohortFilter,
+    setCohortFilter,
+    selectedCohort: cohortOptions.find((cohort) => String(cohort.id) === String(cohortFilter)) || null,
+    visibleStudents,
+    studentOptions,
+    selectedOutsideCohort,
+  };
+}
+
+// v41-168: 위 훅과 짝을 이루는 기수 선택 칸입니다.
+function CohortFilterField({ cohortOptions = [], cohortRosters = {}, value, onChange, totalCount = 0, className = '' }) {
+  if (!cohortOptions.length) return null;
+  return (
+    <div className={`field ${className}`.trim()}>
+      <label>기수</label>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">전체 기수 ({totalCount}명)</option>
+        {cohortOptions.map((cohort) => (
+          <option key={cohort.id} value={cohort.id}>
+            {cohort.name}{cohort.isCurrent ? ' (진행 중)' : ''} · {(cohortRosters[cohort.id] || []).length}명
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function getGuardianDisplayText(student = {}, reportType = 'daily') {
   const guardians = getActiveGuardians(student, reportType);
   if (!guardians.length) return '-';
@@ -5623,6 +5693,12 @@ export default function Page() {
             focusStudentId={studentInfoFocusStudentId}
             setFocusStudentId={(value) => { setStudentInfoFocusStudentId(value); if (value) setGlobalFocusStudentId(String(value)); }}
             onStudentUpdated={() => loadDashboard({ silent: true, suppressChangeNotice: true })}
+            cohortProps={{
+              cohortOptions,
+              cohortRosters,
+              defaultCohortId,
+              loadCohortOptions,
+            }}
             surveyProps={{
               surveys,
               uploading: surveyUploading,
@@ -16729,38 +16805,11 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {}, cohortProps =
   const assignedMentorName = overviewData?.assignedMentor?.name || '';
 
   // v41-168: 학생을 고르기 전에 기수로 먼저 좁힙니다.
-  const { cohortOptions = [], cohortRosters = {}, defaultCohortId = '', loadCohortOptions } = cohortProps;
-  const [cohortFilter, setCohortFilter] = useState('');
-  const cohortAutoSetRef = useRef(false);
-
-  useEffect(() => { loadCohortOptions?.(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-
-  // 기수 목록이 도착하면 진행 중인 기수로 한 번만 맞춰 둡니다.
-  // 이미 학생을 고른 상태면 그 선택이 사라지지 않도록 건드리지 않습니다.
-  useEffect(() => {
-    if (cohortAutoSetRef.current) return;
-    if (!cohortOptions.length) return;
-    cohortAutoSetRef.current = true;
-    if (selectedStudentId) return;
-    if (defaultCohortId) setCohortFilter(String(defaultCohortId));
-  }, [cohortOptions, defaultCohortId, selectedStudentId]);
-
   const allStudents = attendanceProps.students || [];
-  const cohortStudentIds = cohortFilter ? new Set((cohortRosters[cohortFilter] || []).map(String)) : null;
-  const visibleStudents = cohortStudentIds
-    ? allStudents.filter((student) => cohortStudentIds.has(String(student.id)))
-    : allStudents;
-  // 고른 학생이 이 기수 명단에 없더라도 선택이 풀리지 않도록 목록에 남겨 둡니다.
-  const selectedOutsideCohort = Boolean(
-    selectedStudentId
-    && cohortStudentIds
-    && !cohortStudentIds.has(String(selectedStudentId))
-    && allStudents.some((student) => String(student.id) === String(selectedStudentId)),
-  );
-  const studentOptions = selectedOutsideCohort
-    ? [...visibleStudents, ...allStudents.filter((student) => String(student.id) === String(selectedStudentId))]
-    : visibleStudents;
-  const selectedCohort = cohortOptions.find((cohort) => String(cohort.id) === String(cohortFilter)) || null;
+  const {
+    hasCohorts, cohortFilter, setCohortFilter, selectedCohort,
+    visibleStudents, studentOptions, selectedOutsideCohort,
+  } = useCohortStudentFilter({ ...cohortProps, students: allStudents, selectedStudentId });
 
   return (
     <section className="student-care-page student-care-unified-page">
@@ -16769,24 +16818,16 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {}, cohortProps =
           <strong>학생 선택</strong>
           <span>기수를 먼저 고르면 그 기수 명단만 학생 목록에 나옵니다. 학생과 조회 기간을 선택하면 아래 두 영역에 함께 적용됩니다.</span>
         </div>
-        <div className={`student-care-picker-row${cohortOptions.length ? ' has-cohort' : ''}`}>
+        <div className={`student-care-picker-row${hasCohorts ? ' has-cohort' : ''}`}>
           {/* v41-168: 학생 목록이 길어 기수로 먼저 좁힙니다. 기수가 없으면 이 칸도 나오지 않습니다. */}
-          {cohortOptions.length ? (
-            <div className="field student-care-picker-cohort">
-              <label>기수</label>
-              <select
-                value={cohortFilter}
-                onChange={(event) => setCohortFilter(event.target.value)}
-              >
-                <option value="">전체 기수 ({allStudents.length}명)</option>
-                {cohortOptions.map((cohort) => (
-                  <option key={cohort.id} value={cohort.id}>
-                    {cohort.name}{cohort.isCurrent ? ' (진행 중)' : ''} · {(cohortRosters[cohort.id] || []).length}명
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
+          <CohortFilterField
+            cohortOptions={cohortProps.cohortOptions}
+            cohortRosters={cohortProps.cohortRosters}
+            value={cohortFilter}
+            onChange={setCohortFilter}
+            totalCount={allStudents.length}
+            className="student-care-picker-cohort"
+          />
           <div className="field student-care-picker-student">
             <label>학생{selectedCohort ? ` · ${selectedCohort.name} ${visibleStudents.length}명` : ''}</label>
             <select
@@ -16882,7 +16923,7 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {}, cohortProps =
 
 const STUDENT_STATUS_TEXT = { active: '활성', inactive: '비활성', paused: '일시정지', pending: '대기' };
 
-function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focusStudentId = '', setFocusStudentId, onStudentUpdated, surveyProps = {} }) {
+function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focusStudentId = '', setFocusStudentId, onStudentUpdated, surveyProps = {}, cohortProps = {} }) {
   const [selectedId, setSelectedId] = useState(String(focusStudentId || ''));
   const [noteDraft, setNoteDraft] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
@@ -16910,6 +16951,12 @@ function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focu
     () => (students || []).find((s) => String(s.id) === String(selectedId)) || null,
     [students, selectedId]
   );
+
+  // v41-168: 학습관리와 같은 방식으로 기수를 먼저 고른 뒤 학생을 찾습니다.
+  const {
+    hasCohorts, cohortFilter, setCohortFilter, selectedCohort,
+    visibleStudents, studentOptions, selectedOutsideCohort,
+  } = useCohortStudentFilter({ ...cohortProps, students: sortedStudents, selectedStudentId: selectedId });
 
   // 선택 학생이 바뀌면 특이사항 초안을 저장된 값으로 초기화(타이핑 중 덮어쓰기 방지)
   useEffect(() => {
@@ -16957,19 +17004,39 @@ function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focu
       <div className="content-card sinfo-picker">
         <div className="sinfo-picker-head">
           <strong>학생 선택</strong>
-          <span>학생을 선택하면 개인·학부모 정보, 관리자 특이사항, 사전 설문을 한 화면에서 확인·관리합니다. (설정 &gt; 학생 관리와는 별개 메뉴입니다)</span>
+          <span>기수를 먼저 고르면 그 기수 명단만 학생 목록에 나옵니다. 학생을 선택하면 개인·학부모 정보, 관리자 특이사항, 사전 설문을 한 화면에서 확인·관리합니다. (설정 &gt; 학생 관리와는 별개 메뉴입니다)</span>
         </div>
-        <div className="field sinfo-picker-field">
-          <label>학생</label>
-          <select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setFocusStudentId?.(event.target.value); }}>
-            <option value="">학생을 선택하세요</option>
-            {sortedStudents.map((student) => (
-              <option key={student.id} value={student.id}>
-                {student.name}{getProductTierLabel(student.product_tier) ? ` [${getProductTierLabel(student.product_tier)}]` : ''}{student.status === 'inactive' ? ' (비활성)' : ''} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
+        <div className={`sinfo-picker-row${hasCohorts ? ' has-cohort' : ''}`}>
+          {/* v41-168: 학습관리와 같은 기수 필터입니다. 기수가 없으면 이 칸도 나오지 않습니다. */}
+          <CohortFilterField
+            cohortOptions={cohortProps.cohortOptions}
+            cohortRosters={cohortProps.cohortRosters}
+            value={cohortFilter}
+            onChange={setCohortFilter}
+            totalCount={sortedStudents.length}
+            className="sinfo-picker-cohort"
+          />
+          <div className="field sinfo-picker-field">
+            <label>학생{selectedCohort ? ` · ${selectedCohort.name} ${visibleStudents.length}명` : ''}</label>
+            <select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setFocusStudentId?.(event.target.value); }}>
+              <option value="">
+                {selectedCohort && !visibleStudents.length
+                  ? `${selectedCohort.name} 명단이 비어 있습니다`
+                  : '학생을 선택하세요'}
               </option>
-            ))}
-          </select>
+              {studentOptions.map((student) => (
+                <option key={student.id} value={student.id}>
+                  {student.name}{getProductTierLabel(student.product_tier) ? ` [${getProductTierLabel(student.product_tier)}]` : ''}{student.status === 'inactive' ? ' (비활성)' : ''} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+        {selectedOutsideCohort ? (
+          <div className="student-care-picker-note">
+            지금 보고 있는 학생은 {selectedCohort?.name || '이 기수'} 명단에 없습니다. 선택이 풀리지 않도록 목록에 남겨 두었습니다.
+          </div>
+        ) : null}
       </div>
 
       {!selectedStudent ? (
