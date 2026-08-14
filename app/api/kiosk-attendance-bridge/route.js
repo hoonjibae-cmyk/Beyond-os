@@ -184,6 +184,71 @@ function shouldHoldBreakSignal(eventType) {
   return ['away', 'check_out', 'check_in'].includes(String(eventType || ''));
 }
 
+/**
+ * v41-160: 같은 쉬는 시간에 판정 대기 중인 '외출' HOLD를 찾습니다.
+ * 이게 있으면 방금 들어온 복귀는 그 외출과 짝입니다.
+ */
+async function findPendingBreakExitHold({ supabase, studentId, breakWindow }) {
+  if (!studentId || !breakWindow) return null;
+  const { data, error } = await supabase
+    .from('kiosk_attendance_holds')
+    .select('*')
+    .eq('student_id', studentId)
+    .eq('status', 'pending')
+    .eq('break_start_time', breakWindow.startTime)
+    .eq('break_end_time', breakWindow.endTime)
+    .in('event_type', ['away', 'check_out'])
+    .order('event_at', { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return (data || [])[0] || null;
+}
+
+// HOLD 한 건을 '쉬는 시간 이동'으로 처리하고 처리 이력에 남깁니다.
+// 화면에서 [쉬는 시간 처리]를 누른 것과 같은 상태가 되도록 맞춥니다.
+async function discardHoldAsBreakMovement({ supabase, hold, batchId, memo }) {
+  const nowIso = new Date().toISOString();
+  await supabase
+    .from('kiosk_attendance_holds')
+    .update({
+      status: 'discarded',
+      operator_action: 'auto_pair_discard',
+      operator_memo: memo,
+      resolved_by: KIOSK_ACTOR,
+      resolved_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq('id', hold.id);
+
+  if (hold.import_event_id) {
+    await supabase
+      .from('attendance_import_events')
+      .update({
+        status: 'ignored',
+        operator_action: 'break_hold_discard',
+        operator_memo: memo,
+        resolved_at: nowIso,
+        processed_at: nowIso,
+        error_message: `쉬는 시간 이동으로 자동 처리 (${KIOSK_ACTOR})`,
+      })
+      .eq('id', hold.import_event_id);
+  }
+
+  // 처리 이력에 남겨야 화면에서 확인하고 되돌릴 수 있습니다.
+  await supabase
+    .from('kiosk_attendance_hold_actions')
+    .insert({
+      hold_id: hold.id,
+      batch_id: batchId,
+      action_type: 'discard',
+      previous_status: hold.status || 'pending',
+      next_status: 'discarded',
+      actor_name: KIOSK_ACTOR,
+      action_memo: memo,
+      action_payload: { auto: true, reason: 'break_pair_matched' },
+    });
+}
+
 async function findRecentDuplicateBreakHold({ supabase, studentId, eventType, receivedAt, windowSeconds = 30, breakWindow }) {
   if (!studentId || !eventType || !receivedAt || !breakWindow) return null;
   const normalizedSeconds = Number.isFinite(Number(windowSeconds)) ? Math.max(5, Math.min(120, Math.round(Number(windowSeconds)))) : 30;
@@ -1157,6 +1222,80 @@ export async function POST(request) {
     const autoAppliedBreakWindow = parsed.eventType === 'return'
       ? getBreakHoldWindow(receivedAt, defaultSchedule.studyWindows, bridgeSettings.breakHoldBufferMinutes)
       : null;
+
+    // ── v41-160: 같은 쉬는 시간의 외출 ↔ 복귀 짝이 맞으면 자동으로 쉬는 시간 이동 처리 ──
+    //
+    // 쉬는 시간에 나갔다가 같은 쉬는 시간 안에 돌아온 것은 실제 외출이 아니라 이동입니다.
+    // 이때 외출은 HOLD로 잡혀 있어 출결에 반영되지 않았으므로 세션은 계속 '재실' 상태입니다.
+    // 즉 출결에 손댈 것이 없고, 양쪽 신호를 모두 쉬는 시간 이동으로 정리하면 끝입니다.
+    //
+    // (이 처리를 하지 않으면 복귀가 '현재 외출 상태가 아니므로 자동반영할 수 없습니다'로
+    //  실패하고, 남은 외출 HOLD는 짝을 찾지 못해 계속 미완결로 남습니다.)
+    if (autoAppliedBreakWindow) {
+      const pairedExitHold = await findPendingBreakExitHold({
+        supabase,
+        studentId: student.id,
+        breakWindow: autoAppliedBreakWindow,
+      });
+
+      if (pairedExitHold) {
+        const batchId = crypto.randomUUID();
+        const memo = `${autoAppliedBreakWindow.startTime}~${autoAppliedBreakWindow.endTime} 쉬는 시간에 외출 후 복귀가 확인되어 자동으로 쉬는 시간 이동 처리했습니다.`;
+
+        // 복귀 신호도 같은 쉬는 시간 기록으로 남겨 짝이 보이게 합니다.
+        const seatNoForPair = await findSeatNoForStudent(supabase, student);
+        const { data: returnHold } = await supabase
+          .from('kiosk_attendance_holds')
+          .insert({
+            import_event_id: importEvent.id,
+            student_id: student.id,
+            session_id: currentSession?.id || null,
+            seat_no: seatNoForPair || currentSession?.seat_no || null,
+            event_type: parsed.eventType,
+            event_at: receivedAt,
+            raw_text: rawText,
+            parsed_reason: parsed.reason || null,
+            hold_reason: 'break_window',
+            break_label: `${autoAppliedBreakWindow.previousLabel} 종료 후 ~ ${autoAppliedBreakWindow.nextLabel} 시작 전`,
+            break_start_time: autoAppliedBreakWindow.startTime,
+            break_end_time: autoAppliedBreakWindow.endTime,
+            status: 'pending',
+          })
+          .select('*, students(name, grade, school)')
+          .single();
+
+        await discardHoldAsBreakMovement({ supabase, hold: pairedExitHold, batchId, memo });
+        if (returnHold) {
+          await discardHoldAsBreakMovement({ supabase, hold: returnHold, batchId, memo });
+        }
+
+        const updated = await updateImportEvent(supabase, importEvent.id, {
+          status: 'ignored',
+          student_id: student.id,
+          session_id: currentSession?.id || null,
+          seat_no: seatNoForPair || currentSession?.seat_no || null,
+          operator_action: 'break_pair_auto_discard',
+          operator_memo: memo,
+          error_message: null,
+          resolved_at: new Date().toISOString(),
+          processed_at: new Date().toISOString(),
+        });
+
+        return Response.json({
+          ok: true,
+          autoPairDiscarded: true,
+          stage: 'break_pair_auto_discard',
+          status: 'ignored',
+          eventType: parsed.eventType,
+          koreanType: parsed.koreanType,
+          studentName: student.name,
+          breakWindow: autoAppliedBreakWindow,
+          pairedHoldId: pairedExitHold.id,
+          importEvent: updated,
+          toastMessage: `${student.name} 학생의 외출·복귀가 같은 쉬는 시간 안에서 확인되어 쉬는 시간 이동으로 자동 처리했습니다.`,
+        });
+      }
+    }
     if (breakHoldWindow) {
       const duplicateWindowSeconds = bridgeSettings.breakHoldDuplicateWindowSeconds ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.breakHoldDuplicateWindowSeconds;
       const recentDuplicateHold = await findRecentDuplicateBreakHold({

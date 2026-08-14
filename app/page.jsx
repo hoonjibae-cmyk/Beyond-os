@@ -7597,7 +7597,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
           <div className="kiosk-hold-head">
             <div>
               <h3>쉬는 시간 키오스크 HOLD <b>{kioskHoldPendingCount}</b></h3>
-              {kioskHoldOpen ? <p>외출·퇴실·재입실은 판정 대기로 모입니다. 복귀(재입장)는 바로 출결에 반영되며, 짝을 확인하실 수 있도록 <b>(자동 반영)</b> 표시로 함께 보여줍니다. 같은 학생의 신호는 한 줄로 묶고, 쉬는 시간 구간별로 정리합니다. 미완결 신호는 먼저 표시됩니다.</p> : null}
+              {kioskHoldOpen ? <p>외출·퇴실·재입실은 판정 대기로 모입니다. <b>같은 쉬는 시간 안에서 외출 후 복귀가 확인되면 이동으로 보고 자동으로 처리</b>되어 처리 이력으로 넘어갑니다. 여기 남는 것은 아직 돌아오지 않았거나 짝이 맞지 않는 신호입니다. 같은 학생의 신호는 한 줄로 묶고, 쉬는 시간 구간별로 정리합니다.</p> : null}
             </div>
             <div className="kiosk-hold-head-actions">
               {kioskHoldOpen ? (

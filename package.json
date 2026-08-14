@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-159-hold-return-visible",
-  "version": "0.41.159",
+  "name": "beyond-os-v41-160-break-pair-auto",
+  "version": "0.41.160",
   "private": true,
   "scripts": {
     "dev": "next dev",
