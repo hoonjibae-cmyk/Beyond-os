@@ -5631,6 +5631,7 @@ export default function Page() {
             <SettingsTab
               settingsView={settingsView}
               setSettingsView={setSettingsView}
+              reloadStudents={loadSettingsStudents}
               students={settingsStudents?.length ? settingsStudents : students}
               seatsForDisplay={seatsForDisplay}
               openStudentEditor={openStudentEditor}
@@ -18436,7 +18437,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 }
 
 function SettingsTab({
-  settingsView, setSettingsView, students, seatsForDisplay, openStudentEditor, diagnostics, loading, runCheck, cleanup,
+  settingsView, setSettingsView, students, seatsForDisplay, openStudentEditor, reloadStudents, diagnostics, loading, runCheck, cleanup,
   operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, bulkGenerateSchedules, scheduleCoverage, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
 }) {
   useEffect(() => {
@@ -18462,7 +18463,7 @@ function SettingsTab({
       </div>
 
       {settingsView === 'students' ? (
-        <StudentsTab students={students} seatsForDisplay={seatsForDisplay} openStudentEditor={openStudentEditor} apiFetch={apiFetch} setMessage={setMessage} reloadStudents={loadSettingsStudents} />
+        <StudentsTab students={students} seatsForDisplay={seatsForDisplay} openStudentEditor={openStudentEditor} apiFetch={apiFetch} setMessage={setMessage} reloadStudents={reloadStudents} />
       ) : null}
 
       {settingsView === 'cohorts' ? (

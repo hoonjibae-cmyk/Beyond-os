@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-164-nickname-generator",
-  "version": "0.41.164",
+  "name": "beyond-os-v41-164-1-settings-fix",
+  "version": "0.41.1641",
   "private": true,
   "scripts": {
     "dev": "next dev",
