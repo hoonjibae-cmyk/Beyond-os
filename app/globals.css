@@ -21722,3 +21722,87 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   padding-bottom: 0;
   align-items: center;
 }
+
+/* v41-170: 데일리/위클리 발송 상태 — 큰 배너 대신 오른쪽 위 작은 표시.
+   실전 발송은 파랑, 테스트 수신번호 모드는 빨강으로 구분합니다. */
+.send-config-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 10px auto;
+  padding: 5px 12px 5px 10px;
+  border-radius: 999px;
+  border: 1px solid #d8d2c6;
+  background: #f6f4f0;
+  font-size: 11.5px;
+  line-height: 1.3;
+  cursor: help;
+}
+.send-config-chip > i {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #8a8479;
+}
+.send-config-chip > b { flex: 0 0 auto; font-weight: 950; white-space: nowrap; }
+.send-config-chip > span {
+  min-width: 0;
+  color: #8a8479;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 실전 발송 = 파랑 */
+.send-config-chip.safety-live { background: #eaf1fd; border-color: #bcd4f6; color: #1d4ed8; }
+.send-config-chip.safety-live > i { background: #1d4ed8; }
+.send-config-chip.safety-live > span { color: #4a6fb5; }
+/* 테스트 수신번호 = 빨강 */
+.send-config-chip.safety-test { background: #fdeceb; border-color: #f5c6c2; color: #b3261e; }
+.send-config-chip.safety-test > i { background: #b3261e; }
+.send-config-chip.safety-test > span { color: #a8635e; }
+/* Allowlist 제한(실제 발송이지만 일부만) = 주황 */
+.send-config-chip.safety-allowlist { background: #fdf3e3; border-color: #f0dcb4; color: #8a5a08; }
+.send-config-chip.safety-allowlist > i { background: #c07f11; }
+.send-config-chip.safety-allowlist > span { color: #a08551; }
+/* 발송 차단/미연결 = 회색 (기본값 유지) */
+.send-config-chip.pending { border-style: dashed; }
+
+/* v41-170: 학생 카드 — [상세 보기] 버튼을 없애고 이름 줄을 눌러 펼칩니다. */
+.report-card-head.is-toggle { cursor: pointer; }
+.report-card-head.is-toggle:hover { background: rgba(0, 0, 0, .025); border-radius: 12px; }
+.report-card-head-caret {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 950;
+  color: #8a8479;
+  transition: transform .15s ease;
+}
+.report-card-head-caret.open { transform: rotate(180deg); }
+
+/* v41-170: 버튼 5개를 한 줄에 놓습니다.
+   (.report-card-actions.send-focused-actions 가 4칸으로 고정하고 있어 같은 선택자로 덮습니다) */
+.report-card-actions,
+.report-card-actions.send-focused-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.report-card-actions button,
+.report-card-actions.send-focused-actions button {
+  min-width: 0;
+  padding-left: 2px;
+  padding-right: 2px;
+  font-size: 11px;
+  letter-spacing: -0.4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.report-card-actions .create-session-button { grid-column: 1 / -1; }
+@media (max-width: 760px) {
+  .report-card-actions,
+  .report-card-actions.send-focused-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-card-actions .send-button { grid-column: 1 / -1; }
+}

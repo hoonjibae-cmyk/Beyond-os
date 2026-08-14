@@ -11884,29 +11884,6 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
 
   const failedRetryTargets = sessionsForReport.filter((session) => !session.is_virtual && canSendBase(session) && reportsBySessionForReport[session.id]?.send_status === 'failed');
 
-  function buildCloseoutIssueSummary() {
-    const issueMap = new Map();
-    for (const session of sessionsForReport) {
-      for (const issue of getAllIssues(session)) {
-        const current = issueMap.get(issue.key) || {
-          key: issue.key,
-          label: issue.label,
-          count: 0,
-          type: issue.type || (issue.key === 'missing_parent_phone' ? 'danger' : 'warning'),
-        };
-        current.count += 1;
-        issueMap.set(issue.key, current);
-      }
-    }
-    return Array.from(issueMap.values()).sort((a, b) => {
-      const rank = (item) => item.type === 'danger' || item.key === 'missing_parent_phone' ? 0 : 1;
-      return rank(a) - rank(b) || b.count - a.count || a.label.localeCompare(b.label, 'ko');
-    });
-  }
-
-  const closeoutIssueSummary = buildCloseoutIssueSummary();
-  const closeoutReadyPercent = summary.total ? Math.round((summary.recommended / summary.total) * 100) : 0;
-
   function getDailyReportForSession(session) {
     return reportsBySessionForReport[session.id] || null;
   }
@@ -12476,43 +12453,15 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
           </div>
         </div>
 
-        <div className="closeout-score-row">
-          <div className="closeout-score-card primary-score">
-            <span>발송 준비율</span>
-            <strong>{closeoutReadyPercent}%</strong>
-            <small>{summary.recommended}명 / 전체 {summary.total}명</small>
-          </div>
-          <button type="button" className="closeout-score-card ready" onClick={() => setQuickFilter('recommended')}>
-            <span>발송 가능</span>
-            <strong>{summary.recommended}</strong>
-            <small>즉시 전체 발송 권장</small>
-          </button>
-          <button type="button" className="closeout-score-card caution" onClick={() => setQuickFilter('decision')}>
-            <span>확인 필요</span>
-            <strong>{summary.decision}</strong>
-            <small>품질 확인 후 포함 가능</small>
-          </button>
-          <button type="button" className="closeout-score-card blocked" onClick={() => setQuickFilter('blocked')}>
-            <span>발송 불가</span>
-            <strong>{summary.blocked}</strong>
-            <small>보호자 연락처 등 확인</small>
-          </button>
-          <button type="button" className="closeout-score-card failed" onClick={() => setQuickFilter('failed')}>
-            <span>실패 재발송 후보</span>
-            <strong>{failedRetryTargets.length}</strong>
-            <small>최근 실패 상태</small>
-          </button>
-          <div className="closeout-score-card link-score">
-            <span>리포트 링크 정상</span>
-            <strong>{shareLinkSummary.ready}</strong>
-            <small>생성/재생성 필요 {shareLinkSummary.needsLink + shareLinkSummary.needsReport}명</small>
-          </div>
-        </div>
-
+        {/* v41-170: 상단 점수 카드 6개는 아래 필터 칩과 같은 일을 하는 바로가기라 없앴습니다.
+            링크 상태 숫자만 아래 링크 점검 줄로 옮겼습니다. */}
         <div className="closeout-link-row">
           <div>
             <strong>발송 링크 점검</strong>
-            <span>전체 발송 전 학부모 공개 리포트 링크를 미리 생성·재생성할 수 있습니다.</span>
+            <span>
+              링크 정상 {shareLinkSummary.ready}명 · 생성/재생성 필요 {shareLinkSummary.needsLink + shareLinkSummary.needsReport}명.
+              {' '}전체 발송 전 학부모 공개 리포트 링크를 미리 생성·재생성할 수 있습니다.
+            </span>
           </div>
           <div>
             <button className="secondary" onClick={() => loadDailyShareLinkStatuses(targetReports)} disabled={shareLinkWorking}>링크 상태 새로고침</button>
@@ -12538,28 +12487,8 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
           refreshKey={scheduleRefreshKey}
         />
 
-        <div className="closeout-check-grid">
-          <div className="closeout-check-card">
-            <strong>발송 전 점검 항목</strong>
-            <div className="closeout-issue-list">
-              {closeoutIssueSummary.length ? closeoutIssueSummary.slice(0, 8).map((issue) => (
-                <button key={issue.key} type="button" className={`closeout-issue-chip ${issue.type === 'danger' || issue.key === 'missing_parent_phone' ? 'danger' : 'warning'}`} onClick={() => setQuickFilter('all', issue.key)}>
-                  <span>{issue.label}</span>
-                  <b>{issue.count}</b>
-                </button>
-              )) : <span className="all-clear inline-clear">확인 필요 항목 없음</span>}
-            </div>
-          </div>
-          <div className="closeout-check-card muted">
-            <strong>마감 발송 권장 흐름</strong>
-            <ol>
-              <li>확인 필요 학생의 리포트 미리보기와 코멘트를 먼저 점검</li>
-              <li>테스트모드 ON/OFF 상태를 확인</li>
-              <li>마감시간에 발송 가능 전체 또는 확인 필요 포함 전체 발송</li>
-              <li>결과 요약에서 실패 학생만 재발송</li>
-            </ol>
-          </div>
-        </div>
+        {/* v41-170: 발송 전 점검 항목과 권장 흐름 안내는 없앴습니다.
+            점검 항목은 아래 필터 칩(플래너 미제출·오늘 코멘트 미입력 등)과 같은 기능입니다. */}
 
         {bulkSendRun ? (
           <div className={`bulk-send-progress-card ${bulkSendRun.status}`}>
@@ -12666,29 +12595,7 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
         )}
       </div>
 
-      <div className="report-dashboard-strip">
-        <button type="button" className="mini-stat" onClick={() => setQuickFilter('all')}>
-          <strong>{summary.total}</strong><span>전체</span>
-        </button>
-        <button type="button" className="mini-stat green" onClick={() => setQuickFilter('recommended')}>
-          <strong>{summary.recommended}</strong><span>발송 가능</span>
-        </button>
-        <button type="button" className="mini-stat gold" onClick={() => setQuickFilter('decision')}>
-          <strong>{summary.decision}</strong><span>확인 필요</span>
-        </button>
-        <button type="button" className="mini-stat muted-stat" onClick={() => setQuickFilter('no_session')}>
-          <strong>{summary.no_session}</strong><span>입실 기록 없음</span>
-        </button>
-        <button type="button" className="mini-stat red" onClick={() => setQuickFilter('blocked')}>
-          <strong>{summary.blocked}</strong><span>발송 불가</span>
-        </button>
-        <button type="button" className="mini-stat muted-stat" onClick={() => setQuickFilter('excluded')}>
-          <strong>{summary.excluded}</strong><span>발송 제외</span>
-        </button>
-        <button type="button" className="mini-stat" onClick={() => setQuickFilter('sent')}>
-          <strong>{summary.sent}</strong><span>발송 완료</span>
-        </button>
-      </div>
+      {/* v41-170: 집계 바로가기 줄은 아래 [처리 기준] 선택·필터 칩과 같은 기능이라 없앴습니다. */}
 
       <div className="report-filter-panel clean-panel">
         <div className="report-filter-bar compact-filter">
@@ -12734,11 +12641,18 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
           const excluded = isExcluded(session);
           const canSend = canSendBase(session);
           const isOpen = Boolean(openCards[session.id]);
-          const shareLinkState = getShareLinkState(session);
-          const shareLink = getDailyShareLinkForSession(session);
           return (
             <article key={session.id} className={`report-student-card ${getDecisionStatus(session)} ${isOpen ? 'expanded' : ''}`}>
-              <div className="report-card-head">
+              {/* v41-170: [상세 보기] 버튼을 없애고 이름 줄을 눌러 상세를 펼치도록 바꿨습니다.
+                  (수동 발송완료 처리가 상세 안에 있어 접근 경로를 남겨 둡니다) */}
+              <div
+                className="report-card-head is-toggle"
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleCard(session.id)}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleCard(session.id); } }}
+                title={isOpen ? '접기' : '입실/순공/보호자 등 상세 보기'}
+              >
                 <div>
                   <div className="seat-name">
                     <span>{String(session.seat_no).padStart(2, '0')}</span>
@@ -12747,6 +12661,7 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
                   <p>{[session.students?.school, session.students?.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}</p>
                 </div>
                 <span className={`status-pill ${getDecisionClass(session)}`}>{getDecisionLabel(session)}</span>
+                <i className={`report-card-head-caret${isOpen ? ' open' : ''}`} aria-hidden="true">⌄</i>
               </div>
 
               {(blockers.length || warnings.length || excluded || session.is_virtual || ['ready', 'sent', 'failed'].includes(report?.send_status)) ? (
@@ -12762,14 +12677,8 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
                 </div>
               ) : <div className="all-clear compact-all-clear">발송 준비 완료</div>}
 
-              {!session.is_virtual ? (
-                <div className={`report-link-status-row ${shareLinkState.cls}`}>
-                  <span>리포트 링크</span>
-                  <strong>{shareLinkState.label}</strong>
-                  {shareLink?.url ? <button className="text-button" onClick={() => window.open(shareLink.url, '_blank')}>새 창 열기</button> : null}
-                  {shareLink?.url ? <button className="text-button" onClick={() => copyDailyPublicLink(session)}>링크 복사</button> : null}
-                </div>
-              ) : null}
+              {/* v41-170: 리포트 링크 줄은 아래 [링크 미리보기]·[링크 복사] 버튼과 기능이 겹쳐 없앴습니다.
+                  링크가 없으면 두 버튼이 누를 때 자동으로 만들어 줍니다. */}
 
               {isOpen ? (
                 <div className="report-card-details-wrap">
@@ -12796,10 +12705,9 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
                 ) : (
                   <>
                     <button onClick={() => openSendPreview(session.id)} disabled={excluded}>미리보기</button>
-                    <button className="secondary link-preview-button" onClick={() => previewDailyPublicLink(session)} disabled={excluded}>링크 미리보기</button>
-                    <button className="secondary" onClick={() => copyDailyPublicLink(session)} disabled={excluded}>링크 복사</button>
-                    <button className="secondary exclude-button" onClick={() => toggleExclusion(session)}>{excluded ? '제외 해제' : '발송 제외'}</button>
-                    <button className="secondary detail-button" onClick={() => toggleCard(session.id)}>{isOpen ? '접기' : '상세 보기'}</button>
+                    <button className="secondary link-preview-button" onClick={() => previewDailyPublicLink(session)} disabled={excluded}>링크열기</button>
+                    <button className="secondary" onClick={() => copyDailyPublicLink(session)} disabled={excluded}>링크복사</button>
+                    <button className="secondary exclude-button" onClick={() => toggleExclusion(session)}>{excluded ? '제외해제' : '발송제외'}</button>
                     <button className="primary send-button" onClick={() => sendSingleWithDecision(session)} disabled={!canSend}>발송하기</button>
                   </>
                 )}
@@ -18287,16 +18195,19 @@ function ReportSendStatusBanner({ sendConfig, reportType = 'daily' }) {
   const safety = getReportSendSafetySummary(sendConfig);
   const reportLabel = reportType === 'weekly' ? '위클리 리포트' : '데일리 리포트';
 
+  // v41-170: 큰 배너 대신 오른쪽 위 작은 표시로 줄였습니다.
+  // 자세한 내용은 마우스를 올리면 보입니다.
+  const detail = [
+    `${reportLabel} 발송 상태: ${safety.title}`,
+    connected ? safety.description : `${envName}이 아직 설정되지 않아 발송대기 상태까지만 저장됩니다.`,
+    `Provider: ${safety.providerMode} · Fail-safe: ${safety.failSafe ? 'ON' : 'OFF'} · 테스트 번호: ${safety.testMode ? 'ON' : 'OFF'} · Allowlist: ${safety.allowlistCount ? `${safety.allowlistCount}개` : '미사용'}`,
+  ].join('\n');
+
   return (
-    <div className={`send-config-banner ${connected ? 'connected' : 'pending'} safety-${safety.className || 'safe'}`}>
-      <div>
-        <strong>{reportLabel} 발송 상태: {safety.title}</strong>
-        <span>{connected ? safety.description : `${envName}이 아직 설정되지 않아 발송대기 상태까지만 저장됩니다.`}</span>
-        <small>
-          Provider: {safety.providerMode} · Fail-safe: {safety.failSafe ? 'ON' : 'OFF'} · 테스트 번호: {safety.testMode ? 'ON' : 'OFF'} · Allowlist: {safety.allowlistCount ? `${safety.allowlistCount}개` : '미사용'}
-        </small>
-      </div>
-      <em>{safety.badge}</em>
+    <div className={`send-config-chip safety-${safety.className || 'safe'} ${connected ? 'connected' : 'pending'}`} title={detail}>
+      <i aria-hidden="true" />
+      <b>{safety.title}</b>
+      <span>{safety.providerMode} · 테스트번호 {safety.testMode ? 'ON' : 'OFF'} · Allowlist {safety.allowlistCount ? `${safety.allowlistCount}개` : '미사용'}{connected ? '' : ' · 미연결'}</span>
     </div>
   );
 }
