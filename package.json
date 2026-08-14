@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-163-hold-list-cleanup",
-  "version": "0.41.163",
+  "name": "beyond-os-v41-164-nickname-generator",
+  "version": "0.41.164",
   "private": true,
   "scripts": {
     "dev": "next dev",

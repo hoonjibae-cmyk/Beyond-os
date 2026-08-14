@@ -20233,6 +20233,31 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   background: #eef5ec; border-radius: 999px; padding: 5px 11px; white-space: nowrap;
 }
 
+/* v41-164: 닉네임 랜덤 생성 */
+.nickname-suggest-start { width: auto; align-self: flex-start; min-height: 34px; padding: 0 14px; font-size: 12.5px; border-radius: 10px; margin-top: 6px; }
+.nickname-suggest-box {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  border: 1.5px solid #dfe8fb; background: #f5f8ff; border-radius: 12px; padding: 10px 12px; margin-top: 6px;
+}
+.nickname-suggest-value { display: flex; align-items: baseline; gap: 8px; }
+.nickname-suggest-value span { font-size: 11px; font-weight: 900; color: #6b7a9a; }
+.nickname-suggest-value b { font-size: 18px; color: #1b3b7a; letter-spacing: -.01em; }
+.nickname-suggest-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.nickname-suggest-actions button { width: auto; min-height: 32px; padding: 0 12px; font-size: 12px; border-radius: 9px; }
+.nickname-bulk-panel { display: grid; gap: 11px; padding: 16px; margin-bottom: 14px; }
+.nickname-bulk-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.nickname-bulk-head strong { display: block; font-size: 14.5px; color: #211f1b; }
+.nickname-bulk-head span { display: block; margin-top: 3px; font-size: 12px; font-weight: 850; color: #8a8479; line-height: 1.5; }
+.nickname-bulk-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.nickname-bulk-actions button { width: auto; min-height: 36px; padding: 0 14px; font-size: 12.5px; border-radius: 10px; }
+.nickname-bulk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 7px; max-height: 320px; overflow-y: auto; }
+.nickname-bulk-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  border: 1px solid #e2ded6; border-radius: 11px; background: #fff; padding: 9px 12px;
+}
+.nickname-bulk-row span { font-size: 12.5px; font-weight: 850; color: #6b6459; }
+.nickname-bulk-row b { font-size: 14px; color: #1d4ed8; }
+
 /* v41-158: 리포트 예약 발송 */
 .send-mode-box { display: grid; gap: 10px; margin-top: 12px; }
 .send-mode-tabs { display: flex; gap: 6px; background: #f2f0eb; border-radius: 12px; padding: 4px; }

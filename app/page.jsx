@@ -5667,6 +5667,8 @@ export default function Page() {
               saveEditor={saveStudentEditor}
               deactivateEditor={deactivateStudentEditor}
               deleteEditor={deleteStudentEditor}
+              apiFetch={apiFetch}
+              setMessage={setMessage}
             />
           </>
         ) : null}
@@ -10186,9 +10188,55 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
   );
 }
 
-function StudentsTab({ students, seatsForDisplay, openStudentEditor }) {
+function StudentsTab({ students, seatsForDisplay, openStudentEditor, apiFetch, setMessage, reloadStudents }) {
   const [statusFilter, setStatusFilter] = useState('active');
   const [searchText, setSearchText] = useState('');
+  // v41-164: 닉네임 일괄 생성 (미리보기 → 확정)
+  const [nicknamePreview, setNicknamePreview] = useState(null);
+  const [nicknameBulkBusy, setNicknameBulkBusy] = useState(false);
+
+  // 닉네임이 비어 있는 활성 학생
+  const nicknameMissing = (students || []).filter(
+    (student) => student.status !== 'inactive' && !String(student.nickname || '').trim(),
+  );
+
+  async function previewBulkNicknames() {
+    if (!nicknameMissing.length) {
+      alert('닉네임이 비어 있는 활성 학생이 없습니다.');
+      return;
+    }
+    try {
+      setNicknameBulkBusy(true);
+      const data = await apiFetch('/api/student-nicknames', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'assign_bulk', preview: true }),
+      });
+      setNicknamePreview(data);
+    } catch (error) {
+      setMessage?.(error?.message || '닉네임 일괄 생성 실패');
+    } finally {
+      setNicknameBulkBusy(false);
+    }
+  }
+
+  async function applyBulkNicknames() {
+    if (!nicknamePreview?.assignments?.length) return;
+    if (!confirm(`${nicknamePreview.assignments.length}명에게 닉네임을 배정할까요?\n\n이미 닉네임이 있는 학생은 건드리지 않습니다.`)) return;
+    try {
+      setNicknameBulkBusy(true);
+      const data = await apiFetch('/api/student-nicknames', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'assign_bulk' }),
+      });
+      setMessage?.(data.message || '닉네임을 배정했습니다.');
+      setNicknamePreview(null);
+      await reloadStudents?.();
+    } catch (error) {
+      setMessage?.(error?.message || '닉네임 배정 실패');
+    } finally {
+      setNicknameBulkBusy(false);
+    }
+  }
 
   const seatByStudentId = {};
   for (const seat of seatsForDisplay || []) {
@@ -10245,8 +10293,46 @@ function StudentsTab({ students, seatsForDisplay, openStudentEditor }) {
           <h2>학생 전체 카드</h2>
           <p>학생 기본 DB와 기본 좌석, 연락처 정보를 한 화면에서 관리합니다. 비활성 학생은 DB와 과거 기록을 보존한 상태로 운영 대상에서 제외됩니다.</p>
         </div>
-        <button className="primary section-action" onClick={() => openStudentEditor(null)}>학생 추가</button>
+        <div className="planner-head-actions">
+          {nicknameMissing.length ? (
+            <button className="secondary section-action" onClick={previewBulkNicknames} disabled={nicknameBulkBusy}>
+              {nicknameBulkBusy ? '생성 중...' : `닉네임 일괄 생성 (${nicknameMissing.length}명)`}
+            </button>
+          ) : null}
+          <button className="primary section-action" onClick={() => openStudentEditor(null)}>학생 추가</button>
+        </div>
       </div>
+
+      {/* v41-164: 닉네임 일괄 생성 미리보기 — 확정 전에는 저장하지 않습니다. */}
+      {nicknamePreview ? (
+        <div className="nickname-bulk-panel clean-panel">
+          <div className="nickname-bulk-head">
+            <div>
+              <strong>닉네임 배정 미리보기 {nicknamePreview.assignments?.length || 0}명</strong>
+              <span>
+                기존 닉네임과 겹치지 않는 이름만 골랐습니다. 마음에 들지 않으면 [다시 생성]으로 새로 뽑고,
+                괜찮으면 [확정 저장]을 누르세요. 확정 전에는 저장되지 않습니다.
+                {nicknamePreview.unassignedCount ? ` · 후보가 부족해 ${nicknamePreview.unassignedCount}명은 배정하지 못했습니다.` : ''}
+              </span>
+            </div>
+            <div className="nickname-bulk-actions">
+              <button type="button" className="secondary" onClick={previewBulkNicknames} disabled={nicknameBulkBusy}>
+                {nicknameBulkBusy ? '생성 중...' : '다시 생성'}
+              </button>
+              <button type="button" className="primary" onClick={applyBulkNicknames} disabled={nicknameBulkBusy}>확정 저장</button>
+              <button type="button" className="secondary" onClick={() => setNicknamePreview(null)} disabled={nicknameBulkBusy}>취소</button>
+            </div>
+          </div>
+          <div className="nickname-bulk-list">
+            {(nicknamePreview.assignments || []).map((item) => (
+              <div key={item.id} className="nickname-bulk-row">
+                <span>{item.name}</span>
+                <b>{item.nickname}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="student-db-summary clickable-summary">
         <button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setQuickFilter('all')}><span>전체</span><strong>{sortedStudents.length}명</strong></button>
@@ -10318,7 +10404,40 @@ function StudentsTab({ students, seatsForDisplay, openStudentEditor }) {
   );
 }
 
-function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, saveEditor, deactivateEditor, deleteEditor }) {
+function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, saveEditor, deactivateEditor, deleteEditor, apiFetch, setMessage }) {
+  // v41-164: 닉네임 랜덤 제안 상태. 확정 전까지는 입력칸을 건드리지 않습니다.
+  const [nicknameSuggestion, setNicknameSuggestion] = useState('');
+  const [nicknameTried, setNicknameTried] = useState([]);
+  const [nicknameBusy, setNicknameBusy] = useState(false);
+
+  async function suggestNickname(again = false) {
+    try {
+      setNicknameBusy(true);
+      const data = await apiFetch('/api/student-nicknames', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'suggest',
+          studentId: editor?.id || '',
+          // 방금 본 후보가 또 나오지 않게 제외합니다.
+          exclude: again ? [...nicknameTried, nicknameSuggestion].filter(Boolean) : [],
+        }),
+      });
+      setNicknameSuggestion(data.nickname);
+      setNicknameTried((prev) => [...prev, data.nickname].slice(-20));
+    } catch (error) {
+      setMessage?.(error?.message || '닉네임 생성 실패');
+    } finally {
+      setNicknameBusy(false);
+    }
+  }
+
+  function confirmNickname() {
+    if (!nicknameSuggestion) return;
+    setEditor((prev) => (prev ? { ...prev, nickname: nicknameSuggestion } : prev));
+    setNicknameSuggestion('');
+    setNicknameTried([]);
+  }
+
   if (!editor) return null;
 
   const assignedStudentNameBySeat = {};
@@ -10386,8 +10505,32 @@ function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, save
               <div className="time-grid">
                 <div className="field">
                   <label>닉네임</label>
-                  <input value={editor.nickname || ''} onChange={(e) => setEditor({ ...editor, nickname: e.target.value })} placeholder="예: 순공요정" maxLength={16} />
-                  <div className="hint">게시용 랭킹보드에 실명 대신 표시됩니다.</div>
+                  <input value={editor.nickname || ''} onChange={(e) => setEditor({ ...editor, nickname: e.target.value })} placeholder="예: 꾸준함" maxLength={16} />
+
+                  {/* v41-164: 손으로 짓지 않아도 되도록 랜덤 제안 */}
+                  {nicknameSuggestion ? (
+                    <div className="nickname-suggest-box">
+                      <div className="nickname-suggest-value">
+                        <span>추천</span>
+                        <b>{nicknameSuggestion}</b>
+                      </div>
+                      <div className="nickname-suggest-actions">
+                        <button type="button" className="primary" onClick={confirmNickname} disabled={nicknameBusy}>확정</button>
+                        <button type="button" className="secondary" onClick={() => suggestNickname(true)} disabled={nicknameBusy}>
+                          {nicknameBusy ? '생성 중...' : '다시 생성'}
+                        </button>
+                        <button type="button" className="secondary" onClick={() => { setNicknameSuggestion(''); setNicknameTried([]); }} disabled={nicknameBusy}>취소</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" className="secondary nickname-suggest-start" onClick={() => suggestNickname(false)} disabled={nicknameBusy}>
+                      {nicknameBusy ? '생성 중...' : '랜덤 생성'}
+                    </button>
+                  )}
+
+                  <div className="hint">
+                    게시용 랭킹보드에 실명 대신 표시됩니다. 확정하면 위 칸에 채워지고, 아래 <b>저장</b>을 눌러야 반영됩니다.
+                  </div>
                 </div>
                 <div className="field">
                   <label>게시 동의</label>
@@ -18319,7 +18462,7 @@ function SettingsTab({
       </div>
 
       {settingsView === 'students' ? (
-        <StudentsTab students={students} seatsForDisplay={seatsForDisplay} openStudentEditor={openStudentEditor} />
+        <StudentsTab students={students} seatsForDisplay={seatsForDisplay} openStudentEditor={openStudentEditor} apiFetch={apiFetch} setMessage={setMessage} reloadStudents={loadSettingsStudents} />
       ) : null}
 
       {settingsView === 'cohorts' ? (
