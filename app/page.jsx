@@ -14091,7 +14091,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
       const after = nextRewardState?.penaltyByStudent?.[String(studentId)]?.currentStage;
       if (after && Number(after.stage) > stageBefore) {
         const studentName = students.find((item) => String(item.id) === String(studentId))?.name || '해당 학생';
-        alert(`⚠ ${studentName} 학생 — 벌점 ${after.stage}점 초과\n\n누적 벌점 ${after.penalty}점\n조치 단계: ${after.label}\n\n${after.action}`);
+        alert(`⚠ ${studentName} 학생 — 순벌점 ${after.stage}점 초과\n\n순벌점 ${after.penaltyNet}점 (벌점 ${after.penalty} - 상점 ${after.reward})\n조치 단계: ${after.label}\n\n${after.action}`);
       }
     } catch (error) {
       setMessage?.(error.message);
@@ -14162,7 +14162,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
         <div className="penalty-stage-alert-card">
           <div className="penalty-stage-alert-head">
             <strong>벌점 단계 조치 대상 {rewardState.penaltyAlerts.length}명</strong>
-            <span>누적 벌점 10점 초과 → 학부모 알림 · 20점 초과 → 센터장 면담 · 30점 초과 → 제적 검토</span>
+            <span>순벌점(벌점 - 상점) 10점 초과 → 학부모 알림 · 20점 초과 → 센터장 면담 · 30점 초과 → 제적 검토. 상점을 받으면 그만큼 상계됩니다.</span>
           </div>
           <div className="penalty-stage-alert-list">
             {rewardState.penaltyAlerts.map((item) => (
@@ -14173,7 +14173,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
                 </div>
                 <div className="penalty-stage-alert-score">
                   <b className={`penalty-stage-badge tone-${item.tone}`}>{item.stage}점 · {item.stageLabel}</b>
-                  <em>누적 벌점 {item.penalty}점{item.deferred ? ' · 보류 중' : ''}</em>
+                  <em>순벌점 {item.penaltyNet}점 (벌 {item.penalty} - 상 {item.reward}){item.deferred ? ' · 보류 중' : ''}</em>
                 </div>
                 <p>{item.message}. {item.actionHint}</p>
                 {item.pendingStages.length > 1 ? (
@@ -15876,7 +15876,7 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
                   {points.penaltyStage.deferred ? ' (보류 중)' : ''}
                 </strong>
                 <span>
-                  누적 벌점 {points.penaltyTotal}점 · {points.penaltyStage.action}
+                  순벌점 {points.penaltyNet}점 (벌 {points.penaltyTotal} - 상 {points.penaltyRewardOffset}) · {points.penaltyStage.action}
                   {(points.penaltyPendingStages || []).length > 1
                     ? ` · 미조치 ${points.penaltyPendingStages.map((item) => `${item.stage}점`).join('/')}`
                     : ''}
@@ -15891,7 +15891,7 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
               <strong>벌점 단계 조치 이력</strong>
               {points.penaltyHandledStages.map((item) => (
                 <span key={`pstage-${item.stage}`}>
-                  {item.handledAt} · 벌점 {item.stage}점 단계 {item.label} 완료{item.handledBy ? ` · ${item.handledBy}` : ''}
+                  {item.handledAt} · 순벌점 {item.stage}점 단계 {item.label} 완료{item.handledBy ? ` · ${item.handledBy}` : ''}
                 </span>
               ))}
             </div>

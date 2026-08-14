@@ -96,7 +96,7 @@ export async function GET(request) {
 
     if (studentId) {
       const cycle = resolvePointCycle(pointRows, rewardResult.rows);
-      const penalty = resolvePenaltyStages(pointRows, penaltyResult.rows);
+      const penalty = resolvePenaltyStages(pointRows, penaltyResult.rows, { rewardRows: rewardResult.rows });
       return Response.json({
         ok: true,
         threshold: POINT_REWARD_THRESHOLD,
@@ -109,7 +109,7 @@ export async function GET(request) {
     }
 
     const cycles = resolvePointCyclesByStudent(pointRows, rewardResult.rows);
-    const penaltyByStudent = resolvePenaltyStagesByStudent(pointRows, penaltyResult.rows);
+    const penaltyByStudent = resolvePenaltyStagesByStudent(pointRows, penaltyResult.rows, { rewardRows: rewardResult.rows });
     const studentIds = [...new Set([...Object.keys(cycles), ...Object.keys(penaltyByStudent)])];
 
     // 알림 배너에 이름을 함께 보여주기 위해 학생 표시 정보를 붙입니다.
@@ -155,7 +155,10 @@ export async function GET(request) {
           student: studentMap[id] || null,
           name: studentMap[id]?.name || '학생',
           subtitle: [studentMap[id]?.school, studentMap[id]?.grade].filter(Boolean).join(' '),
+          penaltyNet: state.penaltyNet,
+          reward: state.reward,
           penalty: state.penalty,
+          net: state.net,
           stage: state.currentStage.stage,
           stageKey: state.currentStage.key,
           stageLabel: state.currentStage.label,
@@ -168,7 +171,7 @@ export async function GET(request) {
           })),
         };
       })
-      .sort((a, b) => b.stage - a.stage || b.penalty - a.penalty || String(a.name).localeCompare(String(b.name), 'ko'));
+      .sort((a, b) => b.stage - a.stage || b.penaltyNet - a.penaltyNet || String(a.name).localeCompare(String(b.name), 'ko'));
 
     return Response.json({
       ok: true,
@@ -214,18 +217,19 @@ export async function POST(request) {
         return Response.json({ error: `단계 값이 올바르지 않습니다: ${body.stage ?? '-'}` }, { status: 400 });
       }
 
-      const [points, penaltyRows] = await Promise.all([
+      const [points, penaltyRows, rewardsForStage] = await Promise.all([
         loadPointRows(supabase, studentId),
         loadPenaltyActionRows(supabase, studentId),
+        loadRewardRows(supabase, studentId),
       ]);
       if (penaltyRows.warning) {
         return Response.json({ error: penaltyRows.warning }, { status: 400 });
       }
 
-      const state = resolvePenaltyStages(points, penaltyRows.rows);
-      if (state.penalty <= stage) {
+      const state = resolvePenaltyStages(points, penaltyRows.rows, { rewardRows: rewardsForStage.rows });
+      if (state.penaltyNet <= stage) {
         return Response.json({
-          error: `현재 누적 벌점은 ${state.penalty}점으로 ${stage}점 단계 대상이 아닙니다. (${stage}점 초과부터)`,
+          error: `현재 순벌점은 ${state.penaltyNet}점(벌 ${state.penalty} - 상 ${state.reward})으로 ${stage}점 단계 대상이 아닙니다. (${stage}점 초과부터)`,
         }, { status: 400 });
       }
 
@@ -235,7 +239,7 @@ export async function POST(request) {
           student_id: studentId,
           stage,
           action: action === 'penalty_done' ? 'done' : 'deferred',
-          penalty_points: state.penalty,
+          penalty_points: state.penaltyNet,
           memo: memo || null,
           created_by: actorName,
         })
@@ -243,13 +247,13 @@ export async function POST(request) {
         .single();
       if (error) throw error;
 
-      const nextState = resolvePenaltyStages(points, [...penaltyRows.rows, data]);
+      const nextState = resolvePenaltyStages(points, [...penaltyRows.rows, data], { rewardRows: rewardsForStage.rows });
 
       await writeUserActionLog(supabase, request, {
         actionType: action === 'penalty_done' ? 'student_penalty.done' : 'student_penalty.defer',
         targetType: 'student',
         targetId: studentId,
-        payload: { stage, stageLabel: stageDef.label, penalty: state.penalty, memo },
+        payload: { stage, stageLabel: stageDef.label, penaltyNet: state.penaltyNet, reward: state.reward, penalty: state.penalty, memo },
       }).catch(() => {});
 
       return Response.json({
@@ -257,8 +261,8 @@ export async function POST(request) {
         row: data,
         penalty: nextState,
         message: action === 'penalty_done'
-          ? `벌점 ${stage}점 단계 — ${stageDef.label} 조치 완료로 기록했습니다. (당시 누적 벌점 ${state.penalty}점)`
-          : `벌점 ${stage}점 단계 — ${stageDef.label}을 보류로 기록했습니다. 알림은 목록에 계속 남습니다.`,
+          ? `순벌점 ${stage}점 단계 — ${stageDef.label} 조치 완료로 기록했습니다. (당시 순벌점 ${state.penaltyNet}점 · 벌 ${state.penalty} / 상 ${state.reward})`
+          : `순벌점 ${stage}점 단계 — ${stageDef.label}을 보류로 기록했습니다. 알림은 목록에 계속 남습니다.`,
       });
     }
 

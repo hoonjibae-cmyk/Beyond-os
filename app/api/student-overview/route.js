@@ -374,7 +374,7 @@ export async function GET(request) {
       .select('*')
       .eq('student_id', String(studentId))
       .order('created_at', { ascending: true }));
-    const penaltyState = resolvePenaltyStages(pointRows, penaltyActionResult.rows);
+    const penaltyState = resolvePenaltyStages(pointRows, penaltyActionResult.rows, { rewardRows: rewardHistoryResult.rows });
 
     const dailySentCount = dailyReports.filter((report) => report.sent_at).length;
 
@@ -444,7 +444,9 @@ export async function GET(request) {
         })),
         lifetime: pointCycle.lifetime,
         // v41-156: 벌점 누적 단계
+        penaltyNet: penaltyState.penaltyNet,
         penaltyTotal: penaltyState.penalty,
+        penaltyRewardOffset: penaltyState.reward,
         penaltyStage: penaltyState.currentStage
           ? {
             stage: penaltyState.currentStage.stage,
