@@ -2154,6 +2154,10 @@ export default function Page() {
   const [rankingCohortId, setRankingCohortId] = useState('');
   const [rankingCohortInfo, setRankingCohortInfo] = useState(null);
   const [cohortOptions, setCohortOptions] = useState([]);
+  // v41-168: 기수별 수강 명단(기수 id → 학생 id 배열)과 기본 기수.
+  // 학생을 고르기 전에 기수로 먼저 좁히는 화면들이 함께 씁니다.
+  const [cohortRosters, setCohortRosters] = useState({});
+  const [defaultCohortId, setDefaultCohortId] = useState('');
   const [scheduleView, setScheduleView] = useState('day');
   const [scheduleBaseDate, setScheduleBaseDate] = useState(getKstDateString());
   const [scheduleStudentFilter, setScheduleStudentFilter] = useState('all');
@@ -4422,9 +4426,14 @@ export default function Page() {
     try {
       const data = await apiFetch('/api/cohorts');
       setCohortOptions(data.cohorts || []);
+      // v41-168: 기수별 명단도 함께 받아 두면 학생 목록을 기수로 좁힐 수 있습니다.
+      setCohortRosters(data.rosters || {});
+      setDefaultCohortId(String(data.defaultCohortId || ''));
       return data;
     } catch {
       setCohortOptions([]);
+      setCohortRosters({});
+      setDefaultCohortId('');
       return null;
     }
   }
@@ -5554,6 +5563,12 @@ export default function Page() {
 
         {isActiveTabAllowed && activeTab === 'studentHistory' ? (
           <StudentCareTab
+            cohortProps={{
+              cohortOptions,
+              cohortRosters,
+              defaultCohortId,
+              loadCohortOptions,
+            }}
             attendanceProps={{
               students,
               rows: attendanceRows,
@@ -16706,23 +16721,74 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
   );
 }
 
-function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
+function StudentCareTab({ attendanceProps = {}, historyProps = {}, cohortProps = {} }) {
   const selectedStudentId = attendanceProps.studentFilter || historyProps.focusStudentId || '';
   const [historySummary, setHistorySummary] = useState(null);
   // v41-136: 종합 카드에서 조회한 담당 코치 정보를 출결/코멘트 영역과 공유합니다.
   const [overviewData, setOverviewData] = useState(null);
   const assignedMentorName = overviewData?.assignedMentor?.name || '';
 
+  // v41-168: 학생을 고르기 전에 기수로 먼저 좁힙니다.
+  const { cohortOptions = [], cohortRosters = {}, defaultCohortId = '', loadCohortOptions } = cohortProps;
+  const [cohortFilter, setCohortFilter] = useState('');
+  const cohortAutoSetRef = useRef(false);
+
+  useEffect(() => { loadCohortOptions?.(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // 기수 목록이 도착하면 진행 중인 기수로 한 번만 맞춰 둡니다.
+  // 이미 학생을 고른 상태면 그 선택이 사라지지 않도록 건드리지 않습니다.
+  useEffect(() => {
+    if (cohortAutoSetRef.current) return;
+    if (!cohortOptions.length) return;
+    cohortAutoSetRef.current = true;
+    if (selectedStudentId) return;
+    if (defaultCohortId) setCohortFilter(String(defaultCohortId));
+  }, [cohortOptions, defaultCohortId, selectedStudentId]);
+
+  const allStudents = attendanceProps.students || [];
+  const cohortStudentIds = cohortFilter ? new Set((cohortRosters[cohortFilter] || []).map(String)) : null;
+  const visibleStudents = cohortStudentIds
+    ? allStudents.filter((student) => cohortStudentIds.has(String(student.id)))
+    : allStudents;
+  // 고른 학생이 이 기수 명단에 없더라도 선택이 풀리지 않도록 목록에 남겨 둡니다.
+  const selectedOutsideCohort = Boolean(
+    selectedStudentId
+    && cohortStudentIds
+    && !cohortStudentIds.has(String(selectedStudentId))
+    && allStudents.some((student) => String(student.id) === String(selectedStudentId)),
+  );
+  const studentOptions = selectedOutsideCohort
+    ? [...visibleStudents, ...allStudents.filter((student) => String(student.id) === String(selectedStudentId))]
+    : visibleStudents;
+  const selectedCohort = cohortOptions.find((cohort) => String(cohort.id) === String(cohortFilter)) || null;
+
   return (
     <section className="student-care-page student-care-unified-page">
       <div className="content-card student-care-picker">
         <div className="student-care-picker-head">
           <strong>학생 선택</strong>
-          <span>먼저 학생과 조회 기간을 선택하세요. 선택하면 아래 두 영역에 함께 적용됩니다.</span>
+          <span>기수를 먼저 고르면 그 기수 명단만 학생 목록에 나옵니다. 학생과 조회 기간을 선택하면 아래 두 영역에 함께 적용됩니다.</span>
         </div>
-        <div className="student-care-picker-row">
+        <div className={`student-care-picker-row${cohortOptions.length ? ' has-cohort' : ''}`}>
+          {/* v41-168: 학생 목록이 길어 기수로 먼저 좁힙니다. 기수가 없으면 이 칸도 나오지 않습니다. */}
+          {cohortOptions.length ? (
+            <div className="field student-care-picker-cohort">
+              <label>기수</label>
+              <select
+                value={cohortFilter}
+                onChange={(event) => setCohortFilter(event.target.value)}
+              >
+                <option value="">전체 기수 ({allStudents.length}명)</option>
+                {cohortOptions.map((cohort) => (
+                  <option key={cohort.id} value={cohort.id}>
+                    {cohort.name}{cohort.isCurrent ? ' (진행 중)' : ''} · {(cohortRosters[cohort.id] || []).length}명
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div className="field student-care-picker-student">
-            <label>학생</label>
+            <label>학생{selectedCohort ? ` · ${selectedCohort.name} ${visibleStudents.length}명` : ''}</label>
             <select
               value={attendanceProps.studentFilter || ''}
               onChange={(event) => {
@@ -16731,8 +16797,12 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
                 if (value) attendanceProps.loadHistory?.(attendanceProps.start, attendanceProps.end, value);
               }}
             >
-              <option value="">학생을 선택하세요</option>
-              {(attendanceProps.students || []).map((student) => (
+              <option value="">
+                {selectedCohort && !visibleStudents.length
+                  ? `${selectedCohort.name} 명단이 비어 있습니다`
+                  : '학생을 선택하세요'}
+              </option>
+              {studentOptions.map((student) => (
                 <option key={student.id} value={student.id}>
                   {student.name}{getProductTierLabel(student.product_tier) ? ` [${getProductTierLabel(student.product_tier)}]` : ''} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
                 </option>
@@ -16754,6 +16824,11 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
             <button type="button" className="primary" onClick={() => attendanceProps.loadHistory?.()} disabled={attendanceProps.loading || !attendanceProps.studentFilter}>{attendanceProps.loading ? '조회 중...' : '조회'}</button>
           </div>
         </div>
+        {selectedOutsideCohort ? (
+          <div className="student-care-picker-note">
+            지금 보고 있는 학생은 {selectedCohort?.name || '이 기수'} 명단에 없습니다. 선택이 풀리지 않도록 목록에 남겨 두었습니다.
+          </div>
+        ) : null}
       </div>
 
       <StudentOverviewPanel
