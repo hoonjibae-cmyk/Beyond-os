@@ -6,6 +6,7 @@ import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
 import { BRAND_NAME } from '../lib/brand';
+import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
@@ -5502,6 +5503,7 @@ export default function Page() {
             apiFetch={apiFetch}
             sendConfig={sendConfig}
             currentUser={currentUser}
+            setMessage={setMessage}
             defaultSchedule={defaultSchedule}
           />
         ) : null}
@@ -10942,10 +10944,129 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
   );
 }
 
-function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBySession, nowTick, planners, plannerDate, setPlannerDate, generateReport, generateAllReports, openSendPreview, sendReportToParent, prepareReportSend, markReportManualSent, exclusionsBySession, updateReportExclusion, operatingRules, todaySchedules, apiFetch, sendConfig, currentUser, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS }) {
+// v41-158: 리포트 예약 발송 목록.
+// 데일리/위클리 탭에서 같은 화면을 씁니다. reportType으로 대상만 가릅니다.
+function ReportScheduleSection({ reportType, apiFetch, setMessage, refreshKey = 0 }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState('');
+  const [cronConfigured, setCronConfigured] = useState(true);
+  const [showDone, setShowDone] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await apiFetch(`/api/report-schedules?reportType=${reportType}`);
+      setRows(data.rows || []);
+      setCronConfigured(data.cronConfigured !== false);
+    } catch (error) {
+      setRows([]);
+      setMessage?.(error?.message || '예약 목록 조회 실패');
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch, reportType, setMessage]);
+
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  async function act(row, action) {
+    const labels = { cancel: '취소', delete: '삭제', run_now: '지금 실행' };
+    const confirmText = action === 'run_now'
+      ? `예약 시각을 기다리지 않고 지금 바로 발송할까요?\n\n${row.label || ''}`
+      : `이 예약을 ${labels[action]}할까요?\n\n${row.label || ''}`;
+    if (!confirm(confirmText)) return;
+    try {
+      setBusyId(`${row.id}-${action}`);
+      const data = await apiFetch('/api/report-schedules', {
+        method: 'POST',
+        body: JSON.stringify({ action, id: row.id }),
+      });
+      setMessage?.(data.message || `${labels[action]} 완료`);
+      await load();
+    } catch (error) {
+      setMessage?.(error?.message || `${labels[action]} 실패`);
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  const pending = rows.filter((row) => ['pending', 'processing'].includes(row.status));
+  const finished = rows.filter((row) => !['pending', 'processing'].includes(row.status));
+  const visible = showDone ? [...pending, ...finished] : pending;
+
+  return (
+    <div className="report-schedule-section clean-panel">
+      <div className="report-schedule-head">
+        <div>
+          <strong>예약 발송 {pending.length ? `대기 ${pending.length}건` : ''}</strong>
+          <span>예약한 시각이 되면 자동으로 발송됩니다. 예약 후 코멘트를 고치면 고친 내용이 나갑니다.</span>
+        </div>
+        <div className="report-schedule-head-actions">
+          <button type="button" className="secondary" onClick={() => setShowDone((prev) => !prev)}>
+            {showDone ? '대기만 보기' : `지난 예약 보기 ${finished.length ? `(${finished.length})` : ''}`}
+          </button>
+          <button type="button" className="secondary" onClick={load} disabled={loading}>
+            {loading ? '불러오는 중...' : '새로고침'}
+          </button>
+        </div>
+      </div>
+
+      {!cronConfigured ? (
+        <div className="report-schedule-warn">
+          자동 실행(Cron)이 설정되지 않은 환경입니다. 예약은 저장되지만 시각이 되어도 자동으로 나가지 않습니다.
+          각 예약의 [지금 실행]으로 보내거나, Vercel 환경변수에 CRON_SECRET을 설정하세요.
+        </div>
+      ) : null}
+
+      {!visible.length ? (
+        <div className="today-comment-empty">{loading ? '불러오는 중...' : '예약된 발송이 없습니다.'}</div>
+      ) : (
+        <div className="report-schedule-list">
+          {visible.map((row) => (
+            <article key={row.id} className={`report-schedule-row status-${row.status}`}>
+              <div className="report-schedule-when">
+                <b>{formatScheduleTime(row.scheduled_at)}</b>
+                <i className={`report-schedule-status ${row.status}`}>{SCHEDULE_STATUS_LABELS[row.status] || row.status}</i>
+              </div>
+              <div className="report-schedule-body">
+                <strong>{row.label || `${row.target_count}건`}</strong>
+                <span>
+                  대상 {row.target_count}건
+                  {row.created_by ? ` · 예약 ${row.created_by}` : ''}
+                  {row.result ? ` · 발송 ${row.result.sent || 0}건${row.result.failed ? ` · 실패 ${row.result.failed}건` : ''}` : ''}
+                </span>
+                {row.last_error ? <em className="report-schedule-error">{row.last_error}</em> : null}
+              </div>
+              <div className="report-schedule-actions">
+                {row.status === 'pending' ? (
+                  <>
+                    <button type="button" className="secondary" onClick={() => act(row, 'run_now')} disabled={Boolean(busyId)}>
+                      {busyId === `${row.id}-run_now` ? '발송 중...' : '지금 실행'}
+                    </button>
+                    <button type="button" className="danger" onClick={() => act(row, 'cancel')} disabled={Boolean(busyId)}>
+                      {busyId === `${row.id}-cancel` ? '취소 중...' : '예약 취소'}
+                    </button>
+                  </>
+                ) : row.status !== 'processing' ? (
+                  <button type="button" className="secondary" onClick={() => act(row, 'delete')} disabled={Boolean(busyId)}>
+                    {busyId === `${row.id}-delete` ? '삭제 중...' : '기록 삭제'}
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBySession, nowTick, planners, plannerDate, setPlannerDate, generateReport, generateAllReports, openSendPreview, sendReportToParent, prepareReportSend, markReportManualSent, exclusionsBySession, updateReportExclusion, operatingRules, todaySchedules, apiFetch, sendConfig, currentUser, setMessage, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [issueFilter, setIssueFilter] = useState('all');
   const [confirmSend, setConfirmSend] = useState(null);
+  // v41-158: 예약을 만들면 목록을 다시 읽도록 하는 신호
+  const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
   const [openCards, setOpenCards] = useState({});
   const [copyNotice, setCopyNotice] = useState('');
   const [reportView, setReportView] = useState('main');
@@ -11652,6 +11773,35 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
       alert('발송할 학생을 한 명 이상 선택하세요.');
       return;
     }
+
+    // v41-158: 예약 발송이면 지금 보내지 않고 큐에 넣습니다.
+    if (confirmSend.sendMode === 'scheduled') {
+      const iso = kstDateTimeToIso(confirmSend.scheduleDate, confirmSend.scheduleTime);
+      const check = validateScheduledAt(iso);
+      if (!check.ok) { alert(check.error); return; }
+      try {
+        const data = await apiFetch('/api/report-schedules', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'create',
+            reportType: 'daily',
+            scheduledAt: check.iso,
+            periodLabel: plannerDate,
+            targets: selectedTargets.map((session) => ({
+              id: session.id,
+              studentName: session.students?.name || '',
+            })),
+          }),
+        });
+        setConfirmSend(null);
+        setScheduleRefreshKey((prev) => prev + 1);
+        alert(data.message || '예약했습니다.');
+      } catch (error) {
+        alert(error?.message || '예약에 실패했습니다.');
+      }
+      return;
+    }
+
     setConfirmSend(null);
     await runBulkSendBatch(selectedTargets, title, mode);
   }
@@ -11853,6 +12003,14 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
           <button className="secondary" onClick={() => openSendConfirm('발송 가능 대상 전체 발송', recommendedTargets, 'recommended')}>발송 가능 전체 발송</button>
           <button className="primary" onClick={() => openSendConfirm('확인 필요 포함 전체 발송', decisionTargets, 'decision')}>확인 필요 포함 전체 발송</button>
         </div>
+
+        {/* v41-158: 예약해 둔 데일리 리포트 발송 */}
+        <ReportScheduleSection
+          reportType="daily"
+          apiFetch={apiFetch}
+          setMessage={setMessage}
+          refreshKey={scheduleRefreshKey}
+        />
 
         <div className="closeout-check-grid">
           <div className="closeout-check-card">
@@ -12246,9 +12404,65 @@ function DailyReportsTab({ sessions, reportsBySession, checksBySession, eventsBy
               </div>
             ) : null}
 
+            {/* v41-158: 지금 보낼지, 정해진 시각에 보낼지 고릅니다. */}
+            <div className="send-mode-box">
+              <div className="send-mode-tabs">
+                <button
+                  type="button"
+                  className={confirmSend.sendMode === 'scheduled' ? '' : 'is-active'}
+                  onClick={() => setConfirmSend((prev) => prev ? { ...prev, sendMode: 'now' } : prev)}
+                >즉시 발송</button>
+                <button
+                  type="button"
+                  className={confirmSend.sendMode === 'scheduled' ? 'is-active' : ''}
+                  onClick={() => setConfirmSend((prev) => prev ? {
+                    ...prev,
+                    sendMode: 'scheduled',
+                    scheduleDate: prev.scheduleDate || getKstDateString(),
+                    scheduleTime: prev.scheduleTime || '19:00',
+                  } : prev)}
+                >예약 발송</button>
+              </div>
+              {confirmSend.sendMode === 'scheduled' ? (
+                <div className="send-mode-fields">
+                  <div className="field">
+                    <label>발송 날짜</label>
+                    <input
+                      type="date"
+                      onClick={openNativePicker}
+                      onFocus={openNativePicker}
+                      value={confirmSend.scheduleDate || ''}
+                      onChange={(event) => setConfirmSend((prev) => prev ? { ...prev, scheduleDate: event.target.value } : prev)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>발송 시각</label>
+                    <input
+                      type="time"
+                      value={confirmSend.scheduleTime || ''}
+                      onChange={(event) => setConfirmSend((prev) => prev ? { ...prev, scheduleTime: event.target.value } : prev)}
+                    />
+                  </div>
+                  <div className="send-mode-hint">
+                    예약 시각이 되면 자동 발송됩니다. 자동 실행은 10분 간격으로 확인하므로 실제 발송은 최대 10분 늦을 수 있습니다.
+                    예약 후 코멘트를 고치면 고친 내용이 나갑니다.
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             <div className="popup-bottom-actions">
               <button className="secondary" onClick={() => setConfirmSend(null)}>취소</button>
-              <button className="primary send-final-button" onClick={executeConfirmSend} disabled={confirmFinalDisabled || confirmSelectedCount === 0}>{confirmFinalDisabled ? '확인 필요' : confirmSelectedCount === 0 ? '대상 선택 필요' : `선택 ${confirmSelectedCount}명 발송`}</button>
+              <button
+                className="primary send-final-button"
+                onClick={executeConfirmSend}
+                disabled={confirmFinalDisabled || confirmSelectedCount === 0}
+              >
+                {confirmFinalDisabled ? '확인 필요'
+                  : confirmSelectedCount === 0 ? '대상 선택 필요'
+                    : confirmSend.sendMode === 'scheduled' ? `선택 ${confirmSelectedCount}명 예약`
+                      : `선택 ${confirmSelectedCount}명 발송`}
+              </button>
             </div>
           </div>
         </div>
@@ -12282,6 +12496,8 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   const [weeklySendLoading, setWeeklySendLoading] = useState(false);
   const [weeklySendNotice, setWeeklySendNotice] = useState(null);
   const [weeklySendConfirm, setWeeklySendConfirm] = useState(null);
+  // v41-158: 예약 생성 후 목록 갱신 신호
+  const [weeklyScheduleRefreshKey, setWeeklyScheduleRefreshKey] = useState(0);
   const [weeklyView, setWeeklyView] = useState('main');
   const [weeklyActivityLogs, setWeeklyActivityLogs] = useState([]);
   const [weeklyActivityLoading, setWeeklyActivityLoading] = useState(false);
@@ -13084,6 +13300,32 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
     }
 
     const reportToSend = weeklySendConfirm.report;
+
+    // v41-158: 예약 발송이면 지금 보내지 않고 큐에 넣습니다.
+    if (weeklySendConfirm.sendMode === 'scheduled') {
+      const iso = kstDateTimeToIso(weeklySendConfirm.scheduleDate, weeklySendConfirm.scheduleTime);
+      const check = validateScheduledAt(iso);
+      if (!check.ok) { alert(check.error); return; }
+      try {
+        const data = await apiFetch('/api/report-schedules', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'create',
+            reportType: 'weekly',
+            scheduledAt: check.iso,
+            periodLabel: `${start}~${end}`,
+            targets: [{ id: reportToSend.id, studentName: weeklySendConfirm.student?.name || '' }],
+          }),
+        });
+        setWeeklySendConfirm(null);
+        setWeeklyScheduleRefreshKey((prev) => prev + 1);
+        showWeeklySendNotice({ type: 'neutral', title: '위클리 리포트 예약 완료', message: data.message || '예약했습니다.' });
+      } catch (error) {
+        showWeeklySendNotice({ type: 'failed', title: '위클리 리포트 예약 실패', message: error?.message || '예약에 실패했습니다.' });
+      }
+      return;
+    }
+
     setWeeklySendConfirm(null);
     try {
       setWeeklySendLoading(true);
@@ -13756,6 +13998,14 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
               <div className="hint weekly-send-hint">위클리 리포트도 복사 없이 저장 후 학부모 발송 버튼으로 보내는 흐름을 기준으로 운영합니다.</div>
             )}
             <pre className="weekly-report-text">{reportText}</pre>
+
+            {/* v41-158: 예약해 둔 위클리 리포트 발송 */}
+            <ReportScheduleSection
+              reportType="weekly"
+              apiFetch={apiFetch}
+              setMessage={setMessage}
+              refreshKey={weeklyScheduleRefreshKey}
+            />
           </section>
         </>
       ) : null}
@@ -13839,9 +14089,58 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
               </div>
             ) : null}
 
+            {/* v41-158: 지금 보낼지, 정해진 시각에 보낼지 고릅니다. */}
+            <div className="send-mode-box">
+              <div className="send-mode-tabs">
+                <button
+                  type="button"
+                  className={weeklySendConfirm.sendMode === 'scheduled' ? '' : 'is-active'}
+                  onClick={() => setWeeklySendConfirm((prev) => prev ? { ...prev, sendMode: 'now' } : prev)}
+                >즉시 발송</button>
+                <button
+                  type="button"
+                  className={weeklySendConfirm.sendMode === 'scheduled' ? 'is-active' : ''}
+                  onClick={() => setWeeklySendConfirm((prev) => prev ? {
+                    ...prev,
+                    sendMode: 'scheduled',
+                    scheduleDate: prev.scheduleDate || getKstDateString(),
+                    scheduleTime: prev.scheduleTime || '19:00',
+                  } : prev)}
+                >예약 발송</button>
+              </div>
+              {weeklySendConfirm.sendMode === 'scheduled' ? (
+                <div className="send-mode-fields">
+                  <div className="field">
+                    <label>발송 날짜</label>
+                    <input
+                      type="date"
+                      onClick={openNativePicker}
+                      onFocus={openNativePicker}
+                      value={weeklySendConfirm.scheduleDate || ''}
+                      onChange={(event) => setWeeklySendConfirm((prev) => prev ? { ...prev, scheduleDate: event.target.value } : prev)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>발송 시각</label>
+                    <input
+                      type="time"
+                      value={weeklySendConfirm.scheduleTime || ''}
+                      onChange={(event) => setWeeklySendConfirm((prev) => prev ? { ...prev, scheduleTime: event.target.value } : prev)}
+                    />
+                  </div>
+                  <div className="send-mode-hint">
+                    예약 시각이 되면 자동 발송됩니다. 자동 실행은 10분 간격으로 확인하므로 실제 발송은 최대 10분 늦을 수 있습니다.
+                    예약 후 상담 내용을 고쳐 저장하면 고친 내용이 나갑니다.
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             <div className="popup-bottom-actions">
               <button className="secondary" onClick={() => setWeeklySendConfirm(null)}>취소</button>
-              <button className="primary send-final-button" onClick={executeWeeklySendConfirm} disabled={weeklyConfirmFinalDisabled}>{weeklyConfirmFinalDisabled ? '확인 필요' : '위클리 발송'}</button>
+              <button className="primary send-final-button" onClick={executeWeeklySendConfirm} disabled={weeklyConfirmFinalDisabled}>
+                {weeklyConfirmFinalDisabled ? '확인 필요' : weeklySendConfirm.sendMode === 'scheduled' ? '위클리 예약' : '위클리 발송'}
+              </button>
             </div>
           </div>
         </div>
