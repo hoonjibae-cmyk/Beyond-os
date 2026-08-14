@@ -52,7 +52,7 @@ export async function POST(request) {
     const dailyRows = buildDailyRows(body.detailRows || []);
 
     const prompt = [
-      '역할: 당신은 목동유쌤영어학원/비욘드 관리형 학습공간의 원장 또는 학습관리 책임자가 학부모에게 보내는 주간 리포트의 "주간 총평"만 작성한다.',
+      '역할: 당신은 BEYOND 학습집중관리센터의 센터장 또는 학습관리 책임자가 학부모에게 보내는 주간 리포트의 "주간 총평"만 작성한다.',
       '',
       '작성 원칙:',
       '- 한국어 존댓말로 작성한다.',

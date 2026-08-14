@@ -20226,6 +20226,69 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
    순점수가 기준(10점)을 초과하면 상품 지급 대상 알림을 띄우고,
    [상품지급안내완료](카운팅 리셋) / [미지급](계속 누적) 중 하나로 처리합니다.
    ───────────────────────────────────────────────────────────── */
+/* v41-156: 벌점 누적 단계(10/20/30점 초과) 알림 */
+.penalty-stage-alert-card {
+  border: 1px solid #f0bdb8;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fff6f5, #ffeeec);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.penalty-stage-alert-head strong { display: block; font-size: 15px; color: #a3231b; }
+.penalty-stage-alert-head span {
+  display: block; margin-top: 3px; font-size: 12.5px; font-weight: 850;
+  color: #a9605a; line-height: 1.45;
+}
+.penalty-stage-alert-list { display: grid; gap: 10px; }
+.penalty-stage-alert-list > article {
+  background: #fff; border: 1px solid #f2d3cf; border-radius: 16px; padding: 13px 14px;
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 12px; align-items: center;
+}
+.penalty-stage-alert-list > article.tone-danger { border-color: #eab9b3; background: #fffbfa; }
+.penalty-stage-alert-list > article.tone-critical { border-color: #d9564a; box-shadow: 0 0 0 2px rgba(217, 86, 74, .12); }
+.penalty-stage-alert-student strong { display: block; font-size: 15px; color: #211f1b; }
+.penalty-stage-alert-student span {
+  display: block; font-size: 11.5px; font-weight: 850; color: #8a8479; margin-top: 2px;
+}
+.penalty-stage-alert-score { display: grid; gap: 3px; }
+.penalty-stage-badge {
+  justify-self: start; border-radius: 999px; padding: 3px 10px;
+  font-size: 12px; font-weight: 950; color: #fff; background: #d99b1d;
+}
+.penalty-stage-badge.tone-danger { background: #d2691e; }
+.penalty-stage-badge.tone-critical { background: #c8382f; }
+.penalty-stage-alert-score em {
+  font-style: normal; font-size: 11.5px; font-weight: 850; color: #8a8479;
+}
+.penalty-stage-alert-list > article > p {
+  margin: 0; font-size: 12.5px; font-weight: 850; color: #7a4a45; line-height: 1.45;
+}
+.penalty-stage-pending {
+  grid-column: 1 / -1; font-style: normal; font-size: 11.5px; font-weight: 850; color: #a9605a;
+}
+.penalty-stage-alert-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.penalty-stage-alert-actions button {
+  width: auto; min-height: 38px; padding: 0 14px; border-radius: 11px; font-size: 12.5px; font-weight: 950;
+}
+/* 학생 한눈에 보기 안의 벌점 단계 배너 */
+.student-overview-penalty-alert {
+  border: 1px solid #f0bdb8; border-radius: 16px; background: #fff6f5; padding: 12px 14px;
+}
+.student-overview-penalty-alert.tone-critical { border-color: #d9564a; background: #fff1ef; }
+.student-overview-penalty-alert strong { display: block; font-size: 13.5px; color: #a3231b; }
+.student-overview-penalty-alert span {
+  display: block; margin-top: 3px; font-size: 12px; font-weight: 850; color: #8a5a55; line-height: 1.45;
+}
+.student-overview-penalty-alert em {
+  display: block; margin-top: 3px; font-style: normal; font-size: 11px; font-weight: 850; color: #a9847f;
+}
+@media (max-width: 900px) {
+  .penalty-stage-alert-list > article { grid-template-columns: minmax(0, 1fr); }
+}
+
 .point-reward-alert-card {
   border: 1px solid #f2d49a;
   border-radius: 20px;

@@ -1,3 +1,4 @@
+import { BRAND_NAME, BRAND_SPACE_NAME, BRAND_CONTACT_PHONE, BRAND_CONTACT_TEL, brandLine, brandContactLine } from '../../../lib/brand';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
@@ -754,7 +755,7 @@ function ErrorPage({ title, message }) {
       <section className="hero hero-error">
         <div className="hero-brand">
           <img src="/the-place-26-logo.png" alt="The Place 26" />
-          <span>Beyond Report</span>
+          <span>{brandLine('Beyond Report')}</span>
         </div>
         <h1>{title}</h1>
         <p>{message}</p>
@@ -762,10 +763,10 @@ function ErrorPage({ title, message }) {
       <section className="link-error-card">
         <strong>리포트를 불러올 수 없습니다.</strong>
         <p>링크가 만료되었거나 비활성화되었을 수 있습니다. 확인이 필요하신 경우 학원으로 문의해 주세요.</p>
-        <a href="tel:0317943306">031-794-3306</a>
+        <a href={BRAND_CONTACT_TEL}>{BRAND_CONTACT_PHONE}</a>
       </section>
       <footer>
-        <p>목동유쌤영어학원 · The Place 26</p>
+        <p>{[BRAND_NAME, BRAND_SPACE_NAME].filter(Boolean).join(' · ')}</p>
       </footer>
     </main>
   );
@@ -1035,7 +1036,7 @@ export default async function PublicReportPage({ params }) {
       <section className="hero">
         <div className="hero-brand">
           <img src="/the-place-26-logo.png" alt="The Place 26" />
-          <span>목동유쌤영어학원 · Beyond Report</span>
+          <span>{brandLine('Beyond Report')}</span>
         </div>
         <h1>{title}</h1>
         <p>{student?.name || '학생'} · {period}</p>
@@ -1223,7 +1224,7 @@ export default async function PublicReportPage({ params }) {
 
       <footer>
         <p>본 링크는 학부모 열람용으로 제공되며, 외부 공유를 권장하지 않습니다.</p>
-        <p>문의: 목동유쌤영어학원 031-794-3306</p>
+        <p>{brandContactLine()}</p>
         <p>열람 시각: {formatKst(new Date().toISOString())}</p>
       </footer>
     </main>

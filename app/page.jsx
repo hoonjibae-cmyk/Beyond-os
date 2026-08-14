@@ -5,6 +5,7 @@ import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
+import { BRAND_NAME } from '../lib/brand';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
@@ -12436,9 +12437,12 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
 
   const reportText = useMemo(() => {
     if (!selectedStudent) return '';
-    const interview = String(directorInterview || '').trim() || '이번 주 주간면담 내용이 아직 입력되지 않았습니다.';
+    // v41-156: 주간면담 내용이 비어 있으면 "입력되지 않았습니다" 문구를 내보내지 않고
+    // '주간면담 내용' 항목 자체를 리포트에서 뺍니다.
+    const interview = String(directorInterview || '').trim();
+    const interviewBlock = interview ? `\n\n주간면담 내용\n${interview}` : '';
 
-    return `[비욘드 주간 리포트]\n\n학생: ${selectedStudent.name}\n기간: ${start} ~ ${end}\n\n이번 주 학습 요약\n- 등원일수: ${weeklyStats.attendanceDays}일\n- 총 순공시간: ${formatMinutes(weeklyStats.totalStudy)}\n- 일평균 순공시간: ${formatMinutes(weeklyStats.averageStudy)}\n- 외출: ${weeklyStats.totalAwayCount}회 / 총 ${formatMinutes(weeklyStats.totalAwayMinutes)}\n- 주요 확인사항: ${weeklyStats.issueSummary}\n- 상벌점: ${weeklyPointSummary.label}\n\n주간면담 내용\n${interview}\n\n목동유쌤영어학원`;
+    return `[비욘드 주간 리포트]\n\n학생: ${selectedStudent.name}\n기간: ${start} ~ ${end}\n\n이번 주 학습 요약\n- 등원일수: ${weeklyStats.attendanceDays}일\n- 총 순공시간: ${formatMinutes(weeklyStats.totalStudy)}\n- 일평균 순공시간: ${formatMinutes(weeklyStats.averageStudy)}\n- 외출: ${weeklyStats.totalAwayCount}회 / 총 ${formatMinutes(weeklyStats.totalAwayMinutes)}\n- 주요 확인사항: ${weeklyStats.issueSummary}\n- 상벌점: ${weeklyPointSummary.label}${interviewBlock}\n\n${BRAND_NAME}`;
   }, [selectedStudent, start, end, weeklyStats, weeklyPointSummary, directorInterview]);
 
   useEffect(() => {
@@ -13984,8 +13988,11 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
     try {
       const data = await apiFetch('/api/student-point-rewards');
       setRewardState(data);
+      return data;
     } catch (error) {
-      setRewardState({ eligible: [], cycles: {}, warning: error?.message || '상품 지급 현황 조회 실패' });
+      const fallback = { eligible: [], cycles: {}, penaltyAlerts: [], penaltyByStudent: {}, warning: error?.message || '상품 지급 현황 조회 실패' };
+      setRewardState(fallback);
+      return fallback;
     }
   }
 
@@ -14006,6 +14013,29 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
       await Promise.all([loadRewardState(), loadPoints()]);
     } catch (error) {
       setMessage?.(error.message || `${label} 처리 실패`);
+    } finally {
+      setRewardWorkingId('');
+    }
+  }
+
+  // v41-156: 벌점 단계(10/20/30점 초과) 조치 기록
+  async function handlePenaltyAction(studentId, stage, action, studentName = '학생', stageLabel = '조치') {
+    const done = action === 'penalty_done';
+    const confirmText = done
+      ? `${studentName} 학생 — 벌점 ${stage}점 단계 [${stageLabel}] 조치를 완료로 기록할까요?\n\n이 단계 알림이 목록에서 내려갑니다. 벌점이 다음 단계를 넘으면 다시 알림이 뜹니다.`
+      : `${studentName} 학생 — 벌점 ${stage}점 단계 [${stageLabel}]을 보류로 기록할까요?\n\n알림은 목록에 그대로 남고, 보류로 표시만 됩니다.`;
+    if (!confirm(confirmText)) return;
+
+    try {
+      setRewardWorkingId(`${studentId}-p${stage}-${done ? 'done' : 'defer'}`);
+      const data = await apiFetch('/api/student-point-rewards', {
+        method: 'POST',
+        body: JSON.stringify({ action, studentId, stage, createdBy: currentUser?.displayName || '관리자' }),
+      });
+      setMessage?.(data.message || '벌점 단계 조치를 기록했습니다.');
+      await Promise.all([loadRewardState(), loadPoints()]);
+    } catch (error) {
+      setMessage?.(error.message || '벌점 단계 조치 기록 실패');
     } finally {
       setRewardWorkingId('');
     }
@@ -14036,6 +14066,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
     if (!studentId) return alert('학생을 선택하세요.');
     if (!String(form.reason || '').trim()) return alert('상벌점 사유를 입력하세요.');
     const points = Math.max(1, Number(form.points || 0));
+    // v41-156: 이번 기록으로 벌점 단계를 새로 넘겼는지 비교하기 위해 직전 단계를 기억해 둡니다.
+    const stageBefore = Number(rewardState?.penaltyByStudent?.[String(studentId)]?.currentStage?.stage || 0);
     try {
       setSaving(true);
       const data = await apiFetch('/api/student-points', {
@@ -14053,7 +14085,14 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
       });
       setMessage?.(data.message || '상벌점 기록 완료');
       setForm((prev) => ({ ...prev, points: 1, reason: '', memo: '' }));
-      await loadPoints();
+      const [, nextRewardState] = await Promise.all([loadPoints(), loadRewardState()]);
+
+      // 벌점 단계를 새로 넘긴 경우에는 화면 상단 배너만이 아니라 그 자리에서 바로 알립니다.
+      const after = nextRewardState?.penaltyByStudent?.[String(studentId)]?.currentStage;
+      if (after && Number(after.stage) > stageBefore) {
+        const studentName = students.find((item) => String(item.id) === String(studentId))?.name || '해당 학생';
+        alert(`⚠ ${studentName} 학생 — 벌점 ${after.stage}점 초과\n\n누적 벌점 ${after.penalty}점\n조치 단계: ${after.label}\n\n${after.action}`);
+      }
     } catch (error) {
       setMessage?.(error.message);
     } finally {
@@ -14070,7 +14109,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
         body: JSON.stringify({ action: 'delete', id: row.id }),
       });
       setMessage?.(data.message || '상벌점 기록 삭제 완료');
-      await loadPoints();
+      // 삭제로 누적 벌점이 단계 아래로 내려갈 수 있어 단계 알림도 함께 다시 계산합니다.
+      await Promise.all([loadPoints(), loadRewardState()]);
     } catch (error) {
       setMessage?.(error.message);
     }
@@ -14115,6 +14155,55 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
           <button className="primary section-action" onClick={() => loadPoints()} disabled={loading}>{loading ? '조회 중...' : '조회'}</button>
         </div>
       </div>
+
+      {/* v41-156: 누적 벌점이 10/20/30점을 넘으면 단계별 조치 대상으로 알립니다.
+          상품 지급(순점수) 사이클과 별개로, 상점을 받아도 이 단계는 내려가지 않습니다. */}
+      {(rewardState?.penaltyAlerts || []).length ? (
+        <div className="penalty-stage-alert-card">
+          <div className="penalty-stage-alert-head">
+            <strong>벌점 단계 조치 대상 {rewardState.penaltyAlerts.length}명</strong>
+            <span>누적 벌점 10점 초과 → 학부모 알림 · 20점 초과 → 센터장 면담 · 30점 초과 → 제적 검토</span>
+          </div>
+          <div className="penalty-stage-alert-list">
+            {rewardState.penaltyAlerts.map((item) => (
+              <article key={`penalty-${item.studentId}`} className={`tone-${item.tone}`}>
+                <div className="penalty-stage-alert-student">
+                  <strong>{item.name}</strong>
+                  <span>{item.subtitle || '학교/학년 미입력'}</span>
+                </div>
+                <div className="penalty-stage-alert-score">
+                  <b className={`penalty-stage-badge tone-${item.tone}`}>{item.stage}점 · {item.stageLabel}</b>
+                  <em>누적 벌점 {item.penalty}점{item.deferred ? ' · 보류 중' : ''}</em>
+                </div>
+                <p>{item.message}. {item.actionHint}</p>
+                {item.pendingStages.length > 1 ? (
+                  <em className="penalty-stage-pending">
+                    미조치 단계: {item.pendingStages.map((stage) => `${stage.stage}점 ${stage.label}${stage.deferred ? '(보류)' : ''}`).join(' · ')}
+                  </em>
+                ) : null}
+                <div className="penalty-stage-alert-actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => handlePenaltyAction(item.studentId, item.stage, 'penalty_done', item.name, item.stageLabel)}
+                    disabled={Boolean(rewardWorkingId)}
+                  >
+                    {rewardWorkingId === `${item.studentId}-p${item.stage}-done` ? '처리 중...' : `${item.stageLabel} 완료`}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => handlePenaltyAction(item.studentId, item.stage, 'penalty_defer', item.name, item.stageLabel)}
+                    disabled={Boolean(rewardWorkingId) || item.deferred}
+                  >
+                    {rewardWorkingId === `${item.studentId}-p${item.stage}-defer` ? '처리 중...' : '보류'}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* v41-137: 순점수가 기준(10점)을 초과한 학생은 상품 지급 대상으로 알립니다. */}
       {(rewardState?.eligible || []).length ? (
@@ -15775,6 +15864,36 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
                   {rewardWorking === 'defer' ? '처리 중...' : '미지급'}
                 </button>
               </div>
+            </div>
+          ) : null}
+
+          {/* v41-156: 누적 벌점 단계는 상품 지급 리셋과 무관하게 그대로 남습니다. */}
+          {points.penaltyStage ? (
+            <div className={`student-overview-penalty-alert tone-${points.penaltyStage.tone}`}>
+              <div>
+                <strong>
+                  {points.penaltyStage.message}
+                  {points.penaltyStage.deferred ? ' (보류 중)' : ''}
+                </strong>
+                <span>
+                  누적 벌점 {points.penaltyTotal}점 · {points.penaltyStage.action}
+                  {(points.penaltyPendingStages || []).length > 1
+                    ? ` · 미조치 ${points.penaltyPendingStages.map((item) => `${item.stage}점`).join('/')}`
+                    : ''}
+                </span>
+                <em>조치는 상벌점 관리 화면에서 기록합니다.</em>
+              </div>
+            </div>
+          ) : null}
+
+          {(points.penaltyHandledStages || []).length ? (
+            <div className="student-overview-grant-history">
+              <strong>벌점 단계 조치 이력</strong>
+              {points.penaltyHandledStages.map((item) => (
+                <span key={`pstage-${item.stage}`}>
+                  {item.handledAt} · 벌점 {item.stage}점 단계 {item.label} 완료{item.handledBy ? ` · ${item.handledBy}` : ''}
+                </span>
+              ))}
             </div>
           ) : null}
 

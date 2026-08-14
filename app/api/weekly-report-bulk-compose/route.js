@@ -4,6 +4,7 @@ import { writeUserActionLog } from '../../../lib/actionLog';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
+import { BRAND_NAME } from '../../../lib/brand';
 
 export const dynamic = 'force-dynamic';
 
@@ -224,10 +225,12 @@ function createWeeklyComment(student = {}, summary = {}) {
 function buildReportText({ student = {}, startDate, endDate, summary = {}, interview = '', finalComment = '' }) {
   // v41-126: '주간 총평' 항목을 없애고 주간면담 내용으로 통합했습니다.
   // 면담 내용이 아직 없으면(자동 구성 등) 기존 총평/자동 생성 문장을 면담 내용 자리에 사용합니다.
+  // v41-156: 셋 다 비어 있으면 '주간면담 내용' 항목 자체를 빼고 내보냅니다.
   const interviewText = String(interview || '').trim()
     || String(finalComment || '').trim()
     || createWeeklyComment(student, summary);
-  return `[비욘드 주간 리포트]\n\n학생: ${student.name || '-'}\n기간: ${startDate} ~ ${endDate}\n\n이번 주 학습 요약\n- 등원일수: ${summary.attendanceDays || 0}일\n- 총 순공시간: ${formatMinutesKo(summary.totalStudyMinutes || 0)}\n- 일평균 순공시간: ${formatMinutesKo(summary.averageStudyMinutes || 0)}\n- 외출: ${summary.awayCount || 0}회 / 총 ${formatMinutesKo(summary.awayMinutes || 0)}\n- 주요 확인사항: ${summary.issueSummary || '특이사항 없음'}\n- 상벌점: ${summary.pointSummary?.label || '상벌점 기록 없음'}\n\n주간면담 내용\n${interviewText}\n\n목동유쌤영어학원`;
+  const interviewBlock = interviewText ? `\n\n주간면담 내용\n${interviewText}` : '';
+  return `[비욘드 주간 리포트]\n\n학생: ${student.name || '-'}\n기간: ${startDate} ~ ${endDate}\n\n이번 주 학습 요약\n- 등원일수: ${summary.attendanceDays || 0}일\n- 총 순공시간: ${formatMinutesKo(summary.totalStudyMinutes || 0)}\n- 일평균 순공시간: ${formatMinutesKo(summary.averageStudyMinutes || 0)}\n- 외출: ${summary.awayCount || 0}회 / 총 ${formatMinutesKo(summary.awayMinutes || 0)}\n- 주요 확인사항: ${summary.issueSummary || '특이사항 없음'}\n- 상벌점: ${summary.pointSummary?.label || '상벌점 기록 없음'}${interviewBlock}\n\n${BRAND_NAME}`;
 }
 
 function buildRowsFromSessions({ sessions = [], eventsBySession = {}, reportsBySession = {}, schedulesByDate = {}, scheduleConfig = null, rules = DEFAULT_OPERATING_RULES }) {

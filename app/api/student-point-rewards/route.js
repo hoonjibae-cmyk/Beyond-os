@@ -10,15 +10,44 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse, requireTabPermission, getAuthorizedUser } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
-import { POINT_REWARD_THRESHOLD, resolvePointCycle, resolvePointCyclesByStudent } from '../../../lib/studentPointCycle';
+import {
+  POINT_REWARD_THRESHOLD,
+  PENALTY_STAGES,
+  resolvePointCycle,
+  resolvePointCyclesByStudent,
+  resolvePenaltyStages,
+  resolvePenaltyStagesByStudent,
+  getPenaltyStageDef,
+} from '../../../lib/studentPointCycle';
 
 export const dynamic = 'force-dynamic';
 
 const MISSING_TABLE_HINT = 'beyond-os-supabase-student-point-rewards-v41-137.sql 실행 여부를 확인하세요.';
+const PENALTY_TABLE_HINT = 'beyond-os-supabase-student-penalty-actions-v41-156.sql 실행 여부를 확인하세요.';
 
 function isMissingTableError(error) {
   const message = String(error?.message || '').toLowerCase();
   return error?.code === '42P01' || message.includes('student_point_rewards') || message.includes('does not exist') || message.includes('schema cache');
+}
+
+// v41-156: 벌점 단계 조치 기록. 테이블이 없어도 상품 지급 기능은 그대로 동작해야 합니다.
+async function loadPenaltyActionRows(supabase, studentId) {
+  try {
+    let query = supabase
+      .from('student_penalty_actions')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (studentId) query = query.eq('student_id', String(studentId));
+    const { data, error } = await query;
+    if (error) throw error;
+    return { rows: data || [], warning: '' };
+  } catch (error) {
+    const message = String(error?.message || '').toLowerCase();
+    if (error?.code === '42P01' || message.includes('student_penalty_actions') || message.includes('does not exist') || message.includes('schema cache')) {
+      return { rows: [], warning: `벌점 단계 조치 기록 테이블이 아직 없습니다. ${PENALTY_TABLE_HINT}` };
+    }
+    throw error;
+  }
 }
 
 async function loadPointRows(supabase, studentId) {
@@ -59,24 +88,29 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const studentId = String(searchParams.get('studentId') || '').trim();
 
-    const [pointRows, rewardResult] = await Promise.all([
+    const [pointRows, rewardResult, penaltyResult] = await Promise.all([
       loadPointRows(supabase, studentId),
       loadRewardRows(supabase, studentId),
+      loadPenaltyActionRows(supabase, studentId),
     ]);
 
     if (studentId) {
       const cycle = resolvePointCycle(pointRows, rewardResult.rows);
+      const penalty = resolvePenaltyStages(pointRows, penaltyResult.rows);
       return Response.json({
         ok: true,
         threshold: POINT_REWARD_THRESHOLD,
+        penaltyStages: PENALTY_STAGES,
         studentId,
         cycle,
-        warning: rewardResult.warning,
+        penalty,
+        warning: [rewardResult.warning, penaltyResult.warning].filter(Boolean).join(' / '),
       });
     }
 
     const cycles = resolvePointCyclesByStudent(pointRows, rewardResult.rows);
-    const studentIds = Object.keys(cycles);
+    const penaltyByStudent = resolvePenaltyStagesByStudent(pointRows, penaltyResult.rows);
+    const studentIds = [...new Set([...Object.keys(cycles), ...Object.keys(penaltyByStudent)])];
 
     // 알림 배너에 이름을 함께 보여주기 위해 학생 표시 정보를 붙입니다.
     const studentMap = {};
@@ -109,12 +143,42 @@ export async function GET(request) {
       }))
       .sort((a, b) => b.net - a.net || String(a.name).localeCompare(String(b.name), 'ko'));
 
+    // v41-156: 누적 벌점이 단계(10/20/30)를 넘겼는데 아직 조치하지 않은 학생.
+    // 심각한 단계(제적 > 면담 > 경고)가 먼저 오도록 정렬합니다.
+    const penaltyAlerts = studentIds
+      .filter((id) => penaltyByStudent[id]?.currentStage)
+      .filter((id) => studentMap[id]?.status !== 'inactive')
+      .map((id) => {
+        const state = penaltyByStudent[id];
+        return {
+          studentId: id,
+          student: studentMap[id] || null,
+          name: studentMap[id]?.name || '학생',
+          subtitle: [studentMap[id]?.school, studentMap[id]?.grade].filter(Boolean).join(' '),
+          penalty: state.penalty,
+          stage: state.currentStage.stage,
+          stageKey: state.currentStage.key,
+          stageLabel: state.currentStage.label,
+          tone: state.currentStage.tone,
+          actionHint: state.currentStage.action,
+          deferred: state.currentStage.deferred,
+          message: state.currentStage.message,
+          pendingStages: state.pendingStages.map((item) => ({
+            stage: item.stage, label: item.label, deferred: item.deferred,
+          })),
+        };
+      })
+      .sort((a, b) => b.stage - a.stage || b.penalty - a.penalty || String(a.name).localeCompare(String(b.name), 'ko'));
+
     return Response.json({
       ok: true,
       threshold: POINT_REWARD_THRESHOLD,
+      penaltyStages: PENALTY_STAGES,
       cycles,
       eligible,
-      warning: rewardResult.warning,
+      penaltyByStudent,
+      penaltyAlerts,
+      warning: [rewardResult.warning, penaltyResult.warning].filter(Boolean).join(' / '),
     });
   } catch (error) {
     return Response.json({
@@ -134,13 +198,69 @@ export async function POST(request) {
     const memo = String(body.memo || '').trim();
 
     if (!studentId) return Response.json({ error: 'studentId is required' }, { status: 400 });
-    if (!['grant', 'defer'].includes(action)) {
+    if (!['grant', 'defer', 'penalty_done', 'penalty_defer'].includes(action)) {
       return Response.json({ error: `Unknown action: ${action || '-'}` }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();
     const actor = getAuthorizedUser(request);
     const actorName = actor?.displayName || body.createdBy || '관리자';
+
+    // ── v41-156: 벌점 단계 조치 기록 ─────────────────────────
+    if (action === 'penalty_done' || action === 'penalty_defer') {
+      const stage = Number(body.stage || 0);
+      const stageDef = getPenaltyStageDef(stage);
+      if (!stageDef) {
+        return Response.json({ error: `단계 값이 올바르지 않습니다: ${body.stage ?? '-'}` }, { status: 400 });
+      }
+
+      const [points, penaltyRows] = await Promise.all([
+        loadPointRows(supabase, studentId),
+        loadPenaltyActionRows(supabase, studentId),
+      ]);
+      if (penaltyRows.warning) {
+        return Response.json({ error: penaltyRows.warning }, { status: 400 });
+      }
+
+      const state = resolvePenaltyStages(points, penaltyRows.rows);
+      if (state.penalty <= stage) {
+        return Response.json({
+          error: `현재 누적 벌점은 ${state.penalty}점으로 ${stage}점 단계 대상이 아닙니다. (${stage}점 초과부터)`,
+        }, { status: 400 });
+      }
+
+      const { data, error } = await supabase
+        .from('student_penalty_actions')
+        .insert({
+          student_id: studentId,
+          stage,
+          action: action === 'penalty_done' ? 'done' : 'deferred',
+          penalty_points: state.penalty,
+          memo: memo || null,
+          created_by: actorName,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+
+      const nextState = resolvePenaltyStages(points, [...penaltyRows.rows, data]);
+
+      await writeUserActionLog(supabase, request, {
+        actionType: action === 'penalty_done' ? 'student_penalty.done' : 'student_penalty.defer',
+        targetType: 'student',
+        targetId: studentId,
+        payload: { stage, stageLabel: stageDef.label, penalty: state.penalty, memo },
+      }).catch(() => {});
+
+      return Response.json({
+        ok: true,
+        row: data,
+        penalty: nextState,
+        message: action === 'penalty_done'
+          ? `벌점 ${stage}점 단계 — ${stageDef.label} 조치 완료로 기록했습니다. (당시 누적 벌점 ${state.penalty}점)`
+          : `벌점 ${stage}점 단계 — ${stageDef.label}을 보류로 기록했습니다. 알림은 목록에 계속 남습니다.`,
+      });
+    }
 
     const [pointRows, rewardResult] = await Promise.all([
       loadPointRows(supabase, studentId),

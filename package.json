@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-155-kiosk-return-instant",
-  "version": "0.41.155",
+  "name": "beyond-os-v41-156-penalty-stages-brand",
+  "version": "0.41.156",
   "private": true,
   "scripts": {
     "dev": "next dev",

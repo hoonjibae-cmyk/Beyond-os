@@ -11,7 +11,7 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes, formatMinutes } from '../../../lib/date';
-import { resolvePointCycle } from '../../../lib/studentPointCycle';
+import { resolvePointCycle, resolvePenaltyStages } from '../../../lib/studentPointCycle';
 import { loadCohortContext, resolveDefaultCohort, resolveStudentCohortRange, sortCohorts, isUsableCohort, formatCohortLabel } from '../../../lib/cohorts';
 
 export const dynamic = 'force-dynamic';
@@ -368,6 +368,14 @@ export async function GET(request) {
     const reward = pointCycle.reward;
     const penalty = pointCycle.penalty;
 
+    // v41-156: 누적 벌점 단계(10/20/30점 초과)는 상품 지급 리셋과 무관하게 계산합니다.
+    const penaltyActionResult = await safeSelect('벌점 단계 조치 기록', () => supabase
+      .from('student_penalty_actions')
+      .select('*')
+      .eq('student_id', String(studentId))
+      .order('created_at', { ascending: true }));
+    const penaltyState = resolvePenaltyStages(pointRows, penaltyActionResult.rows);
+
     const dailySentCount = dailyReports.filter((report) => report.sent_at).length;
 
     return Response.json({
@@ -435,6 +443,29 @@ export async function GET(request) {
           createdBy: grant.created_by || '',
         })),
         lifetime: pointCycle.lifetime,
+        // v41-156: 벌점 누적 단계
+        penaltyTotal: penaltyState.penalty,
+        penaltyStage: penaltyState.currentStage
+          ? {
+            stage: penaltyState.currentStage.stage,
+            label: penaltyState.currentStage.label,
+            tone: penaltyState.currentStage.tone,
+            action: penaltyState.currentStage.action,
+            message: penaltyState.currentStage.message,
+            deferred: penaltyState.currentStage.deferred,
+          }
+          : null,
+        penaltyPendingStages: penaltyState.pendingStages.map((item) => ({
+          stage: item.stage, label: item.label, deferred: item.deferred,
+        })),
+        penaltyHandledStages: penaltyState.reachedStages
+          .filter((item) => item.handled)
+          .map((item) => ({
+            stage: item.stage,
+            label: item.label,
+            handledAt: String(item.handledAt || '').slice(0, 10),
+            handledBy: item.handledBy,
+          })),
       },
       dailyCoaching: dailyCoaching.slice(0, 10),
       weeklyCoaching,
