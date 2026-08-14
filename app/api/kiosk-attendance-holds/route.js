@@ -585,7 +585,10 @@ export async function GET(request) {
         .select('*, students(id, name, grade, school, default_seat_no)')
         .order('event_at', { ascending: false })
         .limit(limit);
-      if (status !== 'all') query = query.eq('status', status);
+      // v41-159: 판정 대기 목록을 볼 때는 즉시 반영된 복귀·첫 등원(auto_applied)도 함께 내려보냅니다.
+      // 운영자가 처리할 항목은 아니지만, 같은 쉬는 시간의 외출과 짝을 맞춰 보여주려면 필요합니다.
+      if (status === 'pending') query = query.in('status', ['pending', 'auto_applied']);
+      else if (status !== 'all') query = query.eq('status', status);
       const { data, error } = await query;
       if (error) throw error;
       holds = data || [];

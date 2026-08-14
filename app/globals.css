@@ -20226,6 +20226,13 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
    순점수가 기준(10점)을 초과하면 상품 지급 대상 알림을 띄우고,
    [상품지급안내완료](카운팅 리셋) / [미지급](계속 누적) 중 하나로 처리합니다.
    ───────────────────────────────────────────────────────────── */
+/* v41-159: 쉬는 시간에 즉시 반영된 신호(복귀·첫 등원)는 짝만 보여주고 처리 대상에서 뺍니다. */
+.kiosk-hold-check-empty { display: block; width: 18px; }
+.kiosk-hold-auto-note {
+  font-style: normal; font-size: 12px; font-weight: 850; color: #7a8a72;
+  background: #eef5ec; border-radius: 999px; padding: 5px 11px; white-space: nowrap;
+}
+
 /* v41-158: 리포트 예약 발송 */
 .send-mode-box { display: grid; gap: 10px; margin-top: 12px; }
 .send-mode-tabs { display: flex; gap: 6px; background: #f2f0eb; border-radius: 12px; padding: 4px; }

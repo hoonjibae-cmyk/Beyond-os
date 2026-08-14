@@ -6719,16 +6719,25 @@ function buildKioskHoldBreakGroups(holds = []) {
         const complete = pairCount > 0 && unmatchedExits === 0 && unmatchedEntries === 0;
         const partial = pairCount > 0 && !complete;
         const status = complete ? 'complete' : partial ? 'partial' : 'unmatched';
-        const ids = signals.map((item) => item.id);
+        // v41-159: 즉시 반영된 신호(복귀·첫 등원)는 짝 맞춤에만 쓰고
+        // 선택·일괄 처리 대상에서는 뺍니다. 이미 출결에 반영된 기록이기 때문입니다.
+        const pendingSignals = signals.filter((item) => item.status !== 'auto_applied');
+        const ids = pendingSignals.map((item) => item.id);
+        const autoAppliedCount = signals.length - pendingSignals.length;
         return {
           ...group,
           signals,
+          pendingSignals,
+          autoAppliedCount,
+          actionable: pendingSignals.length > 0,
           ids,
           pairCount,
           unmatchedExits,
           unmatchedEntries,
           status,
-          sequenceLabel: signals.map((item) => `${formatKstTime(item.event_at)} ${getKioskEventLabel(item.event_type)}`).join(' → '),
+          sequenceLabel: signals
+            .map((item) => `${formatKstTime(item.event_at)} ${getKioskEventLabel(item.event_type)}${item.status === 'auto_applied' ? '(자동 반영)' : ''}`)
+            .join(' → '),
         };
       }).sort((a, b) => {
         const rank = { unmatched: 0, partial: 1, complete: 2 };
@@ -6740,9 +6749,14 @@ function buildKioskHoldBreakGroups(holds = []) {
       return {
         ...period,
         students,
-        ids: period.items.map((item) => item.id),
+        // 일괄 처리는 판정 대기 중인 신호에만 적용합니다.
+        ids: period.items.filter((item) => item.status !== 'auto_applied').map((item) => item.id),
+        signalCount: period.items.length,
+        autoAppliedCount: period.items.filter((item) => item.status === 'auto_applied').length,
         completeCount: students.filter((item) => item.status === 'complete').length,
-        incompleteCount: students.filter((item) => item.status !== 'complete').length,
+        // 처리할 신호가 남아 있는 학생만 '미완결'로 셉니다.
+        // (이미 반영된 복귀만 있는 줄은 참고용이라 경고로 세지 않습니다)
+        incompleteCount: students.filter((item) => item.status !== 'complete' && item.actionable).length,
       };
     })
     .sort((a, b) => `${b.date} ${b.startTime}`.localeCompare(`${a.date} ${a.startTime}`));
@@ -6906,7 +6920,10 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
   }
 
   function openKioskHoldApply(group, period) {
-    const signals = [...(group?.signals || [])].sort((a, b) => new Date(a.event_at) - new Date(b.event_at));
+    // v41-159: 이미 출결에 반영된 신호(복귀·첫 등원)는 처리 대상이 아니므로 모달에서 뺍니다.
+    const signals = [...(group?.pendingSignals || group?.signals || [])]
+      .filter((item) => item.status !== 'auto_applied')
+      .sort((a, b) => new Date(a.event_at) - new Date(b.event_at));
     if (!signals.length) return;
     const modes = {};
     signals.forEach((signal, index) => {
@@ -7556,6 +7573,12 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
 
 
   const kioskHoldBreakGroups = useMemo(() => buildKioskHoldBreakGroups(kioskHolds), [kioskHolds]);
+  // v41-159: 화면의 '판정 대기' 숫자는 실제로 처리해야 하는 신호만 셉니다.
+  // (즉시 반영된 복귀·첫 등원은 짝을 보여주려고 함께 내려오지만 처리 대상이 아닙니다)
+  const kioskHoldPendingCount = useMemo(
+    () => (kioskHolds || []).filter((item) => item.status !== 'auto_applied').length,
+    [kioskHolds],
+  );
   const kioskHoldHistoryGroups = useMemo(() => buildKioskHoldHistoryGroups(kioskHoldHistory), [kioskHoldHistory]);
 
   const dismissedFocusHistory = Object.entries(dismissedAlertMemos || {})
@@ -7573,14 +7596,14 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
         <section className={`kiosk-hold-panel kiosk-hold-panel-v41362 ${kioskHoldOpen ? 'is-open' : 'is-collapsed'}`}>
           <div className="kiosk-hold-head">
             <div>
-              <h3>쉬는 시간 키오스크 HOLD <b>{kioskHolds.length}</b></h3>
-              {kioskHoldOpen ? <p>쉬는 시간의 외출·퇴실·재입실 신호만 모읍니다. 외출 후 복귀(재입장)는 HOLD 없이 바로 출결에 반영됩니다. 같은 학생의 신호는 한 줄로 묶고, 쉬는 시간 구간별로 정리합니다. 미완결 신호는 먼저 표시됩니다.</p> : null}
+              <h3>쉬는 시간 키오스크 HOLD <b>{kioskHoldPendingCount}</b></h3>
+              {kioskHoldOpen ? <p>외출·퇴실·재입실은 판정 대기로 모입니다. 복귀(재입장)는 바로 출결에 반영되며, 짝을 확인하실 수 있도록 <b>(자동 반영)</b> 표시로 함께 보여줍니다. 같은 학생의 신호는 한 줄로 묶고, 쉬는 시간 구간별로 정리합니다. 미완결 신호는 먼저 표시됩니다.</p> : null}
             </div>
             <div className="kiosk-hold-head-actions">
               {kioskHoldOpen ? (
                 <>
                   <div className="kiosk-hold-view-tabs">
-                    <button type="button" className={kioskHoldView === 'pending' ? 'active' : ''} onClick={() => setKioskHoldView('pending')}>판정 대기 {kioskHolds.length}</button>
+                    <button type="button" className={kioskHoldView === 'pending' ? 'active' : ''} onClick={() => setKioskHoldView('pending')}>판정 대기 {kioskHoldPendingCount}</button>
                     <button type="button" className={kioskHoldView === 'history' ? 'active' : ''} onClick={() => setKioskHoldView('history')}>처리 이력 {kioskHoldHistoryGroups.length}</button>
                   </div>
                   <button type="button" className="secondary" onClick={() => loadKioskHolds()} disabled={kioskHoldLoading}>{kioskHoldLoading ? '새로고침 중' : '새로고침'}</button>
@@ -7605,7 +7628,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
                         <label className="kiosk-hold-check"><input type="checkbox" checked={periodAllSelected} onChange={() => toggleKioskHoldGroupSelection(period.ids)} /><span></span></label>
                         <div className="kiosk-hold-period-title">
                           <strong>{period.date} · {period.label}</strong>
-                          <span>HOLD {period.startTime}~{period.endTime} · 학생 {period.students.length}명 · 신호 {period.ids.length}건</span>
+                          <span>HOLD {period.startTime}~{period.endTime} · 학생 {period.students.length}명 · 신호 {period.signalCount}건{period.autoAppliedCount ? ` (자동 반영 ${period.autoAppliedCount}건 포함)` : ''}</span>
                         </div>
                         <div className="kiosk-hold-period-summary">
                           {period.incompleteCount ? <em className="warning">미완결 {period.incompleteCount}명</em> : null}
@@ -7615,7 +7638,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
                       </div>
                       <div className="kiosk-hold-student-list">
                         {period.students.map((group) => {
-                          const allSelected = group.ids.every((id) => selectedKioskHoldIds.includes(id));
+                          const allSelected = group.ids.length > 0 && group.ids.every((id) => selectedKioskHoldIds.includes(id));
                           const statusText = group.status === 'complete'
                             ? '외출·복귀 한 쌍'
                             : group.status === 'partial'
@@ -7627,15 +7650,21 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
                                   : '⚠ 신호 짝이 맞지 않음';
                           return (
                             <div key={group.key} className={`kiosk-hold-student-group ${group.status} ${allSelected ? 'selected' : ''}`}>
-                              <label className="kiosk-hold-check"><input type="checkbox" checked={allSelected} onChange={() => toggleKioskHoldGroupSelection(group.ids)} /><span></span></label>
+                              {group.actionable
+                                ? <label className="kiosk-hold-check"><input type="checkbox" checked={allSelected} onChange={() => toggleKioskHoldGroupSelection(group.ids)} /><span></span></label>
+                                : <span className="kiosk-hold-check kiosk-hold-check-empty" aria-hidden="true"></span>}
                               <div className="kiosk-hold-main">
                                 <strong>{group.student?.name || '학생 미확인'} <em>{group.seatNo ? `${group.seatNo}번 좌석` : ''}</em></strong>
                                 <span>{group.sequenceLabel}</span>
                                 <small className={`kiosk-hold-pair-status ${group.status}`}>{statusText}</small>
                               </div>
                               <div className="kiosk-hold-actions">
-                                <button type="button" className="primary" onClick={() => openKioskHoldApply(group, period)} disabled={kioskHoldLoading}>실제 출결 반영</button>
-                                <button type="button" className="secondary" onClick={() => runKioskHoldGroupAction(group, 'discard_group')} disabled={kioskHoldLoading}>쉬는 시간 처리</button>
+                                {group.actionable ? (
+                                  <>
+                                    <button type="button" className="primary" onClick={() => openKioskHoldApply(group, period)} disabled={kioskHoldLoading}>실제 출결 반영</button>
+                                    <button type="button" className="secondary" onClick={() => runKioskHoldGroupAction(group, 'discard_group')} disabled={kioskHoldLoading}>쉬는 시간 처리</button>
+                                  </>
+                                ) : <em className="kiosk-hold-auto-note">이미 출결에 반영됨</em>}
                               </div>
                             </div>
                           );

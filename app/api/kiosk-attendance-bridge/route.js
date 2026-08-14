@@ -1149,6 +1149,14 @@ export async function POST(request) {
     const breakHoldWindow = (shouldHoldBreakSignal(parsed.eventType) && !isFirstCheckIn)
       ? getBreakHoldWindow(receivedAt, defaultSchedule.studyWindows, bridgeSettings.breakHoldBufferMinutes)
       : null;
+
+    // v41-159: 쉬는 시간 복귀는 즉시 반영하지만(v41-155), HOLD 목록에는 함께 남깁니다.
+    // 남기지 않으면 앞선 외출 HOLD가 짝을 찾지 못해 영원히 '미완결'로 보입니다.
+    // 운영자가 처리할 일은 없으므로 pending이 아니라 auto_applied로 넣습니다.
+    // 복귀만 남깁니다. 첫 등원은 짝이 될 외출이 없어 늘 '미완결'로 보여 오히려 헷갈립니다.
+    const autoAppliedBreakWindow = parsed.eventType === 'return'
+      ? getBreakHoldWindow(receivedAt, defaultSchedule.studyWindows, bridgeSettings.breakHoldBufferMinutes)
+      : null;
     if (breakHoldWindow) {
       const duplicateWindowSeconds = bridgeSettings.breakHoldDuplicateWindowSeconds ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.breakHoldDuplicateWindowSeconds;
       const recentDuplicateHold = await findRecentDuplicateBreakHold({
@@ -1378,6 +1386,38 @@ export async function POST(request) {
       error_message: null,
     });
 
+    // v41-159: 쉬는 시간에 즉시 반영한 신호(복귀·첫 등원)도 HOLD 목록에 흔적을 남깁니다.
+    // 같은 쉬는 시간의 외출 HOLD와 짝이 맞아야 운영자가 "나갔다 돌아왔음"을 알 수 있습니다.
+    // 처리할 일은 없으므로 auto_applied 상태로 넣습니다. (선택·일괄 처리 대상에서 제외)
+    let autoAppliedHold = null;
+    if (autoAppliedBreakWindow) {
+      try {
+        const { data: autoHoldRow } = await supabase
+          .from('kiosk_attendance_holds')
+          .insert({
+            import_event_id: importEvent.id,
+            student_id: student.id,
+            session_id: applied.savedSession.id,
+            seat_no: seatNo,
+            event_type: parsed.eventType,
+            event_at: receivedAt,
+            raw_text: rawText,
+            parsed_reason: parsed.reason || null,
+            hold_reason: 'break_window',
+            break_label: `${autoAppliedBreakWindow.previousLabel} 종료 후 ~ ${autoAppliedBreakWindow.nextLabel} 시작 전`,
+            break_start_time: autoAppliedBreakWindow.startTime,
+            break_end_time: autoAppliedBreakWindow.endTime,
+            status: 'auto_applied',
+            resolved_at: new Date().toISOString(),
+          })
+          .select('*, students(name, grade, school)')
+          .single();
+        autoAppliedHold = autoHoldRow || null;
+      } catch {
+        // 기록 남기기에 실패해도 출결 반영 자체는 이미 끝났으므로 그대로 진행합니다.
+      }
+    }
+
     let attendanceNotificationResult = null;
     try {
       attendanceNotificationResult = await sendAttendanceNotification({
@@ -1405,6 +1445,7 @@ export async function POST(request) {
       attendanceEvent: applied.savedEvent,
       attendanceNotification: attendanceNotificationResult,
       importEvent: updated,
+      autoAppliedHold,
       toastMessage: `${student.name} 학생 ${parsed.koreanType}이 키오스크를 통해 자동 반영되었습니다.`,
     });
   } catch (error) {
