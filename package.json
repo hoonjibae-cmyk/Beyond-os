@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-164-1-settings-fix",
-  "version": "0.41.1641",
+  "name": "beyond-os-v41-165-cohort-seat-plan",
+  "version": "0.41.165",
   "private": true,
   "scripts": {
     "dev": "next dev",

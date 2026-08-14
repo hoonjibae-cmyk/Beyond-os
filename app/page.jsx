@@ -9330,6 +9330,166 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
 
 // v41-148: 기수(코호트) 관리 화면
 // 기수 = 기간 + 수강 명단. 학생 원본 정보는 건드리지 않고 명단만 관리합니다.
+// v41-165: 기수별 좌석 배치 초안.
+// [적용]을 누르기 전까지 실제 좌석(students.default_seat_no / seats)은 건드리지 않습니다.
+// 덕분에 1기가 운영되는 중에도 2기 자리를 미리 짜 둘 수 있습니다.
+function CohortSeatPlanPanel({ cohortId, cohortName, apiFetch, setMessage }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState('');
+  const [pickSeat, setPickSeat] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!cohortId) { setData(null); return; }
+    try {
+      setLoading(true);
+      const result = await apiFetch(`/api/cohort-seat-plans?cohortId=${cohortId}`);
+      setData(result);
+    } catch (error) {
+      setData(null);
+      setMessage?.(error?.message || '좌석 초안 조회 실패');
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch, cohortId, setMessage]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function run(action, payload = {}, key = action, confirmText = '') {
+    if (confirmText && !confirm(confirmText)) return;
+    try {
+      setBusy(key);
+      const result = await apiFetch('/api/cohort-seat-plans', {
+        method: 'POST',
+        body: JSON.stringify({ action, cohortId, ...payload }),
+      });
+      setMessage?.(result.message || '처리했습니다.');
+      setPickSeat(null);
+      await load();
+    } catch (error) {
+      setMessage?.(error?.message || '처리 실패');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  if (!cohortId) return null;
+
+  const planBySeat = {};
+  for (const item of data?.plan || []) planBySeat[item.seatNo] = item;
+  const seats = data?.seats || [];
+  const seatedIds = new Set((data?.plan || []).filter((item) => item.studentId).map((item) => item.studentId));
+  const rosterSet = new Set(data?.rosterIds || []);
+  // 아직 자리가 없는 명단 학생을 먼저 보여줍니다.
+  const candidates = [...(data?.students || [])].sort((a, b) => {
+    const ar = rosterSet.has(String(a.id)) ? 0 : 1;
+    const br = rosterSet.has(String(b.id)) ? 0 : 1;
+    if (ar !== br) return ar - br;
+    return String(a.name || '').localeCompare(String(b.name || ''), 'ko');
+  });
+
+  return (
+    <div className="seat-plan-panel clean-panel">
+      <div className="seat-plan-head">
+        <div>
+          <strong>{cohortName} 좌석 배치 준비</strong>
+          <span>
+            여기서 짠 배치는 <b>[실제 좌석에 반영]</b>을 누르기 전까지 저장만 되고 현재 운영에는 영향을 주지 않습니다.
+            1기가 돌아가는 중에도 마음껏 짜 두세요. 배정 {data?.assignedCount || 0}자리 · 명단 {data?.rosterCount || 0}명
+          </span>
+        </div>
+        <div className="seat-plan-head-actions">
+          <button type="button" className="secondary" onClick={load} disabled={loading}>{loading ? '불러오는 중...' : '새로고침'}</button>
+          <button type="button" className="secondary" onClick={() => run('carry_over', {}, 'carry_over', `${cohortName} 명단에 있으면서 지금 자리가 있는 학생의 자리를 그대로 가져올까요?\n\n기존 초안은 지워집니다.`)} disabled={Boolean(busy)}>
+            {busy === 'carry_over' ? '가져오는 중...' : '이어 다니는 학생 자리 유지'}
+          </button>
+          <button type="button" className="secondary" onClick={() => run('copy_live', {}, 'copy_live', '현재 좌석 배치를 그대로 초안으로 가져올까요?\n\n기존 초안은 지워집니다.')} disabled={Boolean(busy)}>
+            {busy === 'copy_live' ? '복사 중...' : '현재 배치 전체 복사'}
+          </button>
+          <button type="button" className="danger" onClick={() => run('clear_all', {}, 'clear_all', '이 기수의 좌석 초안을 모두 지울까요?')} disabled={Boolean(busy)}>초안 비우기</button>
+        </div>
+      </div>
+
+      {(data?.warnings || []).length ? (
+        <div className="seat-plan-warnings">
+          {data.warnings.map((item, index) => (
+            <div key={index} className={`seat-plan-warn ${item.level}`}>{item.message}</div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="seat-plan-grid">
+        {seats.map((seat) => {
+          const item = planBySeat[seat.seatNo];
+          const live = data?.liveBySeat?.[seat.seatNo];
+          const outsideRoster = item?.studentId && rosterSet.size && !rosterSet.has(item.studentId);
+          return (
+            <button
+              key={seat.seatNo}
+              type="button"
+              className={`seat-plan-cell${item?.studentId ? ' is-filled' : ''}${outsideRoster ? ' is-warn' : ''}${pickSeat === seat.seatNo ? ' is-picking' : ''}`}
+              onClick={() => setPickSeat(pickSeat === seat.seatNo ? null : seat.seatNo)}
+            >
+              <b>{seat.seatNo}</b>
+              <span>{item?.studentName || '비어 있음'}</span>
+              {live?.name && live.name !== item?.studentName ? <em>현재 {live.name}</em> : null}
+            </button>
+          );
+        })}
+      </div>
+
+      {pickSeat ? (
+        <div className="seat-plan-picker">
+          <div className="seat-plan-picker-head">
+            <strong>{pickSeat}번 좌석에 배정</strong>
+            <button type="button" className="secondary" onClick={() => setPickSeat(null)}>닫기</button>
+          </div>
+          <div className="seat-plan-picker-list">
+            <button type="button" className="seat-plan-pick-clear" onClick={() => run('clear_seat', { seatNo: pickSeat }, 'seat')} disabled={Boolean(busy)}>
+              비우기
+            </button>
+            {candidates.map((student) => {
+              const already = seatedIds.has(String(student.id));
+              const inRoster = rosterSet.has(String(student.id));
+              return (
+                <button
+                  key={student.id}
+                  type="button"
+                  className={`seat-plan-pick${already ? ' is-seated' : ''}${inRoster ? '' : ' is-outside'}`}
+                  onClick={() => run('set_seat', { seatNo: pickSeat, studentId: student.id }, 'seat')}
+                  disabled={Boolean(busy)}
+                >
+                  {student.name}
+                  <em>{inRoster ? (already ? '배정됨' : '명단') : '명단 밖'}</em>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="seat-plan-apply-row">
+        <span>
+          기수가 바뀌는 날 이 버튼을 누르면 초안대로 실제 좌석이 바뀝니다.
+          이번 배치에 없는 학생의 기본 좌석은 함께 해제됩니다.
+        </span>
+        <button
+          type="button"
+          className="primary"
+          disabled={Boolean(busy) || !(data?.assignedCount)}
+          onClick={() => run('apply', {}, 'apply',
+            `${cohortName} 좌석 배치를 실제로 반영할까요?\n\n`
+            + `▶ 지금 운영 중인 좌석 배치가 이 초안으로 바뀝니다.\n`
+            + `▶ 초안에 없는 학생의 기본 좌석은 해제됩니다.\n`
+            + `▶ 기수 전환일에 누르세요.`)}
+        >
+          {busy === 'apply' ? '반영 중...' : '실제 좌석에 반영'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CohortSettingsTab({ apiFetch, setMessage }) {
   const today = getKstDateString();
   const [data, setData] = useState(null);
@@ -9595,6 +9755,14 @@ function CohortSettingsTab({ apiFetch, setMessage }) {
                   <button type="button" className="primary" onClick={() => submit('set_roster', { cohortId: selectedId, studentIds: rosterDraft }, 'roster')} disabled={!rosterDirty || saving === 'roster'}>{saving === 'roster' ? '저장 중...' : '명단 저장'}</button>
                 </div>
               </div>
+
+              {/* v41-165: 기수 좌석 배치 미리 준비 */}
+              <CohortSeatPlanPanel
+                cohortId={selectedId}
+                cohortName={selected?.name || '이 기수'}
+                apiFetch={apiFetch}
+                setMessage={setMessage}
+              />
             </div>
           ) : null}
         </div>
