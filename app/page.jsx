@@ -599,20 +599,17 @@ function ProductTierBadge({ tier, size = '' }) {
   );
 }
 
-// v41-168: 학생을 고르기 전에 기수로 먼저 좁히는 공용 로직입니다.
-// 학습관리·학생정보처럼 학생 선택 드롭다운이 있는 화면에서 함께 씁니다.
-// v41-169: 기수 선택값은 헤더의 '기수 보기'와 같은 값을 씁니다.
-// 화면 안에서 바꿔도 헤더가 함께 바뀌고, 다른 탭에도 그대로 이어집니다.
+// v41-168: 학생 선택 드롭다운을 헤더의 [기수 보기]에 맞춰 좁힙니다.
+// v41-172: 화면 안의 기수 선택 칸은 없앴습니다. 기수는 헤더 한 곳에서만 고릅니다.
+// (같은 화면에 기수 드롭다운이 두 개라 어느 쪽이 적용된 것인지 알 수 없었습니다)
 function useCohortStudentFilter({
   cohortOptions = [],
   cohortRosters = {},
   cohortScopeId = '',
-  setCohortScopeId,
   students = [],
   selectedStudentId = '',
 }) {
   const cohortFilter = String(cohortScopeId || '');
-  const setCohortFilter = (value) => setCohortScopeId?.(value);
 
   const cohortStudentIds = cohortFilter ? new Set((cohortRosters[cohortFilter] || []).map(String)) : null;
   const visibleStudents = cohortStudentIds
@@ -631,32 +628,11 @@ function useCohortStudentFilter({
     : visibleStudents;
 
   return {
-    hasCohorts: cohortOptions.length > 0,
-    cohortFilter,
-    setCohortFilter,
     selectedCohort: cohortOptions.find((cohort) => String(cohort.id) === String(cohortFilter)) || null,
     visibleStudents,
     studentOptions,
     selectedOutsideCohort,
   };
-}
-
-// v41-168: 위 훅과 짝을 이루는 기수 선택 칸입니다.
-function CohortFilterField({ cohortOptions = [], cohortRosters = {}, value, onChange, totalCount = 0, className = '' }) {
-  if (!cohortOptions.length) return null;
-  return (
-    <div className={`field ${className}`.trim()}>
-      <label>기수</label>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">전체 기수 ({totalCount}명)</option>
-        {cohortOptions.map((cohort) => (
-          <option key={cohort.id} value={cohort.id}>
-            {cohort.name}{cohort.isCurrent ? ' (진행 중)' : ''} · {(cohortRosters[cohort.id] || []).length}명
-          </option>
-        ))}
-      </select>
-    </div>
-  );
 }
 
 function getGuardianDisplayText(student = {}, reportType = 'daily') {
@@ -5672,7 +5648,7 @@ export default function Page() {
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'ranking' ? (
-          <RankingTab ranking={ranking} rankingStart={rankingStart} rankingEnd={rankingEnd} setRankingStart={setRankingStart} setRankingEnd={setRankingEnd} loadRanking={loadRanking} setRankingPreset={setRankingPreset} apiFetch={apiFetch} setMessage={setMessage} rankingCohortInfo={rankingCohortInfo} />
+          <RankingTab ranking={ranking} rankingStart={rankingStart} rankingEnd={rankingEnd} setRankingStart={setRankingStart} setRankingEnd={setRankingEnd} loadRanking={loadRanking} setRankingPreset={setRankingPreset} apiFetch={apiFetch} setMessage={setMessage} rankingCohortInfo={rankingCohortInfo} cohortScopeId={cohortScopeId} />
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'points' ? (
@@ -15119,7 +15095,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   );
 }
 
-function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRankingEnd, loadRanking, setRankingPreset, apiFetch, setMessage, rankingCohortInfo = null }) {
+function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRankingEnd, loadRanking, setRankingPreset, apiFetch, setMessage, rankingCohortInfo = null, cohortScopeId = '' }) {
   const [mode, setMode] = useState('admin'); // 'admin' | 'broadcast'
 
   // v41-171: 화면 안에 있던 기수 선택칸을 없앴습니다. 헤더의 [기수 보기] 하나만 씁니다.
@@ -15185,7 +15161,7 @@ function RankingTab({ ranking, rankingStart, rankingEnd, setRankingStart, setRan
           </table>
         </>
       ) : (
-        <BroadcastRankingBoard apiFetch={apiFetch} setMessage={setMessage} />
+        <BroadcastRankingBoard apiFetch={apiFetch} setMessage={setMessage} cohortScopeId={cohortScopeId} />
       )}
     </section>
   );
@@ -15305,7 +15281,7 @@ function buildBroadcastBoards({ yesterday, week, month }, { singlePage = false }
 const BROADCAST_ROTATE_MS = 15000;
 const BROADCAST_RELOAD_MS = 5 * 60 * 1000;
 
-function BroadcastRankingBoard({ apiFetch, setMessage }) {
+function BroadcastRankingBoard({ apiFetch, setMessage, cohortScopeId = '' }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [index, setIndex] = useState(0);
@@ -15335,10 +15311,13 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
       const week0 = addDays(today, -6);
       const month0 = addDays(today, -29);
       const fmt = (d) => d.replace(/-/g, '.').slice(5); // MM.DD
+      // v41-172: 게시용도 헤더 [기수 보기]를 따릅니다.
+      // (기수를 골라도 전체 학생이 TV에 뜨던 문제)
+      const scope = cohortScopeId ? `&cohortId=${encodeURIComponent(cohortScopeId)}&keepRange=1` : '';
       const [yesterday, week, month] = await Promise.all([
-        apiFetch(`/api/ranking?start=${yday}&end=${yday}`),
-        apiFetch(`/api/ranking?start=${week0}&end=${today}`),
-        apiFetch(`/api/ranking?start=${month0}&end=${today}`),
+        apiFetch(`/api/ranking?start=${yday}&end=${yday}${scope}`),
+        apiFetch(`/api/ranking?start=${week0}&end=${today}${scope}`),
+        apiFetch(`/api/ranking?start=${month0}&end=${today}${scope}`),
       ]);
       setData({
         yesterday: { rows: yesterday.ranking || [], label: `${fmt(yday)} (어제)` },
@@ -15352,12 +15331,13 @@ function BroadcastRankingBoard({ apiFetch, setMessage }) {
     }
   }
 
+  // v41-172: 기수 보기가 바뀌면 게시용 화면도 다시 불러옵니다.
   useEffect(() => {
     loadAll();
     const reload = setInterval(loadAll, BROADCAST_RELOAD_MS);
     return () => clearInterval(reload);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cohortScopeId]);
 
   const boards = useMemo(() => (data ? buildBroadcastBoards(data, { singlePage }) : []), [data, singlePage]);
 
@@ -16788,8 +16768,7 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {}, cohortProps =
   // v41-168: 학생을 고르기 전에 기수로 먼저 좁힙니다.
   const allStudents = attendanceProps.students || [];
   const {
-    hasCohorts, cohortFilter, setCohortFilter, selectedCohort,
-    visibleStudents, studentOptions, selectedOutsideCohort,
+    selectedCohort, visibleStudents, studentOptions, selectedOutsideCohort,
   } = useCohortStudentFilter({ ...cohortProps, students: allStudents, selectedStudentId });
 
   return (
@@ -16797,18 +16776,10 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {}, cohortProps =
       <div className="content-card student-care-picker">
         <div className="student-care-picker-head">
           <strong>학생 선택</strong>
-          <span>기수를 먼저 고르면 그 기수 명단만 학생 목록에 나옵니다. 학생과 조회 기간을 선택하면 아래 두 영역에 함께 적용됩니다.</span>
+          <span>학생과 조회 기간을 선택하면 아래 두 영역에 함께 적용됩니다. 기수는 화면 위 [기수 보기]에서 바꿉니다.</span>
         </div>
-        <div className={`student-care-picker-row${hasCohorts ? ' has-cohort' : ''}`}>
-          {/* v41-168: 학생 목록이 길어 기수로 먼저 좁힙니다. 기수가 없으면 이 칸도 나오지 않습니다. */}
-          <CohortFilterField
-            cohortOptions={cohortProps.cohortOptions}
-            cohortRosters={cohortProps.cohortRosters}
-            value={cohortFilter}
-            onChange={setCohortFilter}
-            totalCount={allStudents.length}
-            className="student-care-picker-cohort"
-          />
+        {/* v41-172: 화면 안의 기수 칸을 없앴습니다. 기수는 화면 위 [기수 보기]에서만 고릅니다. */}
+        <div className="student-care-picker-row">
           <div className="field student-care-picker-student">
             <label>학생{selectedCohort ? ` · ${selectedCohort.name} ${visibleStudents.length}명` : ''}</label>
             <select
@@ -16935,8 +16906,7 @@ function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focu
 
   // v41-168: 학습관리와 같은 방식으로 기수를 먼저 고른 뒤 학생을 찾습니다.
   const {
-    hasCohorts, cohortFilter, setCohortFilter, selectedCohort,
-    visibleStudents, studentOptions, selectedOutsideCohort,
+    selectedCohort, visibleStudents, studentOptions, selectedOutsideCohort,
   } = useCohortStudentFilter({ ...cohortProps, students: sortedStudents, selectedStudentId: selectedId });
 
   // 선택 학생이 바뀌면 특이사항 초안을 저장된 값으로 초기화(타이핑 중 덮어쓰기 방지)
@@ -16985,18 +16955,10 @@ function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focu
       <div className="content-card sinfo-picker">
         <div className="sinfo-picker-head">
           <strong>학생 선택</strong>
-          <span>기수를 먼저 고르면 그 기수 명단만 학생 목록에 나옵니다. 학생을 선택하면 개인·학부모 정보, 관리자 특이사항, 사전 설문을 한 화면에서 확인·관리합니다. (설정 &gt; 학생 관리와는 별개 메뉴입니다)</span>
+          <span>학생을 선택하면 개인·학부모 정보, 관리자 특이사항, 사전 설문을 한 화면에서 확인·관리합니다. 기수는 화면 위 [기수 보기]에서 바꿉니다. (설정 &gt; 학생 관리와는 별개 메뉴입니다)</span>
         </div>
-        <div className={`sinfo-picker-row${hasCohorts ? ' has-cohort' : ''}`}>
-          {/* v41-168: 학습관리와 같은 기수 필터입니다. 기수가 없으면 이 칸도 나오지 않습니다. */}
-          <CohortFilterField
-            cohortOptions={cohortProps.cohortOptions}
-            cohortRosters={cohortProps.cohortRosters}
-            value={cohortFilter}
-            onChange={setCohortFilter}
-            totalCount={sortedStudents.length}
-            className="sinfo-picker-cohort"
-          />
+        {/* v41-172: 화면 안의 기수 칸을 없앴습니다. 기수는 화면 위 [기수 보기]에서만 고릅니다. */}
+        <div className="sinfo-picker-row">
           <div className="field sinfo-picker-field">
             <label>학생{selectedCohort ? ` · ${selectedCohort.name} ${visibleStudents.length}명` : ''}</label>
             <select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setFocusStudentId?.(event.target.value); }}>
