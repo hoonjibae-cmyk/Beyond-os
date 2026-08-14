@@ -601,28 +601,18 @@ function ProductTierBadge({ tier, size = '' }) {
 
 // v41-168: 학생을 고르기 전에 기수로 먼저 좁히는 공용 로직입니다.
 // 학습관리·학생정보처럼 학생 선택 드롭다운이 있는 화면에서 함께 씁니다.
+// v41-169: 기수 선택값은 헤더의 '기수 보기'와 같은 값을 씁니다.
+// 화면 안에서 바꿔도 헤더가 함께 바뀌고, 다른 탭에도 그대로 이어집니다.
 function useCohortStudentFilter({
   cohortOptions = [],
   cohortRosters = {},
-  defaultCohortId = '',
-  loadCohortOptions,
+  cohortScopeId = '',
+  setCohortScopeId,
   students = [],
   selectedStudentId = '',
 }) {
-  const [cohortFilter, setCohortFilter] = useState('');
-  const autoSetRef = useRef(false);
-
-  useEffect(() => { loadCohortOptions?.(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-
-  // 기수 목록이 도착하면 진행 중인 기수로 한 번만 맞춰 둡니다.
-  // 이미 학생을 고른 상태면 그 선택이 사라지지 않도록 건드리지 않습니다.
-  useEffect(() => {
-    if (autoSetRef.current) return;
-    if (!cohortOptions.length) return;
-    autoSetRef.current = true;
-    if (selectedStudentId) return;
-    if (defaultCohortId) setCohortFilter(String(defaultCohortId));
-  }, [cohortOptions, defaultCohortId, selectedStudentId]);
+  const cohortFilter = String(cohortScopeId || '');
+  const setCohortFilter = (value) => setCohortScopeId?.(value);
 
   const cohortStudentIds = cohortFilter ? new Set((cohortRosters[cohortFilter] || []).map(String)) : null;
   const visibleStudents = cohortStudentIds
@@ -2228,6 +2218,10 @@ export default function Page() {
   // 학생을 고르기 전에 기수로 먼저 좁히는 화면들이 함께 씁니다.
   const [cohortRosters, setCohortRosters] = useState({});
   const [defaultCohortId, setDefaultCohortId] = useState('');
+  // v41-169: 앱 전체가 함께 보는 '기수 보기' 범위입니다.
+  // 헤더에서 한 번 고르면 학생 목록이 나오는 모든 화면이 그 기수 명단으로 좁혀집니다.
+  const [cohortScopeId, setCohortScopeId] = useState('');
+  const cohortScopeAutoRef = useRef(false);
   const [scheduleView, setScheduleView] = useState('day');
   const [scheduleBaseDate, setScheduleBaseDate] = useState(getKstDateString());
   const [scheduleStudentFilter, setScheduleStudentFilter] = useState('all');
@@ -2361,6 +2355,18 @@ export default function Page() {
     }
     return map;
   }, [sessions, students]);
+
+  // v41-169: 헤더에서 고른 기수로 좁힌 학생 목록입니다.
+  // 화면에 학생 목록/선택지를 그릴 때만 씁니다. 이름 조회용 원본(students)은 그대로 둡니다.
+  // (좁힌 목록으로 이름을 찾으면 기수 밖 학생의 이름이 빈칸으로 보이기 때문입니다)
+  const cohortScopeIds = useMemo(() => (
+    cohortScopeId ? new Set((cohortRosters[cohortScopeId] || []).map(String)) : null
+  ), [cohortScopeId, cohortRosters]);
+  const scopeStudentList = useCallback((list) => (
+    cohortScopeIds ? (list || []).filter((student) => cohortScopeIds.has(String(student.id))) : (list || [])
+  ), [cohortScopeIds]);
+  const scopedStudents = useMemo(() => scopeStudentList(students), [students, scopeStudentList]);
+  const cohortScopeInfo = cohortOptions.find((cohort) => String(cohort.id) === String(cohortScopeId)) || null;
 
   const seatsForDisplay = seats?.length ? seats : STATIC_SEATS;
   const selectedSession = selectedSeatNo ? sessionBySeat[selectedSeatNo] : null;
@@ -2643,6 +2649,21 @@ export default function Page() {
       for (const eventName of ACTIVITY_EVENTS) window.removeEventListener(eventName, markActivity);
     };
   }, [isLoggedIn, adminPassword, activeTab]);
+
+  // v41-169: 기수 목록은 로그인 직후 한 번 받아 둡니다. 헤더의 기수 보기 선택이
+  // 어느 탭에서든 바로 보여야 하기 때문입니다.
+  useEffect(() => {
+    if (isLoggedIn) loadCohortOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn]);
+
+  // 목록이 도착하면 진행 중인 기수로 한 번만 맞춰 둡니다. 이후에는 사용자가 고른 값을 그대로 둡니다.
+  useEffect(() => {
+    if (cohortScopeAutoRef.current) return;
+    if (!cohortOptions.length) return;
+    cohortScopeAutoRef.current = true;
+    if (defaultCohortId) setCohortScopeId(String(defaultCohortId));
+  }, [cohortOptions, defaultCohortId]);
 
   useEffect(() => {
     if (isLoggedIn && activeTab === 'schedules') loadSchedules();
@@ -5488,6 +5509,25 @@ export default function Page() {
             <span className="app-version-badge" title={`${APP_VERSION_NAME} · ${APP_VERSION_DESCRIPTION}`}>버전 {APP_VERSION}</span>
             <div className={`sync-status-pill ${syncStatus === 'failed' ? 'failed' : 'synced'}`}>{renderSyncStatusContent(syncStatus, lastSyncAt)}</div>
             <div className="current-user-pill">{currentUser?.displayName || '공용 관리자'} · {USER_ROLE_LABELS[currentUser?.role] || currentUser?.role || '관리자'} · 접근 {allowedTabs.length}개</div>
+            {/* v41-169: 기수 보기 — 학생 목록이 나오는 모든 화면에 함께 적용됩니다. */}
+            {cohortOptions.length ? (
+              <div className={`cohort-scope-pill${cohortScopeId ? ' is-scoped' : ''}`}>
+                <span>기수 보기</span>
+                <select
+                  value={cohortScopeId}
+                  onChange={(event) => setCohortScopeId(event.target.value)}
+                  title="선택한 기수의 수강 명단만 학생 목록에 표시합니다."
+                >
+                  <option value="">전체 기수 ({students.length}명)</option>
+                  {cohortOptions.map((cohort) => (
+                    <option key={cohort.id} value={cohort.id}>
+                      {cohort.name}{cohort.isCurrent ? ' (진행 중)' : ''} · {(cohortRosters[cohort.id] || []).length}명
+                    </option>
+                  ))}
+                </select>
+                <b>{scopedStudents.length}명</b>
+              </div>
+            ) : null}
           </div>
           <div className="toolbar utility-toolbar">
             <button type="button" className="utility-action refresh" onClick={loadDashboard} title="새로고침" aria-label="새로고침">
@@ -5529,7 +5569,7 @@ export default function Page() {
         {isActiveTabAllowed && activeTab === 'schedules' ? (
           <>
             <SchedulesTab
-              students={students}
+              students={scopedStudents}
               scheduleView={scheduleView}
               setScheduleView={setScheduleView}
               scheduleBaseDate={scheduleBaseDate}
@@ -5567,7 +5607,7 @@ export default function Page() {
 
         {isActiveTabAllowed && activeTab === 'planner' ? (
           <PlannerTab
-            students={students}
+            students={scopedStudents}
             planners={planners}
             plannerDate={plannerDate}
             setPlannerDate={setPlannerDate}
@@ -5607,7 +5647,7 @@ export default function Page() {
 
         {isActiveTabAllowed && activeTab === 'weeklyReports' ? (
           <WeeklyReportsTab
-            students={students}
+            students={scopedStudents}
             apiFetch={apiFetch}
             counselingRecorder={counselingRecorder}
             operatingRules={operatingRules}
@@ -5624,7 +5664,7 @@ export default function Page() {
 
         {isActiveTabAllowed && activeTab === 'points' ? (
           <StudentPointsTab
-            students={students}
+            students={scopedStudents}
             apiFetch={apiFetch}
             currentUser={currentUser}
             setMessage={setMessage}
@@ -5636,8 +5676,8 @@ export default function Page() {
             cohortProps={{
               cohortOptions,
               cohortRosters,
-              defaultCohortId,
-              loadCohortOptions,
+              cohortScopeId,
+              setCohortScopeId,
             }}
             attendanceProps={{
               students,
@@ -5696,8 +5736,8 @@ export default function Page() {
             cohortProps={{
               cohortOptions,
               cohortRosters,
-              defaultCohortId,
-              loadCohortOptions,
+              cohortScopeId,
+              setCohortScopeId,
             }}
             surveyProps={{
               surveys,
@@ -5711,7 +5751,7 @@ export default function Page() {
 
         {isActiveTabAllowed && activeTab === 'mentoring' ? (
           <MentoringTab
-            students={students}
+            students={scopedStudents}
             apiFetch={apiFetch}
             setMessage={setMessage}
             currentUser={currentUser}
@@ -5726,7 +5766,7 @@ export default function Page() {
         {isActiveTabAllowed && activeTab === 'attention' ? (
           <AttentionTab
             apiFetch={apiFetch}
-            students={students}
+            students={scopedStudents}
             scheduleAlerts={scheduleAlerts}
             dismissedAlertMemos={dismissedAlertMemos}
             fieldFocusAcknowledgements={fieldFocusAcknowledgements}
@@ -5742,6 +5782,7 @@ export default function Page() {
               setSettingsView={setSettingsView}
               reloadStudents={loadSettingsStudents}
               students={settingsStudents?.length ? settingsStudents : students}
+              scopedStudents={scopeStudentList(settingsStudents?.length ? settingsStudents : students)}
               seatsForDisplay={seatsForDisplay}
               openStudentEditor={openStudentEditor}
               diagnostics={seatIntegrity}
@@ -18806,7 +18847,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 }
 
 function SettingsTab({
-  settingsView, setSettingsView, students, seatsForDisplay, openStudentEditor, reloadStudents, diagnostics, loading, runCheck, cleanup,
+  settingsView, setSettingsView, students, scopedStudents = students, seatsForDisplay, openStudentEditor, reloadStudents, diagnostics, loading, runCheck, cleanup,
   operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, bulkGenerateSchedules, scheduleCoverage, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
 }) {
   useEffect(() => {
@@ -18832,7 +18873,7 @@ function SettingsTab({
       </div>
 
       {settingsView === 'students' ? (
-        <StudentsTab students={students} seatsForDisplay={seatsForDisplay} openStudentEditor={openStudentEditor} apiFetch={apiFetch} setMessage={setMessage} reloadStudents={reloadStudents} />
+        <StudentsTab students={scopedStudents} seatsForDisplay={seatsForDisplay} openStudentEditor={openStudentEditor} apiFetch={apiFetch} setMessage={setMessage} reloadStudents={reloadStudents} />
       ) : null}
 
       {settingsView === 'cohorts' ? (
@@ -18910,7 +18951,7 @@ function SettingsTab({
 
       {settingsView === 'mentoring' ? (
         <MentoringBaseSettingsTab
-          students={students}
+          students={scopedStudents}
           apiFetch={apiFetch}
           setMessage={setMessage}
           defaultSchedule={defaultScheduleConfig?.variants?.weekday || defaultSchedule}
