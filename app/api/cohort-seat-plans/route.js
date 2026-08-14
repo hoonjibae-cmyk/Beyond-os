@@ -33,7 +33,7 @@ async function loadCohort(supabase, cohortId) {
 async function loadPlanRows(supabase, cohortId) {
   const { data, error } = await supabase
     .from('cohort_seat_plans')
-    .select('*, students(id, name, school, grade, status, default_seat_no)')
+    .select('*, students(id, name, school, grade, status, default_seat_no, product_tier)')
     .eq('cohort_id', cohortId)
     .order('seat_no', { ascending: true });
   if (error) throw error;
@@ -91,7 +91,7 @@ export async function GET(request) {
       loadPlanRows(supabase, cohortId),
       supabase.from('seats').select('seat_no, current_student_id, is_active').order('seat_no', { ascending: true }),
       supabase.from('cohort_students').select('student_id').eq('cohort_id', cohortId).eq('is_active', true),
-      supabase.from('students').select('id, name, school, grade, status, default_seat_no').order('name', { ascending: true }),
+      supabase.from('students').select('id, name, school, grade, status, default_seat_no, product_tier').order('name', { ascending: true }),
     ]);
 
     const seats = seatsResult.data || [];

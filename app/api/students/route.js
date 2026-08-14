@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { normalizeProductTier } from '../../../lib/productTier';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
@@ -180,6 +181,8 @@ export async function POST(request) {
       status: requestedStatus,
       nickname: String(body.nickname || '').trim() || null,
       ranking_opt_in: Boolean(body.rankingOptIn),
+      // v41-167: 신청 상품 카테고리. 비우면 미분류로 두어 기존 화면 그대로 보입니다.
+      product_tier: normalizeProductTier(body.productTier) || null,
     };
 
     let savedStudent;

@@ -21554,3 +21554,73 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .confirm-row-note { margin: 0; font-size: 12.5px; color: #4f473c; line-height: 1.45; }
 .confirm-row-actions { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
 .confirm-row-actions button { width: auto; min-height: 34px; padding: 0 13px; border-radius: 10px; font-size: 12.5px; font-weight: 900; }
+
+/* v41-167: 신청 상품 카테고리 배지 (Lite / Plus / Premium)
+   카테고리가 없는 학생은 배지를 아예 그리지 않으므로 기존 화면 그대로 보입니다.
+   기존 컨테이너들이 자식 span/b 를 강하게 잡고 있어서(예: display:block, flex:1)
+   구조에 관련된 값만 !important 로 고정합니다. 색상은 선택자 우선순위로 이깁니다. */
+.product-tier-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 0 0 6px;
+  padding: 0 7px !important;
+  height: 19px;
+  min-height: 0;
+  border-radius: 999px !important;
+  border: 1px solid transparent;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  font-style: normal !important;
+  letter-spacing: -0.2px;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  vertical-align: middle;
+  box-shadow: none;
+  cursor: inherit;
+}
+.product-tier-badge.mini { margin-left: 5px; height: 17px; padding: 0 6px !important; font-size: 10.5px !important; }
+.product-tier-badge.tier-lite { background: #eef1f6; border-color: #d6dce6; color: #4e5a6b; }
+.product-tier-badge.tier-plus { background: #e7f1ff; border-color: #c3daff; color: #1d4ed8; }
+.product-tier-badge.tier-premium { background: #fdf0e2; border-color: #f3d6ac; color: #9a5a06; }
+
+/* 부모가 이미 gap 을 주는 곳에서는 왼쪽 여백을 빼서 간격이 두 번 들어가지 않게 합니다. */
+.sinfo-name-row > .product-tier-badge,
+.cohort-roster-row > .product-tier-badge,
+.seat-plan-pick > .product-tier-badge { margin-left: 0; }
+
+/* 이름을 감싸는 요소가 말줄임(ellipsis) 처리라 배지가 밀려 잘리는 곳들.
+   이름 쪽만 줄어들고 배지는 항상 보이도록 가로 정렬로 바꿉니다. */
+.mentoring-student-chip strong,
+.mentoring-responsibility-chip strong,
+.student-card-top strong,
+.student-overview-identity strong,
+.attendance-insight-summary .student-profile-card strong {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* 배정 카드는 이름/멘토가 각각 block 이라 배지도 block 이 되어 줄이 깨집니다. */
+.mentoring-assignment-row .mentoring-assignment-student-button b {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.mentoring-assignment-row .mentoring-assignment-student-button .product-tier-badge {
+  display: inline-flex !important;
+}
+
+/* 선택된 학생 카드는 진한 파란 배경이라 배지가 묻힙니다. 여기만 반전합니다.
+   (담당학생 카드·좌석 후보·선택 학생 카드는 밝은 배경이라 그대로 둡니다) */
+.mentoring-student-chip.selected .product-tier-badge {
+  background: rgba(255, 255, 255, 0.22) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  color: #fff !important;
+}

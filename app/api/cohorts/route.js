@@ -47,7 +47,7 @@ export async function GET(request) {
     try {
       const { data } = await supabase
         .from('students')
-        .select('id, name, school, grade, status, default_seat_no')
+        .select('id, name, school, grade, status, default_seat_no, product_tier')
         .order('name', { ascending: true });
       students = data || [];
     } catch {

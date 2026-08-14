@@ -6,6 +6,7 @@ import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
 import { BRAND_NAME } from '../lib/brand';
+import { PRODUCT_TIERS, getProductTierLabel, getProductTier } from '../lib/productTier';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
@@ -581,6 +582,21 @@ function getActiveGuardians(student = {}, reportType = 'daily') {
       phoneDigits: normalizePhoneDigits(guardian.phone),
       displayName: guardian.guardianName || guardian.relationship || `보호자 ${index + 1}`,
     }));
+}
+
+// v41-167: 학생 이름 옆에 붙는 신청 상품 배지.
+// 카테고리가 없는 학생(1기 등)은 null 을 돌려주므로 화면이 예전 그대로 보입니다.
+function ProductTierBadge({ tier, size = '' }) {
+  const info = getProductTier(tier);
+  if (!info) return null;
+  return (
+    <span
+      className={`product-tier-badge tier-${info.key}${size ? ` ${size}` : ''}`}
+      title={`신청 상품 ${info.label} · ${info.summary}`}
+    >
+      {info.label}
+    </span>
+  );
 }
 
 function getGuardianDisplayText(student = {}, reportType = 'daily') {
@@ -5036,6 +5052,7 @@ export default function Page() {
         status: student.status || 'active',
         seatNo: student.default_seat_no || '',
         nickname: student.nickname || '',
+        productTier: student.product_tier || '',
         rankingOptIn: Boolean(student.ranking_opt_in),
         guardians: normalizeGuardiansForEditor(student),
       });
@@ -5052,6 +5069,7 @@ export default function Page() {
       status: 'active',
       seatNo: '',
       nickname: '',
+      productTier: '',
       rankingOptIn: false,
       guardians: normalizeGuardiansForEditor({}),
     });
@@ -8039,6 +8057,12 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
   const allowedMentoringDays = dayOptions.map(([day]) => day);
   const defaultSlotOptions = useMemo(() => buildDefaultMentoringSlotOptions(defaultSchedule), [defaultSchedule]);
   const firstDefaultSlotOption = defaultSlotOptions[0] || { key: '1차시|09:00|09:50', label: '1차시', startTime: '09:00', endTime: '09:50' };
+  // v41-167: 배정 API는 학생 상품 카테고리를 내려주지 않으므로 학생 목록에서 조회표를 만듭니다.
+  const productTierByStudentId = useMemo(() => {
+    const map = {};
+    for (const student of students || []) map[String(student.id)] = student.product_tier || '';
+    return map;
+  }, [students]);
   const getInitialMentoringDay = () => {
     const parsedDay = Number(initialActiveDay);
     return allowedMentoringDays.includes(parsedDay) ? parsedDay : 1;
@@ -9116,7 +9140,10 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
                         onClick={() => onOpenStudentCare?.(item.students || { id: item.student_id }, careContext)}
                         title="출결·관리 이력에서 오늘 멘토 코멘트 입력"
                       >
-                        <b>{item.students?.name || '학생'}</b>
+                        <b>
+                          {item.students?.name || '학생'}
+                          <ProductTierBadge tier={productTierByStudentId[String(item.student_id || item.students?.id || '')]} size="mini" />
+                        </b>
                         <span>{item.mentoring_mentors?.mentor_name || '멘토 미지정'}{item.students?.school ? ` · ${item.students.school}` : ''}</span>
                       </button>
                       <div className="mentoring-assignment-controls">
@@ -9220,7 +9247,10 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
                     aria-pressed={selected}
                     disabled={Boolean(assignedSomeDay || assignmentLocked)}
                   >
-                    <strong>{student.name}</strong>
+                    <strong>
+                      {student.name}
+                      <ProductTierBadge tier={student.product_tier} size="mini" />
+                    </strong>
                     <span>{student.school || student.grade || '학생'}{assignmentLocked ? ' · 날짜 수정 시작 필요' : assignedSomeDay ? (isDateMode ? ' · 선택 날짜 배정 있음' : ' · 선택 요일 중 배정 있음') : hasMentorSelected ? (isResponsible ? ' · 담당학생' : ' · 비담당학생') : ''}</span>
                   </button>
                 );
@@ -9460,6 +9490,7 @@ function CohortSeatPlanPanel({ cohortId, cohortName, apiFetch, setMessage }) {
                   disabled={Boolean(busy)}
                 >
                   {student.name}
+                  <ProductTierBadge tier={student.product_tier} size="mini" />
                   <em>{inRoster ? (already ? '배정됨' : '명단') : '명단 밖'}</em>
                 </button>
               );
@@ -9739,6 +9770,7 @@ function CohortSettingsTab({ apiFetch, setMessage }) {
                         }}
                       />
                       <b>{student.name}</b>
+                      <ProductTierBadge tier={student.product_tier} size="mini" />
                       <span>{[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}</span>
                       {student.status === 'inactive' ? <i className="cohort-inactive-badge">비활성</i> : null}
                       {otherCohorts.length ? <em className="cohort-other-badge">다른 기수 {otherCohorts.length}개</em> : null}
@@ -10539,7 +10571,10 @@ function StudentsTab({ students, seatsForDisplay, openStudentEditor, apiFetch, s
           return (
             <button key={student.id} className={`student-db-card ${status === 'inactive' ? 'inactive' : status === 'paused' ? 'paused' : 'active'}`} onClick={() => openStudentEditor(student)}>
               <div className="student-card-top">
-                <strong>{student.name}</strong>
+                <strong>
+                  {student.name}
+                  <ProductTierBadge tier={student.product_tier} size="mini" />
+                </strong>
                 <span>{status === 'active' ? '활성' : status === 'paused' ? '휴원/대기' : '비활성'}</span>
               </div>
               <div className="student-card-meta">
@@ -10651,6 +10686,20 @@ function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, save
               <div className="field">
                 <label>학생 연락처</label>
                 <input value={editor.studentPhone} onChange={(e) => setEditor({ ...editor, studentPhone: e.target.value })} placeholder="010-0000-0000" />
+              </div>
+              {/* v41-167: 신청 상품 카테고리. 비워 두면 미분류로 지금까지와 똑같이 보입니다. */}
+              <div className="field">
+                <label>신청 상품</label>
+                <select value={editor.productTier || ''} onChange={(e) => setEditor({ ...editor, productTier: e.target.value })}>
+                  <option value="">미분류 (표시 안 함)</option>
+                  {PRODUCT_TIERS.map((tier) => (
+                    <option key={tier.key} value={tier.key}>{tier.label} · {tier.summary}</option>
+                  ))}
+                </select>
+                <div className="hint">
+                  {getProductTier(editor.productTier)?.detail
+                    || '1기 학생처럼 분류가 없으면 비워 두세요. 화면에 아무 표시도 하지 않습니다.'}
+                </div>
               </div>
               <div className="field">
                 <label>상태</label>
@@ -15541,7 +15590,10 @@ function AttendanceTab({
             <div className="attendance-insight-summary">
               <div className="student-profile-card">
                 <span>선택 학생</span>
-                <strong>{selectedStudent.name}</strong>
+                <strong>
+                  {selectedStudent.name}
+                  <ProductTierBadge tier={selectedStudent.product_tier} />
+                </strong>
                 <em>{[selectedStudent.school, selectedStudent.grade].filter(Boolean).join(' ') || '학교/학년 미입력'} · {selectedStudent.default_seat_no ? `${String(selectedStudent.default_seat_no).padStart(2, '0')}번` : '기본 좌석 미입력'}</em>
               </div>
               <div><span>조회 기간</span><strong>{start} ~ {end}</strong></div>
@@ -16416,7 +16468,10 @@ function StudentOverviewPanel({ studentId = '', apiFetch, setActiveTab, onOvervi
       <div className="student-overview-head">
         <div className="student-overview-identity">
           <span className="student-overview-eyebrow">한눈에 보기</span>
-          <strong>{student?.name || '학생'}</strong>
+          <strong>
+            {student?.name || '학생'}
+            <ProductTierBadge tier={student?.product_tier} />
+          </strong>
           <em>{[student?.school, student?.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}{student?.default_seat_no ? ` · ${student.default_seat_no}번` : ''}</em>
         </div>
         <div className="student-overview-head-actions">
@@ -16679,7 +16734,7 @@ function StudentCareTab({ attendanceProps = {}, historyProps = {} }) {
               <option value="">학생을 선택하세요</option>
               {(attendanceProps.students || []).map((student) => (
                 <option key={student.id} value={student.id}>
-                  {student.name} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
+                  {student.name}{getProductTierLabel(student.product_tier) ? ` [${getProductTierLabel(student.product_tier)}]` : ''} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
                 </option>
               ))}
             </select>
@@ -16835,7 +16890,7 @@ function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focu
             <option value="">학생을 선택하세요</option>
             {sortedStudents.map((student) => (
               <option key={student.id} value={student.id}>
-                {student.name}{student.status === 'inactive' ? ' (비활성)' : ''} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
+                {student.name}{getProductTierLabel(student.product_tier) ? ` [${getProductTierLabel(student.product_tier)}]` : ''}{student.status === 'inactive' ? ' (비활성)' : ''} / {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
               </option>
             ))}
           </select>
@@ -16851,6 +16906,7 @@ function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focu
               <div className="sinfo-card-head"><h3>개인 신상 정보</h3></div>
               <div className="sinfo-name-row">
                 <span className="sinfo-name">{selectedStudent.name}</span>
+                <ProductTierBadge tier={selectedStudent.product_tier} />
                 {selectedStudent.nickname ? <span className="sinfo-nickname">{selectedStudent.nickname}</span> : null}
                 <span className={`sinfo-status ${selectedStudent.status || 'active'}`}>{STUDENT_STATUS_TEXT[selectedStudent.status] || selectedStudent.status || '활성'}</span>
               </div>
@@ -18304,7 +18360,10 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
               const otherMentor = activeMentors.find((mentor) => String(mentor.id) === String(currentMentorId));
               return (
                 <button key={student.id} type="button" className={`mentoring-responsibility-chip ${checked ? 'selected' : ''} ${assignedOtherMentor && !checked ? 'other-mentor' : ''}`} onClick={() => toggleMentorStudentDraft(student.id)}>
-                  <strong>{student.name}</strong>
+                  <strong>
+                    {student.name}
+                    <ProductTierBadge tier={student.product_tier} size="mini" />
+                  </strong>
                   <span>{student.school || student.grade || '학생'}{assignedOtherMentor && !checked ? ` · ${otherMentor?.mentor_name || '다른 멘토'} 담당` : checked ? ' · 담당' : ''}</span>
                 </button>
               );
