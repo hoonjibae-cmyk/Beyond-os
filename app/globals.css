@@ -21700,3 +21700,25 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .cohort-scope-pill { margin-left: 0; }
   .cohort-scope-pill > select { max-width: 150px; }
 }
+
+/* v41-169.1: 헤더 배지 줄.
+   버전·동기화·계정·기수 보기 배지는 각각 높이가 달라(28 / 27 / 31.2 / 30.2px)
+   글자 기준선(baseline)으로 놓이면서 윗변·아랫변이 모두 어긋나 있었습니다.
+   한 줄로 묶어 가운데 정렬하고 높이를 하나로 맞춥니다. */
+.header-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.header-pill-row > * {
+  margin: 0 !important;
+  vertical-align: middle;
+  box-sizing: border-box;
+  height: 30px;
+  min-height: 30px;
+  padding-top: 0;
+  padding-bottom: 0;
+  align-items: center;
+}

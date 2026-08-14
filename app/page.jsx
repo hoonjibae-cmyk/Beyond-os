@@ -5506,28 +5506,32 @@ export default function Page() {
           <div>
             <h1>{allowedTabs.find(([key]) => key === activeTab)?.[1] || TABS.find(([key]) => key === activeTab)?.[1] || 'Beyond OS'}</h1>
             <div className="sub">{APP_VERSION_SUBTITLE}</div>
-            <span className="app-version-badge" title={`${APP_VERSION_NAME} · ${APP_VERSION_DESCRIPTION}`}>버전 {APP_VERSION}</span>
-            <div className={`sync-status-pill ${syncStatus === 'failed' ? 'failed' : 'synced'}`}>{renderSyncStatusContent(syncStatus, lastSyncAt)}</div>
-            <div className="current-user-pill">{currentUser?.displayName || '공용 관리자'} · {USER_ROLE_LABELS[currentUser?.role] || currentUser?.role || '관리자'} · 접근 {allowedTabs.length}개</div>
-            {/* v41-169: 기수 보기 — 학생 목록이 나오는 모든 화면에 함께 적용됩니다. */}
-            {cohortOptions.length ? (
-              <div className={`cohort-scope-pill${cohortScopeId ? ' is-scoped' : ''}`}>
-                <span>기수 보기</span>
-                <select
-                  value={cohortScopeId}
-                  onChange={(event) => setCohortScopeId(event.target.value)}
-                  title="선택한 기수의 수강 명단만 학생 목록에 표시합니다."
-                >
-                  <option value="">전체 기수 ({students.length}명)</option>
-                  {cohortOptions.map((cohort) => (
-                    <option key={cohort.id} value={cohort.id}>
-                      {cohort.name}{cohort.isCurrent ? ' (진행 중)' : ''} · {(cohortRosters[cohort.id] || []).length}명
-                    </option>
-                  ))}
-                </select>
-                <b>{scopedStudents.length}명</b>
-              </div>
-            ) : null}
+            {/* v41-169.1: 배지들이 각각 높이가 달라 글자 기준선으로 정렬되면서 줄이 어긋나 있었습니다.
+                한 줄로 묶어 가운데 정렬합니다. */}
+            <div className="header-pill-row">
+              <span className="app-version-badge" title={`${APP_VERSION_NAME} · ${APP_VERSION_DESCRIPTION}`}>버전 {APP_VERSION}</span>
+              <div className={`sync-status-pill ${syncStatus === 'failed' ? 'failed' : 'synced'}`}>{renderSyncStatusContent(syncStatus, lastSyncAt)}</div>
+              <div className="current-user-pill">{currentUser?.displayName || '공용 관리자'} · {USER_ROLE_LABELS[currentUser?.role] || currentUser?.role || '관리자'} · 접근 {allowedTabs.length}개</div>
+              {/* v41-169: 기수 보기 — 학생 목록이 나오는 모든 화면에 함께 적용됩니다. */}
+              {cohortOptions.length ? (
+                <div className={`cohort-scope-pill${cohortScopeId ? ' is-scoped' : ''}`}>
+                  <span>기수 보기</span>
+                  <select
+                    value={cohortScopeId}
+                    onChange={(event) => setCohortScopeId(event.target.value)}
+                    title="선택한 기수의 수강 명단만 학생 목록에 표시합니다."
+                  >
+                    <option value="">전체 기수 ({students.length}명)</option>
+                    {cohortOptions.map((cohort) => (
+                      <option key={cohort.id} value={cohort.id}>
+                        {cohort.name}{cohort.isCurrent ? ' (진행 중)' : ''} · {(cohortRosters[cohort.id] || []).length}명
+                      </option>
+                    ))}
+                  </select>
+                  <b>{scopedStudents.length}명</b>
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="toolbar utility-toolbar">
             <button type="button" className="utility-action refresh" onClick={loadDashboard} title="새로고침" aria-label="새로고침">
