@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-165-cohort-seat-plan",
-  "version": "0.41.165",
+  "name": "beyond-os-v41-166-roster-layout",
+  "version": "0.41.166",
   "private": true,
   "scripts": {
     "dev": "next dev",
