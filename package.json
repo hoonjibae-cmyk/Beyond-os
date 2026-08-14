@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-160-break-pair-auto",
-  "version": "0.41.160",
+  "name": "beyond-os-v41-161-point-alimtalk",
+  "version": "0.41.161",
   "private": true,
   "scripts": {
     "dev": "next dev",

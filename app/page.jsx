@@ -14327,8 +14327,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
   async function handleRewardAction(studentId, action, studentName = '학생') {
     const label = action === 'grant' ? '상품지급안내완료' : '미지급';
     const confirmText = action === 'grant'
-      ? `${studentName} 학생을 상품 지급 안내 완료로 처리할까요?\n\n지금까지의 상벌점 카운팅이 0으로 리셋됩니다. 기록 자체는 그대로 보관되고, 지급 이력에 남습니다.`
-      : `${studentName} 학생을 미지급으로 처리할까요?\n\n카운팅은 리셋하지 않고 계속 누적되며, 순점수가 추가로 기준을 넘으면 다시 알림이 표시됩니다.`;
+      ? `${studentName} 학생을 상품 지급 안내 완료로 처리할까요?\n\n▶ 학부모와 학생에게 상품 지급 안내 알림톡이 실제로 발송됩니다.\n▶ 지금까지의 상벌점 카운팅이 0으로 리셋됩니다. 기록 자체는 그대로 보관되고, 지급 이력에 남습니다.`
+      : `${studentName} 학생을 미지급으로 처리할까요?\n\n알림톡은 발송되지 않습니다. 카운팅은 리셋하지 않고 계속 누적되며, 순점수가 추가로 기준을 넘으면 다시 알림이 표시됩니다.`;
     if (!confirm(confirmText)) return;
 
     try {
@@ -14350,8 +14350,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
   async function handlePenaltyAction(studentId, stage, action, studentName = '학생', stageLabel = '조치') {
     const done = action === 'penalty_done';
     const confirmText = done
-      ? `${studentName} 학생 — 벌점 ${stage}점 단계 [${stageLabel}] 조치를 완료로 기록할까요?\n\n이 단계 알림이 목록에서 내려갑니다. 벌점이 다음 단계를 넘으면 다시 알림이 뜹니다.`
-      : `${studentName} 학생 — 벌점 ${stage}점 단계 [${stageLabel}]을 보류로 기록할까요?\n\n알림은 목록에 그대로 남고, 보류로 표시만 됩니다.`;
+      ? `${studentName} 학생 — 벌점 ${stage}점 단계 [${stageLabel}] 조치를 완료로 기록할까요?\n\n▶ 학부모와 학생에게 상벌점 누적 안내 알림톡이 실제로 발송됩니다.\n▶ 이 단계 알림이 목록에서 내려갑니다. 벌점이 다음 단계를 넘으면 다시 알림이 뜹니다.`
+      : `${studentName} 학생 — 벌점 ${stage}점 단계 [${stageLabel}]을 보류로 기록할까요?\n\n알림톡은 발송되지 않습니다. 알림은 목록에 그대로 남고, 보류로 표시만 됩니다.`;
     if (!confirm(confirmText)) return;
 
     try {
@@ -14490,7 +14490,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
         <div className="penalty-stage-alert-card">
           <div className="penalty-stage-alert-head">
             <strong>벌점 단계 조치 대상 {rewardState.penaltyAlerts.length}명</strong>
-            <span>순벌점(벌점 - 상점) 10점 초과 → 학부모 알림 · 20점 초과 → 센터장 면담 · 30점 초과 → 제적 검토. 상점을 받으면 그만큼 상계됩니다.</span>
+            <span>순벌점(벌점 - 상점) 10점 초과 → 학부모 알림 · 20점 초과 → 센터장 면담 · 30점 초과 → 제적 검토. 상점을 받으면 그만큼 상계됩니다. <b>[조치 완료]를 누르면 학부모·학생에게 알림톡이 발송됩니다.</b></span>
           </div>
           <div className="penalty-stage-alert-list">
             {rewardState.penaltyAlerts.map((item) => (
@@ -14538,7 +14538,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage }) {
         <div className="point-reward-alert-card">
           <div className="point-reward-alert-head">
             <strong>상품 지급 대상 {rewardState.eligible.length}명</strong>
-            <span>순점수가 {rewardState.threshold || 10}점을 초과했습니다. 처리 후에도 상벌점 기록 자체는 그대로 보관됩니다.</span>
+            <span>순점수가 {rewardState.threshold || 10}점을 초과했습니다. <b>[상품지급안내완료]를 누르면 학부모·학생에게 알림톡이 발송</b>되고 카운팅이 리셋됩니다. 상벌점 기록 자체는 그대로 보관됩니다.</span>
           </div>
           <div className="point-reward-alert-list">
             {rewardState.eligible.map((item) => (

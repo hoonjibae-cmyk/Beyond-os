@@ -10,6 +10,7 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse, requireTabPermission, getAuthorizedUser } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
+import { sendPointNotification } from '../../../lib/pointNotifications';
 import {
   POINT_REWARD_THRESHOLD,
   PENALTY_STAGES,
@@ -249,19 +250,46 @@ export async function POST(request) {
 
       const nextState = resolvePenaltyStages(points, [...penaltyRows.rows, data], { rewardRows: rewardsForStage.rows });
 
+      // v41-161: [조치 완료]는 이제 실제로 학부모·학생에게 알림톡을 보냅니다.
+      // 보류는 아직 안내하지 않은 상태이므로 보내지 않습니다.
+      // 발송에 실패해도 조치 기록 자체는 이미 남았으므로 되돌리지 않고 결과만 알려줍니다.
+      let notification = null;
+      if (action === 'penalty_done' && body.notify !== false) {
+        notification = await sendPointNotification({
+          kind: 'penalty',
+          supabase,
+          studentId,
+          stage,
+          penaltyState: state,
+          recentRows: points.slice().reverse(),
+          actorName,
+        });
+      }
+
       await writeUserActionLog(supabase, request, {
         actionType: action === 'penalty_done' ? 'student_penalty.done' : 'student_penalty.defer',
         targetType: 'student',
         targetId: studentId,
-        payload: { stage, stageLabel: stageDef.label, penaltyNet: state.penaltyNet, reward: state.reward, penalty: state.penalty, memo },
+        payload: {
+          stage, stageLabel: stageDef.label, penaltyNet: state.penaltyNet,
+          reward: state.reward, penalty: state.penalty, memo,
+          notified: Boolean(notification?.ok),
+        },
       }).catch(() => {});
+
+      const notifyNote = notification
+        ? (notification.ok
+          ? ` 학부모·학생 ${notification.recipients?.length || 0}명에게 알림톡을 발송했습니다.`
+          : ` 다만 알림톡 발송은 실패했습니다: ${notification.message || '원인 미상'}`)
+        : '';
 
       return Response.json({
         ok: true,
         row: data,
         penalty: nextState,
+        notification,
         message: action === 'penalty_done'
-          ? `순벌점 ${stage}점 단계 — ${stageDef.label} 조치 완료로 기록했습니다. (당시 순벌점 ${state.penaltyNet}점 · 벌 ${state.penalty} / 상 ${state.reward})`
+          ? `순벌점 ${stage}점 단계 — ${stageDef.label} 조치 완료로 기록했습니다. (당시 순벌점 ${state.penaltyNet}점 · 벌 ${state.penalty} / 상 ${state.reward})${notifyNote}`
           : `순벌점 ${stage}점 단계 — ${stageDef.label}을 보류로 기록했습니다. 알림은 목록에 계속 남습니다.`,
       });
     }
@@ -315,19 +343,41 @@ export async function POST(request) {
     const nextRewardRows = [...rewardResult.rows, data];
     const nextCycle = resolvePointCycle(pointRows, nextRewardRows);
 
+    // v41-161: [상품지급안내완료]는 이제 실제로 학부모·학생에게 알림톡을 보냅니다.
+    // 미지급(defer)은 아직 안내할 내용이 없으므로 보내지 않습니다.
+    let notification = null;
+    if (action === 'grant' && body.notify !== false) {
+      notification = await sendPointNotification({
+        kind: 'reward',
+        supabase,
+        studentId,
+        cycle,
+        recentRows: cycle.cycleRows.slice().reverse(),
+        actorName,
+        rewardGuide: body.rewardGuide,
+      });
+    }
+
     await writeUserActionLog(supabase, request, {
       actionType: action === 'grant' ? 'student_point_reward.grant' : 'student_point_reward.defer',
       targetType: 'student',
       targetId: studentId,
-      payload: { net: cycle.net, reward: cycle.reward, penalty: cycle.penalty, memo },
+      payload: { net: cycle.net, reward: cycle.reward, penalty: cycle.penalty, memo, notified: Boolean(notification?.ok) },
     }).catch(() => {});
+
+    const notifyNote = notification
+      ? (notification.ok
+        ? ` 학부모·학생 ${notification.recipients?.length || 0}명에게 알림톡을 발송했습니다.`
+        : ` 다만 알림톡 발송은 실패했습니다: ${notification.message || '원인 미상'}`)
+      : '';
 
     return Response.json({
       ok: true,
       row: data,
       cycle: nextCycle,
+      notification,
       message: action === 'grant'
-        ? `상품 지급 안내 완료로 기록하고 상벌점 카운팅을 리셋했습니다. (지급 당시 순점수 ${cycle.net}점)`
+        ? `상품 지급 안내 완료로 기록하고 상벌점 카운팅을 리셋했습니다. (지급 당시 순점수 ${cycle.net}점)${notifyNote}`
         : `미지급으로 기록했습니다. 순점수가 ${nextCycle.nextTargetNet}점이 되면 다시 알림이 표시됩니다.`,
     });
   } catch (error) {
