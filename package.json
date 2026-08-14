@@ -1,6 +1,6 @@
 {
-  "name": "beyond-os-v41-162-point-button-rename",
-  "version": "0.41.162",
+  "name": "beyond-os-v41-163-hold-list-cleanup",
+  "version": "0.41.163",
   "private": true,
   "scripts": {
     "dev": "next dev",

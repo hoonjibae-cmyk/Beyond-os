@@ -585,10 +585,11 @@ export async function GET(request) {
         .select('*, students(id, name, grade, school, default_seat_no)')
         .order('event_at', { ascending: false })
         .limit(limit);
-      // v41-159: 판정 대기 목록을 볼 때는 즉시 반영된 복귀·첫 등원(auto_applied)도 함께 내려보냅니다.
-      // 운영자가 처리할 항목은 아니지만, 같은 쉬는 시간의 외출과 짝을 맞춰 보여주려면 필요합니다.
-      if (status === 'pending') query = query.in('status', ['pending', 'auto_applied']);
-      else if (status !== 'all') query = query.eq('status', status);
+      // v41-163: 판정 대기에는 실제로 처리할 신호만 둡니다.
+      // 즉시 반영된 복귀(auto_applied)는 운영자가 할 일이 없는데 목록에서 지울 수도 없어
+      // 계속 남는 문제가 있었습니다. 이제 처리 이력에서 확인합니다.
+      // (외출과 짝이 맞는 복귀는 v41-160에서 양쪽 모두 자동 처리되어 여기 오지 않습니다)
+      if (status !== 'all') query = query.eq('status', status);
       const { data, error } = await query;
       if (error) throw error;
       holds = data || [];

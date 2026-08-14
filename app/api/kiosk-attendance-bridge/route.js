@@ -1552,6 +1552,23 @@ export async function POST(request) {
           .select('*, students(name, grade, school)')
           .single();
         autoAppliedHold = autoHoldRow || null;
+
+        // 처리 이력에도 남겨야 화면에서 확인할 수 있습니다.
+        // (판정 대기에는 두지 않습니다. 운영자가 처리할 일이 없기 때문입니다)
+        if (autoHoldRow?.id) {
+          await supabase
+            .from('kiosk_attendance_hold_actions')
+            .insert({
+              hold_id: autoHoldRow.id,
+              batch_id: crypto.randomUUID(),
+              action_type: 'auto_apply',
+              previous_status: 'auto_applied',
+              next_status: 'auto_applied',
+              actor_name: KIOSK_ACTOR,
+              action_memo: '쉬는 시간 복귀 신호를 바로 출결에 반영했습니다.',
+              action_payload: { auto: true, reason: 'break_return_auto_applied' },
+            });
+        }
       } catch {
         // 기록 남기기에 실패해도 출결 반영 자체는 이미 끝났으므로 그대로 진행합니다.
       }

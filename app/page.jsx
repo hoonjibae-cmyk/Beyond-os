@@ -7597,7 +7597,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
           <div className="kiosk-hold-head">
             <div>
               <h3>쉬는 시간 키오스크 HOLD <b>{kioskHoldPendingCount}</b></h3>
-              {kioskHoldOpen ? <p>외출·퇴실·재입실은 판정 대기로 모입니다. <b>같은 쉬는 시간 안에서 외출 후 복귀가 확인되면 이동으로 보고 자동으로 처리</b>되어 처리 이력으로 넘어갑니다. 여기 남는 것은 아직 돌아오지 않았거나 짝이 맞지 않는 신호입니다. 같은 학생의 신호는 한 줄로 묶고, 쉬는 시간 구간별로 정리합니다.</p> : null}
+              {kioskHoldOpen ? <p>외출·퇴실·재입실은 판정 대기로 모입니다. <b>같은 쉬는 시간 안에서 외출 후 복귀가 확인되면 이동으로 보고 자동으로 처리</b>되어 처리 이력으로 넘어갑니다. 바로 출결에 반영된 복귀도 처리 이력에서 볼 수 있습니다. 여기 남는 것은 아직 돌아오지 않았거나 짝이 맞지 않아 판단이 필요한 신호뿐입니다.</p> : null}
             </div>
             <div className="kiosk-hold-head-actions">
               {kioskHoldOpen ? (
@@ -7679,7 +7679,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
             kioskHoldHistoryGroups.length ? (
               <div className="kiosk-hold-history-list">
                 {kioskHoldHistoryGroups.map((group) => {
-                  const actionLabel = ({ apply: '실제 출결 반영', discard: '쉬는 시간 처리', manual_apply: '최종 출결 수동 지정', undo_apply: '실제 출결 반영 되돌림', undo_discard: '쉬는 시간 처리 되돌림' })[group.actionType] || group.actionType;
+                  const actionLabel = ({ apply: '실제 출결 반영', discard: '쉬는 시간 처리', manual_apply: '최종 출결 수동 지정', undo_apply: '실제 출결 반영 되돌림', undo_discard: '쉬는 시간 처리 되돌림', auto_apply: '복귀 자동 반영' })[group.actionType] || group.actionType;
                   const isUndo = group.actionType.startsWith('undo_');
                   return (
                     <div key={group.key} className={`kiosk-hold-history-item ${group.actionType}`}>
