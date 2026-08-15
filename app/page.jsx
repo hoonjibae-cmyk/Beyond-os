@@ -2223,6 +2223,10 @@ export default function Page() {
   const [defaultSchedule, setDefaultSchedule] = useState(DEFAULT_SCHEDULE_SETTINGS);
   const [defaultScheduleConfig, setDefaultScheduleConfig] = useState(DEFAULT_SCHEDULE_CONFIG);
   const [defaultScheduleConfigDraft, setDefaultScheduleConfigDraft] = useState(DEFAULT_SCHEDULE_CONFIG);
+  // v41-177: 기수별로 따로 저장된 기본 시간표 (기수 id -> 설정). 없는 기수는 공통 설정을 따릅니다.
+  const [defaultScheduleCohortConfigs, setDefaultScheduleCohortConfigs] = useState({});
+  // 설정 화면에서 지금 편집 중인 대상. ''(공통) 또는 기수 id.
+  const [defaultScheduleEditCohortId, setDefaultScheduleEditCohortId] = useState('');
   const [defaultScheduleLoading, setDefaultScheduleLoading] = useState(false);
   const [sendConfig, setSendConfig] = useState(null);
   const mobileNavDragRef = useRef({ active: false, startX: 0, scrollLeft: 0, moved: false });
@@ -2850,8 +2854,42 @@ export default function Page() {
     try {
       const data = await apiFetch('/api/default-schedule');
       applyDefaultScheduleConfig(data.defaultScheduleConfig || data.defaultSchedule || DEFAULT_SCHEDULE_CONFIG);
+      setDefaultScheduleCohortConfigs(data.cohortConfigs || {});
+      return data;
     } catch {
       applyDefaultScheduleConfig(DEFAULT_SCHEDULE_CONFIG);
+      setDefaultScheduleCohortConfigs({});
+      return null;
+    }
+  }
+
+  // v41-177: 편집 대상(공통/기수)에 맞는 설정을 편집칸에 올립니다.
+  // 그 기수 전용 설정이 아직 없으면 공통 설정을 복사해 시작합니다.
+  function selectDefaultScheduleTarget(cohortId, sourceConfigs = defaultScheduleCohortConfigs) {
+    const nextId = String(cohortId || '');
+    setDefaultScheduleEditCohortId(nextId);
+    const target = nextId ? sourceConfigs[nextId] : defaultScheduleConfig;
+    setDefaultScheduleConfigDraft(normalizeDefaultScheduleConfig(target || defaultScheduleConfig || DEFAULT_SCHEDULE_CONFIG));
+  }
+
+  // 기수 전용 설정을 지워 공통 설정을 따르게 합니다.
+  async function resetCohortDefaultSchedule(cohortId = defaultScheduleEditCohortId) {
+    const targetId = String(cohortId || '');
+    if (!targetId) return;
+    try {
+      setDefaultScheduleLoading(true);
+      await apiFetch('/api/default-schedule', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'reset', cohortId: targetId }),
+      });
+      const data = await loadDefaultSchedule();
+      selectDefaultScheduleTarget(targetId, data?.cohortConfigs || {});
+      setMessage('이 기수 전용 시간표를 해제했습니다. 이제 공통 설정을 따릅니다.');
+      await Promise.allSettled([loadDashboard({ silent: true, runAutoCheckout: false }), loadSchedules()]);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setDefaultScheduleLoading(false);
     }
   }
 
@@ -2859,12 +2897,19 @@ export default function Page() {
     try {
       setDefaultScheduleLoading(true);
       const normalizedConfig = normalizeDefaultScheduleConfig(nextConfig);
+      const targetCohortId = String(defaultScheduleEditCohortId || '');
       const data = await apiFetch('/api/default-schedule', {
         method: 'POST',
-        body: JSON.stringify({ defaultScheduleConfig: normalizedConfig }),
+        body: JSON.stringify({ defaultScheduleConfig: normalizedConfig, cohortId: targetCohortId || undefined }),
       });
-      applyDefaultScheduleConfig(data.defaultScheduleConfig || normalizedConfig);
-      setMessage(data.warning || '기본 시간표 저장 완료');
+      if (targetCohortId) {
+        // 기수 전용으로 저장한 경우: 공통 설정은 그대로 두고 목록만 다시 읽습니다.
+        const reloaded = await loadDefaultSchedule();
+        selectDefaultScheduleTarget(targetCohortId, reloaded?.cohortConfigs || {});
+      } else {
+        applyDefaultScheduleConfig(data.defaultScheduleConfig || normalizedConfig);
+      }
+      setMessage(data.warning || (targetCohortId ? '이 기수 기본 시간표 저장 완료' : '기본 시간표 저장 완료'));
       // v41-34.1: 멘토링 차시 드롭다운/요일 템플릿도 설정 탭의 기본 시간표를 기준으로 쓰도록 동기화합니다.
       await apiFetch('/api/mentoring', { method: 'POST', body: JSON.stringify({ action: 'seedDefaults', scheduleDate: getKstDateString() }) }).catch(() => null);
       await Promise.allSettled([loadDashboard({ silent: true, runAutoCheckout: false }), loadSchedules()]);
@@ -5804,6 +5849,11 @@ export default function Page() {
               setDefaultScheduleConfigDraft={setDefaultScheduleConfigDraft}
               saveDefaultSchedule={saveDefaultSchedule}
               defaultScheduleLoading={defaultScheduleLoading}
+              cohortOptions={cohortOptions}
+              cohortScheduleConfigs={defaultScheduleCohortConfigs}
+              defaultScheduleEditCohortId={defaultScheduleEditCohortId}
+              selectDefaultScheduleTarget={selectDefaultScheduleTarget}
+              resetCohortDefaultSchedule={resetCohortDefaultSchedule}
               bulkGenerateSchedules={bulkGenerateSchedules}
               scheduleCoverage={scheduleCoverage}
               apiFetch={apiFetch}
@@ -18830,6 +18880,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 function SettingsTab({
   settingsView, setSettingsView, students, scopedStudents = students, cohortName = '', seatsForDisplay, openStudentEditor, reloadStudents, diagnostics, loading, runCheck, cleanup,
   operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, bulkGenerateSchedules, scheduleCoverage, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
+  cohortOptions = [], cohortScheduleConfigs = {}, defaultScheduleEditCohortId = '', selectDefaultScheduleTarget, resetCohortDefaultSchedule,
 }) {
   useEffect(() => {
     if (settingsView === 'users' && !canUseUserManagement) setSettingsView('students');
@@ -18927,6 +18978,11 @@ function SettingsTab({
           students={students}
           bulkGenerateSchedules={bulkGenerateSchedules}
           scheduleCoverage={scheduleCoverage}
+          cohortOptions={cohortOptions}
+          cohortScheduleConfigs={cohortScheduleConfigs}
+          editCohortId={defaultScheduleEditCohortId}
+          onSelectTarget={selectDefaultScheduleTarget}
+          onResetCohort={resetCohortDefaultSchedule}
         />
       ) : null}
 
@@ -21463,7 +21519,7 @@ function validateScheduleVariantDraft(variant = {}, dayLabel = '') {
   return errors;
 }
 
-function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, students = [], bulkGenerateSchedules, scheduleCoverage = null }) {
+function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, students = [], bulkGenerateSchedules, scheduleCoverage = null, cohortOptions = [], cohortScheduleConfigs = {}, editCohortId = '', onSelectTarget, onResetCohort }) {
   const [activeDayType, setActiveDayType] = useState('weekday');
   const [overrideBaseDate, setOverrideBaseDate] = useState(getKstDateString());
   const [bulkStart, setBulkStart] = useState(getKstDateString());
@@ -21475,6 +21531,11 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
   const configDraft = defaultScheduleConfigDraft && defaultScheduleConfigDraft.variants
     ? defaultScheduleConfigDraft
     : normalizeDefaultScheduleConfig(defaultScheduleConfigDraft || DEFAULT_SCHEDULE_CONFIG);
+  // v41-177: 지금 편집 중인 대상(공통 / 특정 기수)
+  const editCohort = cohortOptions.find((cohort) => String(cohort.id) === String(editCohortId)) || null;
+  const editCohortName = editCohort?.name || '';
+  const editCohortRange = editCohort ? `${editCohort.startDate} ~ ${editCohort.endDate}` : '';
+  const hasCohortOverride = Boolean(editCohortId && cohortScheduleConfigs[editCohortId]);
   const variants = configDraft.variants || DEFAULT_SCHEDULE_CONFIG.variants;
   const holidays = Array.isArray(configDraft.holidays) ? configDraft.holidays : [];
   const dateOverrides = configDraft.dateOverrides && typeof configDraft.dateOverrides === 'object' ? configDraft.dateOverrides : {};
@@ -21573,8 +21634,11 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
     setDefaultScheduleConfigDraft(normalizeDefaultScheduleConfig(DEFAULT_SCHEDULE_CONFIG));
   }
 
+  // v41-177: 기수를 편집 중이면 그 기수에 저장된 값을 불러옵니다.
+  // (전용 설정이 아직 없으면 공통 기본값을 그대로 씁니다)
   function loadCurrent() {
-    setDefaultScheduleConfigDraft(normalizeDefaultScheduleConfig(defaultScheduleConfig || DEFAULT_SCHEDULE_CONFIG));
+    const saved = editCohortId ? cohortScheduleConfigs[editCohortId] : null;
+    setDefaultScheduleConfigDraft(normalizeDefaultScheduleConfig(saved || defaultScheduleConfig || DEFAULT_SCHEDULE_CONFIG));
   }
 
   const activeErrors = validateScheduleVariantDraft(variant, '');
@@ -21595,9 +21659,56 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
         <div className="planner-head-actions">
           <button className="secondary section-action" onClick={loadCurrent} disabled={defaultScheduleLoading}>현재값 불러오기</button>
           <button className="secondary section-action" onClick={resetDraft} disabled={defaultScheduleLoading}>기본값</button>
-          <button className="primary section-action" onClick={() => saveDefaultSchedule(configDraft)} disabled={defaultScheduleLoading || allErrors.length > 0}>{defaultScheduleLoading ? '저장 중...' : '기본 시간표 저장'}</button>
+          <button className="primary section-action" onClick={() => saveDefaultSchedule(configDraft)} disabled={defaultScheduleLoading || allErrors.length > 0}>
+            {defaultScheduleLoading ? '저장 중...' : (editCohortId ? `${editCohortName || '이 기수'} 시간표 저장` : '공통 기본 시간표 저장')}
+          </button>
         </div>
       </div>
+
+      {/* v41-177: 기수가 바뀌면 시간표가 통째로 달라져 기수별로 따로 저장할 수 있게 했습니다. */}
+      {cohortOptions.length ? (
+        <div className="schedule-target-picker clean-panel">
+          <div className="field">
+            <label>적용 대상</label>
+            <select value={editCohortId} onChange={(event) => onSelectTarget?.(event.target.value)} disabled={defaultScheduleLoading}>
+              <option value="">공통 기본값 (기수 전용 설정이 없는 기간)</option>
+              {cohortOptions.map((cohort) => (
+                <option key={cohort.id} value={cohort.id}>
+                  {cohort.name} ({cohort.startDate} ~ {cohort.endDate}){cohortScheduleConfigs[cohort.id] ? ' · 전용 설정 있음' : ' · 공통 사용 중'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="schedule-target-note">
+            {editCohortId ? (
+              <>
+                <strong>{editCohortName} 기간에만 적용됩니다.</strong>
+                <span>
+                  {editCohortRange}
+                  {hasCohortOverride
+                    ? ' · 이 기수 전용 시간표가 저장되어 있습니다.'
+                    : ' · 아직 전용 설정이 없어 공통 기본값을 복사해 놓았습니다. 저장하면 이 기수에만 적용됩니다.'}
+                </span>
+              </>
+            ) : (
+              <>
+                <strong>모든 기간의 기본값입니다.</strong>
+                <span>기수 전용 시간표가 저장된 기간에는 그 기수 설정이 우선합니다.</span>
+              </>
+            )}
+          </div>
+          {editCohortId && hasCohortOverride ? (
+            <button
+              type="button"
+              className="secondary section-action"
+              onClick={() => { if (confirm(`${editCohortName} 전용 시간표를 지울까요?\n\n지우면 이 기간도 공통 기본값을 따릅니다.`)) onResetCohort?.(editCohortId); }}
+              disabled={defaultScheduleLoading}
+            >
+              전용 설정 해제
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="planner-head-actions day-type-tabs" style={{ flexWrap: 'wrap', marginBottom: '16px' }}>
         {DEFAULT_SCHEDULE_DAY_TYPES.map((dt) => (

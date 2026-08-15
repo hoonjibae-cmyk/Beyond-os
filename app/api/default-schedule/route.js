@@ -2,6 +2,9 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import {
   DEFAULT_SCHEDULE_SETTING_KEY,
+  COHORT_SCHEDULE_KEY_PREFIX,
+  getCohortScheduleSettingKey,
+  parseCohortScheduleSettingKey,
   DEFAULT_SCHEDULE_DAY_TYPES,
   DEFAULT_SCHEDULE_DAY_TYPE_LABELS,
   FALLBACK_DEFAULT_SCHEDULE_SETTINGS,
@@ -80,29 +83,71 @@ export async function GET(request) {
 
   try {
     const supabase = getSupabaseAdmin();
+    // v41-177: 공통 설정과 기수별 설정을 함께 읽습니다.
     const { data, error } = await supabase
       .from('system_settings')
-      .select('*')
-      .eq('setting_key', DEFAULT_SCHEDULE_SETTING_KEY)
-      .maybeSingle();
+      .select('setting_key, setting_value');
 
     if (error) {
       return Response.json({
         defaultSchedule: normalizeDefaultScheduleSettings(FALLBACK_DEFAULT_SCHEDULE_SETTINGS),
         defaultScheduleConfig: normalizeDefaultScheduleConfig(FALLBACK_DEFAULT_SCHEDULE_SETTINGS),
+        cohortConfigs: {},
         warning: 'system_settings 테이블이 없어 기본 시간표 fallback을 사용합니다. v40-6 SQL을 실행하면 저장 기능을 사용할 수 있습니다.',
       });
     }
 
-    const rawValue = data?.setting_value || FALLBACK_DEFAULT_SCHEDULE_SETTINGS;
+    const rows = data || [];
+    const globalRow = rows.find((row) => row.setting_key === DEFAULT_SCHEDULE_SETTING_KEY);
+    const rawValue = globalRow?.setting_value || FALLBACK_DEFAULT_SCHEDULE_SETTINGS;
+
+    // 기수별로 따로 저장된 설정(있는 것만)
+    const cohortRaw = {};
+    for (const row of rows) {
+      const cohortId = parseCohortScheduleSettingKey(row.setting_key);
+      if (cohortId && row.setting_value) cohortRaw[cohortId] = row.setting_value;
+    }
+
+    // 실제 판정에 쓰도록 기수 기간을 붙인 설정을 만듭니다.
+    let cohortSchedules = [];
+    const cohortIds = Object.keys(cohortRaw);
+    if (cohortIds.length) {
+      try {
+        const { data: cohortData } = await supabase
+          .from('cohorts')
+          .select('id, name, start_date, end_date')
+          .in('id', cohortIds);
+        cohortSchedules = (cohortData || []).map((cohort) => ({
+          id: String(cohort.id),
+          name: cohort.name || '',
+          startDate: String(cohort.start_date || '').slice(0, 10),
+          endDate: String(cohort.end_date || '').slice(0, 10),
+          config: cohortRaw[String(cohort.id)],
+        }));
+      } catch {
+        cohortSchedules = [];
+      }
+    }
+
+    const merged = { ...(rawValue && typeof rawValue === 'object' ? rawValue : {}), cohortSchedules };
+
+    // 편집 화면에서 쓰도록 기수별 설정을 정규화해 함께 내려 줍니다.
+    const cohortConfigs = {};
+    for (const [cohortId, value] of Object.entries(cohortRaw)) {
+      cohortConfigs[cohortId] = normalizeDefaultScheduleConfig({ ...value, cohortSchedules: [] });
+      delete cohortConfigs[cohortId].cohortSchedules;
+    }
+
     return Response.json({
       defaultSchedule: normalizeDefaultScheduleSettings(rawValue),
-      defaultScheduleConfig: normalizeDefaultScheduleConfig(rawValue),
+      defaultScheduleConfig: normalizeDefaultScheduleConfig(merged),
+      cohortConfigs,
     });
   } catch (error) {
     return Response.json({
       defaultSchedule: normalizeDefaultScheduleSettings(FALLBACK_DEFAULT_SCHEDULE_SETTINGS),
       defaultScheduleConfig: normalizeDefaultScheduleConfig(FALLBACK_DEFAULT_SCHEDULE_SETTINGS),
+      cohortConfigs: {},
       warning: error.message || '기본 시간표 fallback을 사용합니다.',
     });
   }
@@ -114,6 +159,27 @@ export async function POST(request) {
 
   try {
     const body = await request.json();
+    // v41-177: cohortId 를 주면 그 기수 전용 설정으로 저장/삭제합니다.
+    // 주지 않으면 지금까지처럼 공통 설정을 저장합니다.
+    const cohortId = String(body.cohortId || '').trim();
+    const settingKey = cohortId ? getCohortScheduleSettingKey(cohortId) : DEFAULT_SCHEDULE_SETTING_KEY;
+    const supabase = getSupabaseAdmin();
+
+    // 기수 전용 설정 해제 → 그 기수는 다시 공통 설정을 따릅니다.
+    if (String(body.action || '') === 'reset') {
+      if (!cohortId) {
+        return Response.json({ error: '공통 설정은 해제할 수 없습니다. 기수를 선택하세요.' }, { status: 400 });
+      }
+      const { error: deleteError } = await supabase
+        .from('system_settings')
+        .delete()
+        .eq('setting_key', settingKey);
+      if (deleteError) {
+        return Response.json({ error: deleteError.message }, { status: 500 });
+      }
+      return Response.json({ reset: true, cohortId });
+    }
+
     // 신규 클라이언트는 defaultScheduleConfig(요일 유형별)를,
     // 구버전 클라이언트는 defaultSchedule(평일 단일)를 보냅니다. 둘 다 지원합니다.
     const rawConfig = body.defaultScheduleConfig || body.config || null;
@@ -124,15 +190,17 @@ export async function POST(request) {
       return Response.json({ error: validationErrors.join(' / ') }, { status: 400 });
     }
 
-    const settingValue = rawConfig
+    const normalized = rawConfig
       ? normalizeDefaultScheduleConfig(rawConfig)
       : normalizeDefaultScheduleConfig(legacySchedule || FALLBACK_DEFAULT_SCHEDULE_SETTINGS);
+    // 저장값 안에는 기수 목록을 넣지 않습니다. (읽을 때 기수 기간을 붙여 조립합니다)
+    const settingValue = { ...normalized };
+    delete settingValue.cohortSchedules;
 
-    const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from('system_settings')
       .upsert({
-        setting_key: DEFAULT_SCHEDULE_SETTING_KEY,
+        setting_key: settingKey,
         setting_value: settingValue,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'setting_key' })
@@ -146,6 +214,7 @@ export async function POST(request) {
     }
 
     return Response.json({
+      cohortId: cohortId || null,
       defaultSchedule: normalizeDefaultScheduleSettings(data.setting_value),
       defaultScheduleConfig: normalizeDefaultScheduleConfig(data.setting_value),
       saved: true,

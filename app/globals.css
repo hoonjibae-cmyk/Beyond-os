@@ -21922,3 +21922,45 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   border-color: rgba(0, 0, 0, .28);
   background: #e9e9ee !important;
 }
+
+/* v41-177: 기본 시간표 적용 대상(공통 / 기수) 선택 줄 */
+.schedule-target-picker {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+/* .field 기본 아래 여백(14px)이 아랫변 정렬을 밀어냅니다. */
+.schedule-target-picker > .field { min-width: 0; flex: 1 1 360px; margin-bottom: 0; }
+.schedule-target-picker > .field label {
+  display: block; margin-bottom: 6px;
+  font-size: 12.5px; font-weight: 700; color: var(--ap-text-2);
+}
+.schedule-target-picker > .field select {
+  box-sizing: border-box; height: 42px; min-height: 42px;
+}
+.schedule-target-note {
+  flex: 2 1 360px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 4px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.schedule-target-note strong { color: #211f1b; font-weight: 950; }
+.schedule-target-note span { color: #7a7165; font-weight: 700; }
+.schedule-target-picker > button {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--ap-sep-strong);
+  box-shadow: none;
+}
+@media (max-width: 900px) {
+  .schedule-target-picker > .field,
+  .schedule-target-note { flex: 1 1 100%; }
+}
