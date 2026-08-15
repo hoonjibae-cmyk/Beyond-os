@@ -5786,6 +5786,7 @@ export default function Page() {
               reloadStudents={loadSettingsStudents}
               students={settingsStudents?.length ? settingsStudents : students}
               scopedStudents={scopeStudentList(settingsStudents?.length ? settingsStudents : students)}
+              cohortName={cohortScopeInfo?.name || ''}
               seatsForDisplay={seatsForDisplay}
               openStudentEditor={openStudentEditor}
               diagnostics={seatIntegrity}
@@ -10537,12 +10538,14 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
   );
 }
 
-function StudentsTab({ students, seatsForDisplay, openStudentEditor, apiFetch, setMessage, reloadStudents }) {
+function StudentsTab({ students, seatsForDisplay, openStudentEditor, apiFetch, setMessage, reloadStudents, cohortName = '' }) {
   const [statusFilter, setStatusFilter] = useState('active');
   const [searchText, setSearchText] = useState('');
   // v41-164: 닉네임 일괄 생성 (미리보기 → 확정)
   const [nicknamePreview, setNicknamePreview] = useState(null);
   const [nicknameBulkBusy, setNicknameBulkBusy] = useState(false);
+  // v41-176: 지금 보고 있는 명단을 학생 등록 양식(.xlsx)으로 내려받습니다.
+  const [rosterExportBusy, setRosterExportBusy] = useState(false);
 
   // 닉네임이 비어 있는 활성 학생
   const nicknameMissing = (students || []).filter(
@@ -10635,6 +10638,49 @@ function StudentsTab({ students, seatsForDisplay, openStudentEditor, apiFetch, s
     setStatusFilter(nextFilter);
   }
 
+  // v41-176: 지금 화면에 보이는 명단을 학생 등록 양식(.xlsx)으로 내려받습니다.
+  // 양식은 Sheet1 첫 줄에 이름/연락처/보호자 연락처/좌석번호/닉네임 다섯 칸입니다.
+  async function exportRosterExcel() {
+    if (!filteredStudents.length) {
+      alert('내보낼 학생이 없습니다. 기수 보기나 상태 필터를 확인하세요.');
+      return;
+    }
+    try {
+      setRosterExportBusy(true);
+      const XLSX = await import('xlsx');
+      // 양식의 다섯 칸은 순서를 그대로 두고, 신청 상품은 맨 뒤에 덧붙입니다.
+      const header = ['이름', '연락처', '보호자 연락처', '좌석번호', '닉네임', '신청상품'];
+      const rows = filteredStudents.map((student) => {
+        const seat = seatByStudentId[student.id];
+        const seatNo = seat?.seat_no || student.default_seat_no || '';
+        // 보호자는 여러 명일 수 있어 대표(첫 번째 수신 보호자) 한 명만 넣습니다.
+        const guardianPhone = getActiveGuardians(student, 'daily')[0]?.phone || student.parent_phone || '';
+        return [
+          String(student.name || ''),
+          String(student.student_phone || ''),
+          String(guardianPhone || ''),
+          seatNo === '' ? '' : Number(seatNo),
+          String(student.nickname || ''),
+          getProductTierLabel(student.product_tier),
+        ];
+      });
+
+      const workbook = XLSX.utils.book_new();
+      // 양식 파일과 같은 시트 구성(Sheet1 에 명단, Sheet2/Sheet3 은 빈 시트)을 그대로 맞춥니다.
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([header, ...rows]), 'Sheet1');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([]), 'Sheet2');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([]), 'Sheet3');
+
+      const label = String(cohortName || '전체기수').replace(/[\\/:*?"<>|\s]/g, '');
+      XLSX.writeFile(workbook, `${label}_학생명단_${getKstDateString()}.xlsx`);
+      setMessage?.(`${filteredStudents.length}명을 학생 등록 양식으로 내려받았습니다.`);
+    } catch (error) {
+      setMessage?.(error?.message || '엑셀 내보내기 실패');
+    } finally {
+      setRosterExportBusy(false);
+    }
+  }
+
   return (
     <section className="content-card">
       <div className="section-head">
@@ -10648,6 +10694,9 @@ function StudentsTab({ students, seatsForDisplay, openStudentEditor, apiFetch, s
               {nicknameBulkBusy ? '생성 중...' : `닉네임 일괄 생성 (${nicknameMissing.length}명)`}
             </button>
           ) : null}
+          <button className="secondary section-action" onClick={exportRosterExcel} disabled={rosterExportBusy || !filteredStudents.length} title="지금 목록에 보이는 학생을 이름·연락처·보호자 연락처·좌석번호·닉네임·신청상품 순서로 내려받습니다.">
+            {rosterExportBusy ? '내보내는 중...' : `엑셀 내보내기 (${filteredStudents.length}명)`}
+          </button>
           <button className="primary section-action" onClick={() => openStudentEditor(null)}>학생 추가</button>
         </div>
       </div>
@@ -10709,6 +10758,7 @@ function StudentsTab({ students, seatsForDisplay, openStudentEditor, apiFetch, s
         <div className="filter-help">
           <strong>{filteredStudents.length}명 표시 중</strong>
           <span>완전 삭제는 비활성 학생에게만 표시됩니다. 일반 퇴원/휴원 학생은 비활성화를 권장합니다.</span>
+          <span>[엑셀 내보내기]는 지금 이 목록에 보이는 학생만 학생 등록 양식(이름·연락처·보호자 연락처·좌석번호·닉네임)에 신청상품 열을 더해 내려받습니다. 기수는 화면 위 [기수 보기]에서 고릅니다.</span>
         </div>
       </div>
 
@@ -18778,7 +18828,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 }
 
 function SettingsTab({
-  settingsView, setSettingsView, students, scopedStudents = students, seatsForDisplay, openStudentEditor, reloadStudents, diagnostics, loading, runCheck, cleanup,
+  settingsView, setSettingsView, students, scopedStudents = students, cohortName = '', seatsForDisplay, openStudentEditor, reloadStudents, diagnostics, loading, runCheck, cleanup,
   operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, bulkGenerateSchedules, scheduleCoverage, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
 }) {
   useEffect(() => {
@@ -18804,7 +18854,7 @@ function SettingsTab({
       </div>
 
       {settingsView === 'students' ? (
-        <StudentsTab students={scopedStudents} seatsForDisplay={seatsForDisplay} openStudentEditor={openStudentEditor} apiFetch={apiFetch} setMessage={setMessage} reloadStudents={reloadStudents} />
+        <StudentsTab students={scopedStudents} seatsForDisplay={seatsForDisplay} openStudentEditor={openStudentEditor} apiFetch={apiFetch} setMessage={setMessage} reloadStudents={reloadStudents} cohortName={cohortName} />
       ) : null}
 
       {settingsView === 'cohorts' ? (
