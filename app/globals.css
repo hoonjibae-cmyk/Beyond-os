@@ -21835,3 +21835,75 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .daily-closeout-head { align-items: baseline; gap: 10px; justify-content: flex-start; }
 .daily-closeout-head h3 { margin: 0; font-size: 17px; }
 .daily-closeout-head p { margin: 0; font-size: 12.5px; }
+
+/* v41-175: 위클리 리포트도 데일리와 같은 기준으로 상단 여백을 줄입니다. */
+.weekly-section-head { grid-template-columns: minmax(260px, 1fr) auto; }
+.weekly-section-head .weekly-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.weekly-section-head .weekly-head-actions button {
+  width: auto;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
+/* 자동 구성 콘솔 머리말을 한 줄로 */
+.weekly-auto-compose-head.compact-console-head {
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.weekly-auto-compose-head.compact-console-head strong { font-size: 17px; }
+.weekly-auto-compose-head.compact-console-head > span { font-size: 12.5px; }
+.weekly-auto-compose-head.compact-console-head .weekly-auto-compose-actions { margin-left: auto; }
+.weekly-auto-compose-console { gap: 10px; }
+
+/* 진행 현황 9칸 -> 한 줄 칩 */
+.weekly-progress-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+}
+.weekly-progress-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid #e2ded6;
+  background: #fffdfa;
+  color: #6f6b62;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.weekly-progress-chip b { color: #211f1b; font-size: 13px; font-weight: 950; }
+.weekly-progress-chip.ok { border-color: #cfe8d2; background: #f2fbf3; color: #2f6b3a; }
+.weekly-progress-chip.ok b { color: #24501f; }
+.weekly-progress-chip.warn { border-color: #f0dcb4; background: #fffbf2; color: #8a5a08; }
+.weekly-progress-chip.warn b { color: #8a5a08; }
+.weekly-progress-chip.bad { border-color: #f5c6c2; background: #fdeceb; color: #b3261e; }
+.weekly-progress-chip.bad b { color: #b3261e; }
+
+/* v41-175: 블록 사이 여백 정리 (clean-panel 기본 margin 12/14 + 각 블록 margin 이 겹쳐
+   블록마다 30px 넘는 빈 줄이 생기고 있었습니다) */
+.weekly-report-builder .report-section-head { margin-bottom: 10px; }
+.weekly-report-builder > .weekly-auto-compose-console { margin: 10px 0; }
+.weekly-report-builder > .weekly-progress-line { margin: 0 0 10px; }
+.weekly-report-builder > .weekly-student-board { margin-top: 0; }
+.report-control-card .report-section-head { margin-bottom: 10px; }
+
+/* v41-175: 진행 현황을 .weekly-progress-grid -> .weekly-progress-line 으로 바꿨으므로
+   발송 이력 / 과거 리포트 검색 화면에서 숨기는 규칙에도 새 이름을 넣어야 합니다.
+   (안 넣으면 리포트 작성 화면 전용 요약이 다른 화면에도 남습니다) */
+.weekly-view-activity > .weekly-progress-line,
+.weekly-view-history > .weekly-progress-line {
+  display: none !important;
+}

@@ -14004,7 +14004,8 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
 
   return (
     <section className={`content-card weekly-report-builder weekly-view-${weeklyView}`}>
-      <div className="section-head">
+      {/* v41-175: 데일리와 같은 기준으로 상단 여백을 줄였습니다. */}
+      <div className="section-head report-section-head weekly-section-head">
         <div>
           <h2>위클리 리포트</h2>
           <p>월요일부터 일요일까지의 출결·순공시간·운영 기준 확인사항을 집계하고, 주간면담 내용을 반영해 학부모용 리포트를 작성합니다.</p>
@@ -14066,13 +14067,14 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
         </div>
       ) : null}
 
-      <div className="report-page-tabs clean-panel">
-        <button type="button" className={weeklyView === 'main' ? 'active' : ''} onClick={() => setWeeklyView('main')}>리포트 작성</button>
-        <button type="button" className={weeklyView === 'activity' ? 'active' : ''} onClick={() => { setWeeklyView('activity'); loadWeeklyActivity(start, end); }}>발송 이력 <span>{weeklyActivityLogs.length}</span></button>
-        <button type="button" className={weeklyView === 'history' ? 'active' : ''} onClick={() => { setWeeklyView('history'); if (!weeklyHistoryReports.length) loadWeeklyHistory(historyStart, historyEnd); }}>과거 리포트 검색 <span>{weeklyHistoryReports.length}</span></button>
+      <div className="report-page-tabs-row">
+        <div className="report-page-tabs clean-panel">
+          <button type="button" className={weeklyView === 'main' ? 'active' : ''} onClick={() => setWeeklyView('main')}>리포트 작성</button>
+          <button type="button" className={weeklyView === 'activity' ? 'active' : ''} onClick={() => { setWeeklyView('activity'); loadWeeklyActivity(start, end); }}>발송 이력 <span>{weeklyActivityLogs.length}</span></button>
+          <button type="button" className={weeklyView === 'history' ? 'active' : ''} onClick={() => { setWeeklyView('history'); if (!weeklyHistoryReports.length) loadWeeklyHistory(historyStart, historyEnd); }}>과거 리포트 검색 <span>{weeklyHistoryReports.length}</span></button>
+        </div>
+        <ReportSendStatusBanner sendConfig={sendConfig} reportType="weekly" />
       </div>
-
-      <ReportSendStatusBanner sendConfig={sendConfig} reportType="weekly" />
 
       <section className="weekly-history-console clean-panel">
         <div className="weekly-auto-compose-head">
@@ -14160,21 +14162,15 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
       </section>
 
       <section className="weekly-auto-compose-console clean-panel">
-        <div className="weekly-auto-compose-head">
-          <div>
-            <strong>주간 리포트 자동 구성 콘솔</strong>
-            <span>출결·순공시간·외출·상벌점 데이터를 기준으로 위클리 리포트 초안을 일괄 생성합니다.</span>
-          </div>
+        {/* v41-175: 세 줄짜리 안내 상자를 없애고 각 버튼 설명으로 옮겼습니다. */}
+        <div className="weekly-auto-compose-head compact-console-head">
+          <strong>주간 리포트 자동 구성 콘솔</strong>
+          <span>출결·순공·외출·상벌점 기준 초안 일괄 생성</span>
           <div className="weekly-auto-compose-actions">
-            <button className="secondary section-action" onClick={() => runWeeklyBulkCompose('missing')} disabled={weeklyBulkLoading}>{weeklyBulkLoading ? '구성 중...' : '미작성 자동 구성'}</button>
-            <button className="secondary section-action" onClick={() => runWeeklyBulkCompose('all')} disabled={weeklyBulkLoading}>{weeklyBulkLoading ? '구성 중...' : '전체 갱신 구성'}</button>
-            <button className="primary section-action" onClick={openWeeklyBulkSend} disabled={weeklyBulkLoading || weeklyBulkSendRun?.status === 'running'}>{weeklyBulkSendRun?.status === 'running' ? '발송 중...' : '학부모 전체 발송'}</button>
+            <button className="secondary section-action" onClick={() => runWeeklyBulkCompose('missing')} disabled={weeklyBulkLoading} title="아직 저장되지 않은 학생만 초안을 만듭니다. 기존 저장 리포트는 건드리지 않습니다.">{weeklyBulkLoading ? '구성 중...' : '미작성 자동 구성'}</button>
+            <button className="secondary section-action" onClick={() => runWeeklyBulkCompose('all')} disabled={weeklyBulkLoading} title="저장된 면담·최종 코멘트는 그대로 두고, 주간 요약과 본문만 최신 데이터로 다시 정리합니다.">{weeklyBulkLoading ? '구성 중...' : '전체 갱신 구성'}</button>
+            <button className="primary section-action" onClick={openWeeklyBulkSend} disabled={weeklyBulkLoading || weeklyBulkSendRun?.status === 'running'} title="이번 기간에 저장된 위클리 리포트를 한 번에 발송합니다. 발송 창에서 학생을 취사선택할 수 있습니다.">{weeklyBulkSendRun?.status === 'running' ? '발송 중...' : '학부모 전체 발송'}</button>
           </div>
-        </div>
-        <div className="weekly-auto-compose-guide">
-          <span>미작성 자동 구성은 기존 저장 리포트를 보존합니다.</span>
-          <span>전체 갱신 구성은 저장된 면담/최종 코멘트는 유지하되, 주간 요약과 본문을 최신 데이터로 다시 정리합니다.</span>
-          <span>학부모 전체 발송은 이번 기간에 저장된 위클리 리포트를 대상으로 한 번에 발송합니다. 발송 창에서 학생을 취사선택할 수 있습니다.</span>
         </div>
 
         {weeklyBulkSendRun ? (
@@ -14250,16 +14246,23 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
         reportType="weekly"
       />
 
-      <div className="weekly-progress-grid">
-        <div><span>대상 학생</span><strong>{progress.total}명</strong></div>
-        <div><span>저장 완료</span><strong>{progress.saved}명</strong></div>
-        <div><span>작성 중</span><strong>{progress.inProgress}명</strong></div>
-        <div><span>미작성</span><strong>{progress.notStarted}명</strong></div>
-        <div><span>주간면담 미입력</span><strong>{progress.interviewMissing}명</strong></div>
-        <div><span>AI 초안 있음</span><strong>{progress.aiDraft}명</strong></div>
-        <div><span>발송대기</span><strong>{progress.sendReady}명</strong></div>
-        <div><span>발송완료</span><strong>{progress.sendSent}명</strong></div>
-        <div><span>발송실패</span><strong>{progress.sendFailed}명</strong></div>
+      {/* v41-175: 큰 카드 9개가 한 줄을 통째로 쓰고 있어 숫자만 남긴 한 줄로 줄였습니다. */}
+      <div className="weekly-progress-line">
+        {[
+          ['대상', progress.total, ''],
+          ['저장', progress.saved, 'ok'],
+          ['작성 중', progress.inProgress, ''],
+          ['미작성', progress.notStarted, progress.notStarted ? 'warn' : ''],
+          ['면담 미입력', progress.interviewMissing, progress.interviewMissing ? 'warn' : ''],
+          ['AI 초안', progress.aiDraft, ''],
+          ['발송대기', progress.sendReady, ''],
+          ['발송완료', progress.sendSent, 'ok'],
+          ['발송실패', progress.sendFailed, progress.sendFailed ? 'bad' : ''],
+        ].map(([label, value, tone]) => (
+          <span key={label} className={`weekly-progress-chip ${tone}`}>
+            {label} <b>{value}</b>
+          </span>
+        ))}
       </div>
 
       <div className="weekly-student-board clean-panel">
