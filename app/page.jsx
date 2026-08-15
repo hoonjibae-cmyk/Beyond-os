@@ -8256,15 +8256,10 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
   const allowedMentoringDays = getSelectableMentoringDays(mentoringPolicy);
   const dayOptions = allowedMentoringDays.map((day) => [day, dayLabelFull[day]]);
   const defaultMentoringDays = mentoringPolicy.baseDays;
-  // v41-180.1: 차시 시간은 '보고 있는 날짜'의 시간표를 씁니다.
-  // 예전에는 공통 평일 시간표만 봐서, 2기 날짜를 열어도 1기(공통) 시간이 나왔습니다.
-  const defaultSlotOptions = useMemo(() => {
-    const forDate = defaultScheduleConfig?.variants
-      ? resolveScheduleForDate(defaultScheduleConfig, selectedDate)
-      : defaultSchedule;
-    return buildDefaultMentoringSlotOptions(forDate);
-  }, [defaultScheduleConfig, defaultSchedule, selectedDate]);
-  const firstDefaultSlotOption = defaultSlotOptions[0] || { key: '1차시|09:00|09:50', label: '1차시', startTime: '09:00', endTime: '09:50' };
+  // 폼 초기값용 기본 차시 목록입니다. 이 줄은 selectedDate 선언보다 위에 있으므로
+  // 날짜에 기대면 안 됩니다. (날짜를 반영한 목록은 selectedDate 선언 뒤에 따로 만듭니다)
+  const baseSlotOptions = useMemo(() => buildDefaultMentoringSlotOptions(defaultSchedule), [defaultSchedule]);
+  const firstDefaultSlotOption = baseSlotOptions[0] || { key: '1차시|09:00|09:50', label: '1차시', startTime: '09:00', endTime: '09:50' };
   // v41-167: 배정 API는 학생 상품 카테고리를 내려주지 않으므로 학생 목록에서 조회표를 만듭니다.
   const productTierByStudentId = useMemo(() => {
     const map = {};
@@ -8306,6 +8301,15 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
   const [assignForm, setAssignForm] = useState(() => ({ slotId: '', studentIds: [], mentorId: '', note: '', repeatMode: 'single', repeatDays: [getInitialMentoringDay()] }));
   const [scheduleMode, setScheduleMode] = useState('date');
   const [selectedDate, setSelectedDate] = useState(() => getKstDateString());
+
+  // v41-180.1: 차시 시간은 '보고 있는 날짜'의 시간표를 씁니다.
+  // 예전에는 공통 평일 시간표만 봐서, 2기 날짜를 열어도 1기(공통) 시간이 나왔습니다.
+  const defaultSlotOptions = useMemo(() => {
+    const forDate = defaultScheduleConfig?.variants
+      ? resolveScheduleForDate(defaultScheduleConfig, selectedDate)
+      : defaultSchedule;
+    return buildDefaultMentoringSlotOptions(forDate);
+  }, [defaultScheduleConfig, defaultSchedule, selectedDate]);
   const [conflictReview, setConflictReview] = useState(null);
   const [conflictDetail, setConflictDetail] = useState(null);
   const [draggingAssignment, setDraggingAssignment] = useState(null);

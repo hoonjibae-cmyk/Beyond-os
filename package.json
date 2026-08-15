@@ -1,11 +1,12 @@
 {
   "name": "beyond-os-v41-166-roster-layout",
-  "version": "0.41.180-1",
+  "version": "0.41.180-2",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "lint:refs": "eslint --quiet ./app ./lib"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.108.2",
@@ -13,5 +14,8 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5"
   }
 }
