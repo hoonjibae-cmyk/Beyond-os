@@ -1103,6 +1103,8 @@ const LOCAL_MUTATION_SUPPRESS_MS = 12000;
 const REMOTE_NOTICE_DEDUPE_MS = 18000;
 const REMOTE_NOTICE_AUTO_DISMISS_MS = 5200;
 const ATTENDANCE_ACTION_UNLOCK_MS = 450;
+// v41-183: 로그인 상태에서 계정 상태(활성/비활성)를 다시 확인하는 주기입니다.
+const SESSION_RECHECK_MS = 3 * 60 * 1000;
 
 function isMutationMethod(method = 'GET') {
   return !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
@@ -2122,6 +2124,8 @@ export default function Page() {
   const [passwordStatus, setPasswordStatus] = useState(null);
   const [accountLoginForm, setAccountLoginForm] = useState({ username: '', password: '' });
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // v41-183: 저장된 토큰으로 서버에 계정 상태를 확인하는 동안의 대기 상태입니다.
+  const [sessionChecking, setSessionChecking] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [studentHistoryFocusStudentId, setStudentHistoryFocusStudentId] = useState('');
   const [studentInfoFocusStudentId, setStudentInfoFocusStudentId] = useState('');
@@ -2526,7 +2530,14 @@ export default function Page() {
       } catch {
         setCurrentUser(null);
       }
-      setIsLoggedIn(true);
+      // v41-183: 저장된 토큰만 믿고 들어가지 않습니다.
+      // 예전에는 여기서 바로 로그인 상태로 만들었기 때문에, 유저 관리에서
+      // 계정을 비활성화해도 그 사람 브라우저는 새로고침해도 그대로 들어왔습니다.
+      // 이제 서버에 계정 상태를 먼저 확인하고, 통과한 경우에만 들어갑니다.
+      setSessionChecking(true);
+      revalidateSession(savedToken)
+        .then((ok) => { if (ok) setIsLoggedIn(true); })
+        .finally(() => setSessionChecking(false));
       return;
     }
 
@@ -2535,7 +2546,29 @@ export default function Page() {
       setAdminPassword(savedPassword);
       verifyAndEnter(savedPassword, { silent: true });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // v41-183: 사용 중에도 계정 상태를 계속 확인합니다.
+  // 창으로 돌아올 때와 3분마다 확인하므로, 비활성화된 계정은 늦어도 3분 안에
+  // 화면에서 밀려납니다. 확인에 성공하면 새 토큰을 받아 두어 정상 사용자는
+  // 짧아진 토큰 수명(2시간) 때문에 로그아웃되는 일이 없습니다.
+  useEffect(() => {
+    if (!isLoggedIn || !appSessionToken) return undefined;
+
+    const check = () => { revalidateSession(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') check(); };
+
+    const timer = setInterval(check, SESSION_RECHECK_MS);
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, appSessionToken]);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -3299,6 +3332,50 @@ export default function Page() {
 
   function handleLogin() {
     verifyAndEnter(adminPassword);
+  }
+
+  // v41-183: 서버에 지금 계정 상태를 물어봅니다.
+  //   · 비활성/삭제 계정  → 즉시 로그아웃 처리하고 false
+  //   · 정상             → 새 토큰·권한을 받아 두고 true
+  //   · 네트워크/DB 장애  → 로그아웃시키지 않고 true (토큰 수명으로 자연 만료)
+  // 토큰을 인자로 받는 이유는, 앱이 처음 뜰 때는 아직 상태에 반영되기 전이기 때문입니다.
+  async function revalidateSession(tokenOverride) {
+    const token = String(tokenOverride || appSessionToken || '');
+    if (!token) return false;
+
+    let response;
+    let data = {};
+    try {
+      response = await fetch('/api/account-me', { headers: { 'x-app-session-token': token } });
+      data = await response.json().catch(() => ({}));
+    } catch {
+      return true;
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      window.localStorage.removeItem('beyond_admin_password');
+      window.localStorage.removeItem('beyond_app_session_token');
+      window.localStorage.removeItem('beyond_app_user');
+      setAdminPassword('');
+      setAppSessionToken('');
+      setCurrentUser(null);
+      setIsLoggedIn(false);
+      setLoginError(data.error || '로그인이 만료되었습니다. 다시 로그인해 주세요.');
+      return false;
+    }
+    if (!response.ok) return true;
+
+    // 계정 상태를 실제로 확인한 응답에서만 토큰·권한을 갱신합니다.
+    // (DB 확인에 실패한 응답은 checked:false 로 내려옵니다)
+    if (data.checked && data.token) {
+      window.localStorage.setItem('beyond_app_session_token', data.token);
+      setAppSessionToken(data.token);
+    }
+    if (data.checked && data.user) {
+      window.localStorage.setItem('beyond_app_user', JSON.stringify(data.user));
+      setCurrentUser(data.user);
+    }
+    return true;
   }
 
   async function handleAccountLogin() {
@@ -5385,6 +5462,19 @@ export default function Page() {
 
     if (!chips.length) return [{ label: `${start}~${end} 등원 예정`, kind: 'match' }];
     return chips;
+  }
+
+  // v41-183: 저장된 토큰으로 계정 상태를 확인하는 동안에는 로그인 화면을 띄우지 않습니다.
+  // (정상 사용자에게 로그인 폼이 잠깐 번쩍이는 것을 막습니다)
+  if (!isLoggedIn && sessionChecking) {
+    return (
+      <main className="login account-login">
+        <div className="login-card account-login-card session-checking-card">
+          <h1>Beyond OS</h1>
+          <p>계정 상태를 확인하는 중입니다...</p>
+        </div>
+      </main>
+    );
   }
 
   if (!isLoggedIn) {

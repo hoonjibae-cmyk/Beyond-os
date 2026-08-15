@@ -8521,6 +8521,12 @@ button.danger {
 .account-login-card {
   width: min(560px, 94vw);
 }
+/* v41-183: 저장된 토큰으로 계정 상태를 확인하는 동안 잠깐 보이는 카드 */
+.session-checking-card {
+  text-align: center;
+  padding-top: 34px;
+  padding-bottom: 34px;
+}
 .login-mode-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
