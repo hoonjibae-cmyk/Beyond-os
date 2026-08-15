@@ -48,16 +48,21 @@ async function listCohortRows(supabase) {
 }
 
 // 날짜 기반 화면(날짜별 멘토링)은 그 날짜가 속한 기수를 씁니다.
-async function resolveCohortIdForDate(supabase, dateString) {
+// v41-181: 날짜가 어느 기수에 속하는지 판정합니다.
+//   { cohortId: 'xxx' }            그 기수
+//   { cohortId: null, noMatch:true } 기수는 있는데 이 날짜가 어디에도 안 들어감
+//   { cohortId: null, noMatch:false } 기수 자체가 없음(기수 개념 미사용)
+// 예전에는 '어디에도 안 들어가는 날짜'를 진행 중 기수로 떠넘겨서,
+// 2기 기간 밖 토요일에 2기 차시 틀이 그려졌습니다.
+async function resolveDateCohortInfo(supabase, dateString) {
   const cohorts = await listCohortRows(supabase);
-  if (!cohorts.length) return null;
+  if (!cohorts.length) return { cohortId: null, noMatch: false, cohortName: '' };
   const date = String(dateString || getKstDateString()).slice(0, 10);
   const hit = cohorts.find((row) => (
     String(row.start_date || '').slice(0, 10) <= date && date <= String(row.end_date || '').slice(0, 10)
   ));
-  if (hit) return String(hit.id);
-  // 어느 기수에도 안 들어가는 날짜면 진행 중(없으면 첫) 기수를 씁니다.
-  return resolveMentoringCohortId(supabase, '');
+  if (hit) return { cohortId: String(hit.id), noMatch: false, cohortName: hit.name || '' };
+  return { cohortId: null, noMatch: true, cohortName: '' };
 }
 
 // 요청 헤더(x-beyond-cohort-id)로도 기수를 받습니다.
@@ -527,8 +532,13 @@ async function getExistingWeeklyAssignmentConflicts(supabase, assignments = []) 
 async function materializeDateSchedule(supabase, scheduleDateInput = getKstDateString(), cohortIdInput = null) {
   const scheduleDate = normalizeDateString(scheduleDateInput);
   const day = getKstDayOfWeek(scheduleDate);
-  // v41-178: 날짜별 전개는 그 날짜가 속한 기수의 요일 템플릿을 씁니다.
-  const cohortId = cohortIdInput || await resolveCohortIdForDate(supabase, scheduleDate);
+  // v41-178/181: 날짜별 전개는 그 날짜가 속한 기수의 요일 템플릿을 씁니다.
+  const dateCohort = await resolveDateCohortInfo(supabase, scheduleDate);
+  if (dateCohort.noMatch) {
+    // 어느 기수 기간에도 없는 날짜입니다. 만들 차시가 없습니다.
+    return { insertedSlots: 0, insertedAssignments: 0, scheduleDate, noCohortForDate: true };
+  }
+  const cohortId = cohortIdInput || dateCohort.cohortId;
 
   const { data: weeklySlots, error: weeklySlotsError } = await withCohort(supabase
     .from('mentoring_slots')
@@ -638,6 +648,17 @@ async function loadDateSchedule(supabase, scheduleDateInput = getKstDateString()
       .filter((slot) => slot.is_active !== false && Number(slot.day_of_week) === Number(day))
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0) || String(a.start_time || '').localeCompare(String(b.start_time || '')));
     let weeklyAssignments = weeklyAssignmentsSource;
+
+    // v41-181: 어느 기수 기간에도 없는 날짜에는 요일 템플릿을 끌어오지 않습니다.
+    if (options.noCohortForDate) {
+      return {
+        dateSlots: [],
+        dateAssignments: [],
+        dateAssignmentConflicts: [],
+        dateOverrideActive: false,
+        dateWarning: [extraWarning, `${scheduleDate}은 등록된 기수 기간에 들어가지 않아 멘토링 차시가 없습니다.`].filter(Boolean).join('\n'),
+      };
+    }
 
     if (!weeklySlotsSource.length) {
       const { data: slotRows, error: slotRowsError } = await withCohort(supabase
@@ -982,11 +1003,17 @@ async function loadAll(supabase, options = {}) {
   const selectedDate = normalizeDateString(options.date || getKstDateString());
   let dateSchedule = { dateSlots: [], dateAssignments: [], dateAssignmentConflicts: [], dateWarning: '', dateScheduleDate: selectedDate };
   try {
+    // v41-181: 날짜별 화면은 화면에서 고른 기수가 아니라 '그 날짜가 속한 기수'를 따릅니다.
+    // 헤더에서 2기를 보고 있어도 1기 기간의 날짜를 열면 1기 틀이 나와야 합니다.
+    const dateCohort = await resolveDateCohortInfo(supabase, selectedDate);
+    const sameCohort = String(dateCohort.cohortId || '') === String(cohortId || '');
     dateSchedule = await loadDateSchedule(supabase, selectedDate, {
-      cohortId,
+      cohortId: dateCohort.cohortId,
+      noCohortForDate: dateCohort.noMatch,
       materialize: options.materializeDate === true,
-      weeklySlots: slots || [],
-      weeklyAssignments: assignments || [],
+      // 다른 기수의 날짜라면 이 화면에서 읽어 둔 요일 템플릿을 그대로 쓰면 안 됩니다.
+      weeklySlots: sameCohort ? (slots || []) : [],
+      weeklyAssignments: sameCohort ? (assignments || []) : [],
     });
   } catch (error) {
     warning = [warning, `날짜별 멘토링 일정 조회 실패: ${error.message || error}`].filter(Boolean).join('\n');

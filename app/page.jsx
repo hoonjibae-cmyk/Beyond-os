@@ -5809,6 +5809,7 @@ export default function Page() {
           <MentoringTab
             students={scopedStudents}
             cohortStudentIds={cohortScopeStudentIds}
+            cohortScopeId={cohortScopeId}
             apiFetch={apiFetch}
             setMessage={setMessage}
             currentUser={currentUser}
@@ -8249,7 +8250,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
 
 
 
-function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, defaultScheduleConfig = null, onMentoringChanged, onOpenStudentCare, onOpenMentoringSettings, initialActiveDay = 1, cohortStudentIds = null }) {
+function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, defaultScheduleConfig = null, onMentoringChanged, onOpenStudentCare, onOpenMentoringSettings, initialActiveDay = 1, cohortStudentIds = null, cohortScopeId = '' }) {
   // v41-179: 멘토링 요일은 운영 기준(기수별 설정)을 따릅니다.
   const [mentoringPolicy, setMentoringPolicy] = useState(FALLBACK_MENTORING_POLICY);
   const dayLabelFull = { 0: '일요일', 1: '월요일', 2: '화요일', 3: '수요일', 4: '목요일', 5: '금요일', 6: '토요일' };
@@ -8444,6 +8445,8 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
       if (options.seed) params.set('seed', '1');
       params.set('date', options.date || selectedDate);
       if (options.materializeDate === true) params.set('materializeDate', '1');
+      // v41-181: 요일별 템플릿은 이 기수 것을 봅니다. (날짜별 화면은 서버가 날짜로 다시 판정합니다)
+      if (cohortScopeId) params.set('cohortId', String(cohortScopeId));
       const data = await apiFetch(`/api/mentoring?${params.toString()}`);
       applyMentoringData(data);
       const noticeDate = options.date || selectedDate;
@@ -8463,10 +8466,11 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
     }
   }
 
+  // v41-181: 기수 보기가 바뀌면 요일별 템플릿도 다시 읽습니다.
   useEffect(() => {
     loadMentoring({ date: selectedDate, materializeDate: false });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, scheduleMode]);
+  }, [selectedDate, scheduleMode, cohortScopeId]);
 
   useEffect(() => {
     setAssignForm((prev) => ({ ...prev, slotId: '', studentIds: [], note: '', repeatMode: 'single', repeatDays: [scheduleMode === 'date' ? selectedDateDay : activeDay] }));
@@ -18398,8 +18402,8 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
       const data = await apiFetch('/api/mentoring', {
         method: 'POST',
         body: JSON.stringify(reset
-          ? { action: 'resetMentoringPolicy' }
-          : { action: 'saveMentoringPolicy', policy: normalizeMentoringPolicy(policyDraft) }),
+          ? { action: 'resetMentoringPolicy', cohortId: cohortScopeId || undefined }
+          : { action: 'saveMentoringPolicy', policy: normalizeMentoringPolicy(policyDraft), cohortId: cohortScopeId || undefined }),
       });
       if (data.mentoringPolicy) setPolicyDraft(normalizeMentoringPolicy(data.mentoringPolicy));
       setHasCohortPolicy(Boolean(data.hasCohortMentoringPolicy));
@@ -18423,7 +18427,7 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
       setCopyBusy(true);
       const data = await apiFetch('/api/mentoring', {
         method: 'POST',
-        body: JSON.stringify({ action: 'copyCohortSlots', sourceCohortId: copySourceCohortId }),
+        body: JSON.stringify({ action: 'copyCohortSlots', sourceCohortId: copySourceCohortId, cohortId: cohortScopeId || undefined }),
       });
       setMessage?.(`차시 ${data.result?.copied || 0}개를 복사했습니다.`);
       setCopySourceCohortId('');
@@ -18474,10 +18478,11 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
   const effectiveMentorStudentEditorId = mentorStudentEditorId || activeMentors[0]?.id || '';
   const selectedMentorForStudentConfig = activeMentors.find((mentor) => String(mentor.id) === String(effectiveMentorStudentEditorId)) || null;
 
+  // v41-181: 기수 보기가 바뀌면 그 기수 설정을 다시 읽습니다. (예전에는 처음 한 번만 읽었습니다)
   useEffect(() => {
     loadMentoringSettings();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cohortScopeId]);
 
   useEffect(() => {
     if (!mentorStudentEditorId && activeMentors.length) setMentorStudentEditorId(activeMentors[0].id);
@@ -18493,7 +18498,10 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
   async function loadMentoringSettings() {
     try {
       setLoading(true);
+      // v41-181: 기수를 쿼리로 직접 보냅니다.
+      // 헤더로만 보내면 첫 로딩 때 기수 값이 아직 안 잡혀 1기(오늘 기수)로 읽히곤 했습니다.
       const params = new URLSearchParams({ date: getKstDateString() });
+      if (cohortScopeId) params.set('cohortId', String(cohortScopeId));
       const data = await apiFetch(`/api/mentoring?${params.toString()}`);
       applyMentoringData(data);
       // v41-179: 운영 기준도 함께 받아 편집칸에 올립니다.
