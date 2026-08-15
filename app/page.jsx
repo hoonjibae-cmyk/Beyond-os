@@ -2694,8 +2694,9 @@ export default function Page() {
 
   useEffect(() => {
     if (isLoggedIn && (activeTab === 'studentHistory' || activeTab === 'studentInfo')) loadSurveys();
+    // v41-182: 기수 보기를 바꾸면 그 기수의 설문만 다시 불러옵니다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoggedIn, activeTab]);
+  }, [isLoggedIn, activeTab, cohortScopeId]);
 
   // 학생 중심 메뉴로 '이동'할 때, 직전에 보던 학생(globalFocusStudentId)을 그대로 이어서 보여줍니다.
   // (탭을 벗어나지 않은 상태에서의 선택 변경은 건드리지 않도록, 실제 탭 전환 시에만 적용)
@@ -4656,13 +4657,15 @@ export default function Page() {
         setMessage('엑셀에서 학생 이름이 있는 응답 행을 찾지 못했습니다. 양식을 확인하세요.');
         return;
       }
+      // v41-182: 지금 보고 있는 기수로 저장합니다. 같은 학생이라도 기수가 다르면 따로 남습니다.
       const result = await apiFetch('/api/student-surveys', {
         method: 'POST',
-        body: JSON.stringify({ surveyType, rows }),
+        body: JSON.stringify({ surveyType, rows, cohortId: cohortScopeId || '' }),
       });
       await loadSurveys();
       const unmatchedText = result.unmatched ? ` · 미매칭 ${result.unmatched}명(${(result.unmatchedNames || []).slice(0, 5).join(', ')}${result.unmatchedNames?.length > 5 ? '…' : ''})` : '';
-      setMessage(`${surveyType === 'parent' ? '학부모' : '학생'} 설문 업로드 완료: ${result.total}건 · 매칭 ${result.matched}명${unmatchedText}`);
+      const cohortText = result.cohortName ? `[${result.cohortName}] ` : '';
+      setMessage(`${cohortText}${surveyType === 'parent' ? '학부모' : '학생'} 설문 업로드 완료: ${result.total}건(신규 ${result.added ?? 0} · 갱신 ${result.updated ?? 0}) · 매칭 ${result.matched}명${unmatchedText}`);
     } catch (error) {
       setMessage(`설문 업로드 실패: ${error.message || error}`);
     } finally {
@@ -5801,6 +5804,9 @@ export default function Page() {
               uploadSurveyFile,
               loadSurveys,
               canUpload: canUseUserManagement,
+              cohortOptions,
+              cohortScopeId,
+              cohortScopeName: cohortScopeInfo?.name || '',
             }}
           />
         ) : null}
@@ -17239,7 +17245,7 @@ function surveySubjectOf(question) {
   return SURVEY_SUBJECTS.find((s) => q.includes(s)) || '';
 }
 
-function SurveyCard({ survey }) {
+function SurveyCard({ survey, cohortName = '' }) {
   const answers = Array.isArray(survey.answers) ? survey.answers : [];
   const isParent = survey.survey_type === 'parent';
 
@@ -17353,6 +17359,7 @@ function SurveyCard({ survey }) {
       <header className="survey-card-head">
         <div className="survey-card-title">
           <span className={`survey-type-badge ${isParent ? 'parent' : 'student'}`}>{isParent ? '학부모 설문' : '학생 설문'}</span>
+          {cohortName ? <span className="survey-cohort-badge">{cohortName}</span> : null}
           {!survey.matched ? <span className="survey-unmatched-badge">이름 미매칭</span> : null}
         </div>
         <dl className="survey-card-meta">
@@ -17425,12 +17432,37 @@ function SurveyCard({ survey }) {
 }
 
 function SurveyPanel({ surveyProps = {}, selectedStudent = null, selectedStudentId = '' }) {
-  const { surveys = [], uploading = false, uploadSurveyFile, canUpload = false } = surveyProps;
+  const {
+    surveys = [],
+    uploading = false,
+    uploadSurveyFile,
+    canUpload = false,
+    cohortOptions = [],
+    cohortScopeId = '',
+    cohortScopeName = '',
+  } = surveyProps;
   const studentFileRef = useRef(null);
   const parentFileRef = useRef(null);
 
   const totalStudent = useMemo(() => surveys.filter((s) => s.survey_type === 'student').length, [surveys]);
   const totalParent = useMemo(() => surveys.filter((s) => s.survey_type === 'parent').length, [surveys]);
+
+  // v41-182: 설문은 기수별로 따로 보관합니다. 어느 기수로 저장되는지 먼저 알려줍니다.
+  const cohortNameById = useMemo(
+    () => new Map((cohortOptions || []).map((c) => [String(c.id), c.name || ''])),
+    [cohortOptions],
+  );
+  const uploadTargetCohort = useMemo(() => {
+    if (cohortScopeName) return cohortScopeName;
+    if (!cohortOptions.length) return '';
+    // 전체 보기일 때 서버는 '오늘이 속한 기수 → 없으면 가장 최근 기수'를 씁니다. 같은 규칙으로 미리 보여줍니다.
+    // (cohortOptions 는 시작일 오름차순이라 겹치면 뒤쪽 = 나중에 시작한 기수를 씁니다)
+    const today = getKstDateString();
+    const current = [...cohortOptions].reverse().find((c) => (
+      String(c.startDate || '') <= today && today <= String(c.endDate || '')
+    ));
+    return (current || cohortOptions[cohortOptions.length - 1])?.name || '';
+  }, [cohortScopeName, cohortOptions]);
 
   const studentName = selectedStudent?.name || '';
   const normalizedName = String(studentName || '').replace(/\s+/g, '');
@@ -17443,6 +17475,9 @@ function SurveyPanel({ surveyProps = {}, selectedStudent = null, selectedStudent
     });
   }, [surveys, selectedStudentId, normalizedName]);
 
+  // 기수 보기가 켜져 있으면 서버가 이미 그 기수만 내려줍니다.
+  // 전체 보기에서는 기수별 응답이 모두 보이므로 카드마다 기수 배지를 붙입니다.
+  const showCohortBadge = !cohortScopeId && cohortOptions.length > 1;
   const studentSurvey = studentSurveys.find((s) => s.survey_type === 'student') || null;
   const parentSurvey = studentSurveys.find((s) => s.survey_type === 'parent') || null;
 
@@ -17463,7 +17498,16 @@ function SurveyPanel({ surveyProps = {}, selectedStudent = null, selectedStudent
             <em>학생 설문 {totalStudent}건 · 학부모 설문 {totalParent}건 저장됨</em>
           </summary>
           <div className="survey-upload-body">
-            <p className="survey-upload-hint">구글폼 응답 스프레드시트를 엑셀(.xlsx)로 내려받아 업로드하세요. 같은 학생·같은 유형이면 최신 응답으로 갱신됩니다.</p>
+            <p className="survey-upload-hint">
+              구글폼 응답 스프레드시트를 엑셀(.xlsx)로 내려받아 업로드하세요.
+              선택한 학생과 무관하게 <b>파일 안의 모든 학생</b>이 저장되며, 같은 기수·같은 유형의 같은 학생이면 최신 응답으로 갱신됩니다.
+            </p>
+            {uploadTargetCohort ? (
+              <p className="survey-upload-target">
+                저장 기수 <b>{uploadTargetCohort}</b>
+                {cohortScopeId ? '' : ' · 상단 [기수 보기]를 바꾸면 저장 기수도 바뀝니다.'}
+              </p>
+            ) : null}
             <div className="survey-upload-actions">
               <label className="survey-upload-field">
                 <span>학생 제출 설문</span>
@@ -17483,9 +17527,11 @@ function SurveyPanel({ surveyProps = {}, selectedStudent = null, selectedStudent
         <p className="survey-select-note">상단에서 학생을 선택하면 해당 학생의 사전 설문(학생·학부모)이 여기에 표시됩니다.</p>
       ) : studentSurveys.length ? (
         <div className="survey-card-grid">
-          {studentSurvey ? <SurveyCard survey={studentSurvey} /> : null}
-          {parentSurvey ? <SurveyCard survey={parentSurvey} /> : null}
-          {studentSurveys.filter((s) => s !== studentSurvey && s !== parentSurvey).map((s) => <SurveyCard key={s.id} survey={s} />)}
+          {studentSurvey ? <SurveyCard survey={studentSurvey} cohortName={showCohortBadge ? (cohortNameById.get(String(studentSurvey.cohort_id)) || '') : ''} /> : null}
+          {parentSurvey ? <SurveyCard survey={parentSurvey} cohortName={showCohortBadge ? (cohortNameById.get(String(parentSurvey.cohort_id)) || '') : ''} /> : null}
+          {studentSurveys.filter((s) => s !== studentSurvey && s !== parentSurvey).map((s) => (
+            <SurveyCard key={s.id} survey={s} cohortName={showCohortBadge ? (cohortNameById.get(String(s.cohort_id)) || '') : ''} />
+          ))}
         </div>
       ) : (
         <p className="survey-select-note">
