@@ -12459,25 +12459,26 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
           <h2>데일리 리포트</h2>
           <p>{plannerDate} 기준 데일리 리포트 대상입니다. 선택 날짜의 활성 학생과 출결 세션을 함께 표시합니다.</p>
         </div>
-        <div className="report-head-actions compact-actions">
+        {/* v41-174: 오른쪽 칸이 420px 이상 잡혀 있어 날짜 하나만 두고도 큰 빈칸이 생겼습니다. */}
+        <div className="report-head-actions report-head-date">
           <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={plannerDate} onChange={(e) => { setPlannerDate(e.target.value); loadDailyReportTargets(e.target.value); }} />
         </div>
       </div>
 
-      <div className="report-page-tabs clean-panel">
-        <button type="button" className={reportView === 'main' ? 'active' : ''} onClick={() => setReportView('main')}>리포트 대상</button>
-        <button type="button" className={reportView === 'director' ? 'active' : ''} onClick={() => setReportView('director')}>원장 내부 확인 <span>{directorSummary.attention}</span></button>
-        <button type="button" className={reportView === 'activity' ? 'active' : ''} onClick={() => { setReportView('activity'); loadDailyReportActivity(plannerDate); }}>발송 이력 <span>{reportActivityLogs.length}</span></button>
+      {/* v41-174: 발송 상태 표시를 탭 줄 오른쪽으로 옮겨 한 줄을 줄였습니다. */}
+      <div className="report-page-tabs-row">
+        <div className="report-page-tabs clean-panel">
+          <button type="button" className={reportView === 'main' ? 'active' : ''} onClick={() => setReportView('main')}>리포트 대상</button>
+          <button type="button" className={reportView === 'director' ? 'active' : ''} onClick={() => setReportView('director')}>원장 내부 확인 <span>{directorSummary.attention}</span></button>
+          <button type="button" className={reportView === 'activity' ? 'active' : ''} onClick={() => { setReportView('activity'); loadDailyReportActivity(plannerDate); }}>발송 이력 <span>{reportActivityLogs.length}</span></button>
+        </div>
+        <ReportSendStatusBanner sendConfig={sendConfig} reportType="daily" />
       </div>
-
-      <ReportSendStatusBanner sendConfig={sendConfig} reportType="daily" />
 
       <section className="daily-closeout-console clean-panel">
         <div className="daily-closeout-head">
-          <div>
-            <h3>마감 발송 콘솔</h3>
-            <p>정해진 마감시간에 전체 학생 리포트를 발송하기 전, 발송 가능 여부와 확인 필요 항목을 한 번에 점검합니다.</p>
-          </div>
+          <h3>마감 발송 콘솔</h3>
+          <p>마감시간 전체 발송 전 점검</p>
         </div>
 
         {/* v41-170: 상단 점수 카드 6개는 아래 필터 칩과 같은 일을 하는 바로가기라 없앴습니다.
