@@ -3,6 +3,12 @@ import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
+import {
+  MENTORING_POLICY_SETTING_KEY,
+  getMentoringPolicyCohortKey,
+  normalizeMentoringPolicy,
+  FALLBACK_MENTORING_POLICY,
+} from '../../../lib/mentoringPolicy';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +68,53 @@ function getCohortIdFromRequest(request) {
   } catch {
     return '';
   }
+}
+
+// v41-179: 멘토링 운영 기준(기본 요일·차시당 인원 등). 기수 설정이 있으면 그것을, 없으면 공통을 씁니다.
+async function loadMentoringPolicy(supabase, cohortId) {
+  const keys = [MENTORING_POLICY_SETTING_KEY];
+  if (cohortId) keys.push(getMentoringPolicyCohortKey(cohortId));
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('setting_key, setting_value')
+      .in('setting_key', keys);
+    if (error) throw error;
+    const rows = data || [];
+    const cohortRow = cohortId
+      ? rows.find((row) => row.setting_key === getMentoringPolicyCohortKey(cohortId))
+      : null;
+    const globalRow = rows.find((row) => row.setting_key === MENTORING_POLICY_SETTING_KEY);
+    return {
+      policy: normalizeMentoringPolicy(cohortRow?.setting_value || globalRow?.setting_value || FALLBACK_MENTORING_POLICY),
+      hasCohortPolicy: Boolean(cohortRow),
+    };
+  } catch {
+    return { policy: normalizeMentoringPolicy(FALLBACK_MENTORING_POLICY), hasCohortPolicy: false };
+  }
+}
+
+async function saveMentoringPolicy(supabase, body) {
+  const cohortId = await resolveMentoringCohortId(supabase, body.cohortId);
+  const settingKey = cohortId ? getMentoringPolicyCohortKey(cohortId) : MENTORING_POLICY_SETTING_KEY;
+
+  if (String(body.reset || '') === '1' || body.action === 'resetMentoringPolicy') {
+    if (!cohortId) {
+      const error = new Error('공통 운영 기준은 해제할 수 없습니다.');
+      error.status = 400;
+      throw error;
+    }
+    const { error } = await supabase.from('system_settings').delete().eq('setting_key', settingKey);
+    if (error) throw error;
+    return { reset: true, cohortId };
+  }
+
+  const settingValue = normalizeMentoringPolicy(body.policy || body.mentoringPolicy || {});
+  const { error } = await supabase
+    .from('system_settings')
+    .upsert({ setting_key: settingKey, setting_value: settingValue, updated_at: new Date().toISOString() }, { onConflict: 'setting_key' });
+  if (error) throw error;
+  return { cohortId, policy: settingValue, saved: true };
 }
 
 async function resolveMentoringCohortId(supabase, requestedCohortId) {
@@ -724,6 +777,8 @@ async function loadDateSchedule(supabase, scheduleDateInput = getKstDateString()
 }
 
 async function seedDefaults(supabase, cohortId = null) {
+  // v41-179: 어떤 요일에 몇 명 기준으로 기본 차시를 만들지는 운영 기준을 따릅니다.
+  const { policy: mentoringPolicy } = await loadMentoringPolicy(supabase, cohortId);
   const { data: mentors, error: mentorError } = await supabase
     .from('mentoring_mentors')
     .select('id, mentor_code');
@@ -754,7 +809,7 @@ async function seedDefaults(supabase, cohortId = null) {
 
   const inserts = [];
   let updatedSlots = 0;
-  for (const day of DEFAULT_MENTORING_DAYS) {
+  for (const day of (mentoringPolicy.baseDays.length ? mentoringPolicy.baseDays : DEFAULT_MENTORING_DAYS)) {
     defaultSlotWindows.forEach((slotWindow, index) => {
       const label = slotWindow.label || `${index + 1}차시`;
       const start = normalizeSlotClock(slotWindow.start);
@@ -766,8 +821,8 @@ async function seedDefaults(supabase, cohortId = null) {
         slot_label: label,
         start_time: start,
         end_time: end,
-        min_capacity: 3,
-        max_capacity: 4,
+        min_capacity: mentoringPolicy.minCapacity,
+        max_capacity: mentoringPolicy.maxCapacity,
         sort_order: day * 10000 + index * 100 + (timeToMinutes(start) || 0),
         is_active: true,
         // v41-178: 기본 차시는 지금 보고 있는 기수에 만듭니다.
@@ -781,8 +836,8 @@ async function seedDefaults(supabase, cohortId = null) {
         || normalizeSlotClock(existing.start_time) !== payload.start_time
         || normalizeSlotClock(existing.end_time) !== payload.end_time
         || Number(existing.sort_order || 0) !== Number(payload.sort_order || 0)
-        || Number(existing.min_capacity || 3) !== 3
-        || Number(existing.max_capacity || 4) !== 4;
+        || Number(existing.min_capacity || 3) !== mentoringPolicy.minCapacity
+        || Number(existing.max_capacity || 4) !== mentoringPolicy.maxCapacity;
       if (needsUpdate) {
         updatedSlots += 1;
         activeSlotByDayLabel.set(key, [{ ...existing, ...payload, __needsUpdate: true }]);
@@ -838,6 +893,7 @@ async function loadMentorStudentLinks(supabase, cohortId = null) {
 
 async function loadAll(supabase, options = {}) {
   const cohortId = options.cohortId ?? null;
+  const { policy: mentoringPolicy, hasCohortPolicy } = await loadMentoringPolicy(supabase, cohortId);
   const { data: mentors, error: mentorsError } = await supabase
     .from('mentoring_mentors')
     .select('*')
@@ -908,6 +964,9 @@ async function loadAll(supabase, options = {}) {
     assignments: assignments || [],
     mentorStudentLinks,
     assignmentConflicts,
+    // v41-179: 운영 기준(기본 요일·차시당 인원 등)과 이 기수 전용 설정 여부
+    mentoringPolicy,
+    hasCohortMentoringPolicy: hasCohortPolicy,
     ...dateSchedule,
     warning,
   };
@@ -1808,6 +1867,7 @@ export async function POST(request) {
     else if (action === 'saveMentorStudents') result = await saveMentorStudents(supabase, { ...body, cohortId: requestCohortId });
     else if (action === 'saveSlot') result = await saveSlot(supabase, { ...body, cohortId: requestCohortId });
     else if (action === 'copyCohortSlots') result = await copyCohortSlots(supabase, { ...body, cohortId: requestCohortId });
+    else if (action === 'saveMentoringPolicy' || action === 'resetMentoringPolicy') result = await saveMentoringPolicy(supabase, { ...body, action, cohortId: requestCohortId });
     else if (action === 'saveDateSlot') result = await saveDateSlot(supabase, body);
     else if (action === 'materializeDateSchedule') result = await materializeDateSchedule(supabase, body.scheduleDate || body.schedule_date || body.date);
     else if (action === 'resetDateSchedule') result = await resetDateSchedule(supabase, body);

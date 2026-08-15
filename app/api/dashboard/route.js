@@ -2,6 +2,7 @@ import { getSupabaseAdmin, getSupabaseEnv } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString } from '../../../lib/date';
 import { STATIC_SEATS } from '../../../lib/staticSeats';
+import { MENTORING_POLICY_SETTING_KEY, getMentoringPolicyCohortKey, normalizeMentoringPolicy, FALLBACK_MENTORING_POLICY } from '../../../lib/mentoringPolicy';
 
 export const dynamic = 'force-dynamic';
 
@@ -167,6 +168,27 @@ export async function GET(request) {
     let kioskImportEvents = [];
     let fieldFocusAcknowledgements = [];
     let todayMentoringAssignments = [];
+    // v41-179: 좌석표 멘토링 안내 시작 시점 등에 쓰는 운영 기준.
+    // 오늘이 속한 기수에 전용 설정이 있으면 그것을, 없으면 공통을 씁니다.
+    let mentoringPolicy = normalizeMentoringPolicy(FALLBACK_MENTORING_POLICY);
+    try {
+      const { data: cohortRows } = await supabase
+        .from('cohorts').select('id, start_date, end_date').order('start_date', { ascending: true });
+      const todayCohort = (cohortRows || []).find((row) => (
+        String(row.start_date || '').slice(0, 10) <= today && today <= String(row.end_date || '').slice(0, 10)
+      ));
+      const keys = [MENTORING_POLICY_SETTING_KEY];
+      if (todayCohort) keys.push(getMentoringPolicyCohortKey(todayCohort.id));
+      const { data: policyRows } = await supabase
+        .from('system_settings').select('setting_key, setting_value').in('setting_key', keys);
+      const cohortRow = todayCohort
+        ? (policyRows || []).find((row) => row.setting_key === getMentoringPolicyCohortKey(todayCohort.id))
+        : null;
+      const globalRow = (policyRows || []).find((row) => row.setting_key === MENTORING_POLICY_SETTING_KEY);
+      mentoringPolicy = normalizeMentoringPolicy(cohortRow?.setting_value || globalRow?.setting_value || FALLBACK_MENTORING_POLICY);
+    } catch {
+      // 설정을 못 읽어도 기본값으로 계속 진행합니다.
+    }
 
     if (sessionIds.length > 0) {
       const { data: checkRows, error: checksError } = await supabase
@@ -342,6 +364,7 @@ export async function GET(request) {
       kioskImportEvents,
       fieldFocusAcknowledgements,
       todayMentoringAssignments,
+      mentoringPolicy,
       parentAlertLogs,
       warning: studentsError ? `학생 목록 조회 일부 실패: ${studentsError.message}` : undefined,
     });

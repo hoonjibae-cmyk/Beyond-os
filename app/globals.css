@@ -21998,3 +21998,41 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .mentoring-cohort-copy { flex: 1 1 100%; }
   .mentoring-cohort-copy select { flex: 1 1 auto; min-width: 0; }
 }
+
+/* v41-179: 운영 기준 카드(편집형) */
+.mentoring-policy-card.is-editable { display: flex; flex-direction: column; gap: 10px; }
+.mentoring-policy-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.mentoring-policy-head strong { font-size: 14px; font-weight: 950; }
+.mentoring-policy-head em {
+  font-style: normal; font-size: 11px; font-weight: 900;
+  padding: 2px 8px; border-radius: 999px; background: #eaf1fd; color: #1d4ed8; white-space: nowrap;
+}
+.mentoring-policy-field { display: flex; flex-direction: column; gap: 5px; }
+.mentoring-policy-field > span { font-size: 12px; font-weight: 900; color: #4d4537; }
+.mentoring-policy-field > i { font-style: normal; font-size: 11px; font-weight: 700; color: #8a8479; }
+.mentoring-policy-days { display: flex; gap: 5px; flex-wrap: wrap; }
+.mentoring-policy-days button {
+  width: 38px; min-width: 38px; min-height: 34px; padding: 0;
+  border: 1px solid var(--ap-sep-strong); border-radius: 10px;
+  background: #fff !important; color: #4d4537 !important;
+  font-size: 12.5px; font-weight: 900; box-shadow: none;
+}
+.mentoring-policy-days button.active {
+  background: var(--ap-accent) !important; border-color: var(--ap-accent) !important; color: #fff !important;
+}
+.mentoring-policy-days button:disabled { opacity: .4; cursor: not-allowed; }
+.mentoring-policy-range { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mentoring-policy-range input {
+  width: 62px; min-width: 0; box-sizing: border-box;
+  height: 34px; min-height: 34px; text-align: center; font-size: 12.5px; font-weight: 900;
+}
+.mentoring-policy-range b, .mentoring-policy-range em {
+  font-style: normal; font-size: 12px; font-weight: 900; color: #6f6b62; white-space: nowrap;
+}
+.mentoring-policy-fixed {
+  display: flex; flex-direction: column; gap: 3px;
+  padding-top: 8px; border-top: 1px dashed #e2ded6;
+}
+.mentoring-policy-fixed span { font-size: 11.5px; font-weight: 700; color: #8a8479; line-height: 1.45; }
+.mentoring-policy-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.mentoring-policy-actions button { width: auto; min-height: 36px; padding: 0 14px; font-size: 12.5px; }

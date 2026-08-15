@@ -10,6 +10,7 @@ import { PRODUCT_TIERS, getProductTierLabel, getProductTier } from '../lib/produ
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
+import { MENTORING_DAY_OPTIONS, FALLBACK_MENTORING_POLICY, normalizeMentoringPolicy, getSelectableMentoringDays, formatMentoringDays } from '../lib/mentoringPolicy';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
 
 const STUDY_STATUS_OPTIONS = ['인강', '문제풀이', '암기', '독서', '수면', '비학습'];
@@ -2161,6 +2162,8 @@ export default function Page() {
   const [scheduleCoverage, setScheduleCoverage] = useState(null);
   const [fieldFocusAcknowledgements, setFieldFocusAcknowledgements] = useState([]);
   const [mentoringTodayAssignments, setMentoringTodayAssignments] = useState([]);
+  // v41-179: 멘토링 운영 기준(기수별). 좌석표 안내 시작 시점 등에 씁니다.
+  const [mentoringPolicy, setMentoringPolicy] = useState(FALLBACK_MENTORING_POLICY);
   const [dismissedAlerts, setDismissedAlerts] = useState([]);
   const [dismissedAlertMemos, setDismissedAlertMemos] = useState({});
   const [selectedSeatNo, setSelectedSeatNo] = useState(null);
@@ -2985,6 +2988,7 @@ export default function Page() {
       setEvents(data.events || []);
       setReports(data.reports || []);
       setMentoringTodayAssignments(data.todayMentoringAssignments || []);
+      if (data.mentoringPolicy) setMentoringPolicy(normalizeMentoringPolicy(data.mentoringPolicy));
       const serverFocusAcks = Array.isArray(data.fieldFocusAcknowledgements) ? data.fieldFocusAcknowledgements : [];
       setFieldFocusAcknowledgements(serverFocusAcks);
       setDismissedAlerts(serverFocusAcks.map((item) => item.alert_id).filter(Boolean));
@@ -5611,7 +5615,7 @@ export default function Page() {
         {isActiveTabAllowed && activeTab === 'dashboard' ? (
           <>
             <AlertCenter alerts={scheduleAlerts} nowTick={nowTick} onConfirm={confirmScheduleAlert} onNotifyParent={notifyParent} onParentConfirmed={(alert) => dismissFocusAlert(alert, '학부모 확인 완료')} getParentAlertSentInfo={getParentAlertSentInfo} />
-            <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} checksBySession={checksBySession} defaultSchedule={defaultSchedule} todaySchedules={todaySchedules} todayScheduleBreaks={todayScheduleBreaks} sessions={sessions} onGoSchedule={goToScheduleFromSeat} onGoStudentCare={goToStudentCareFromSeat} onGoStudentInfo={goToStudentInfoFromSeat} />
+            <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} mentoringPolicy={mentoringPolicy} checksBySession={checksBySession} defaultSchedule={defaultSchedule} todaySchedules={todaySchedules} todayScheduleBreaks={todayScheduleBreaks} sessions={sessions} onGoSchedule={goToScheduleFromSeat} onGoStudentCare={goToStudentCareFromSeat} onGoStudentInfo={goToStudentInfoFromSeat} />
           </>
         ) : null}
 
@@ -7013,7 +7017,7 @@ function buildKioskHoldHistoryGroups(history = []) {
   }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedSeatNo, selectSeat, students, nowTick, apiFetch, loadDashboard, setMessage, currentUser, scheduleAlerts = [], onDismissFocusAlert, dismissedAlertMemos = {}, mentoringTodayAssignments = [], checksBySession = {}, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, todaySchedules = [], todayScheduleBreaks = [], sessions = [], onGoSchedule, onGoStudentCare, onGoStudentInfo }) {
+function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedSeatNo, selectSeat, students, nowTick, apiFetch, loadDashboard, setMessage, currentUser, scheduleAlerts = [], onDismissFocusAlert, dismissedAlertMemos = {}, mentoringTodayAssignments = [], checksBySession = {}, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, todaySchedules = [], todayScheduleBreaks = [], sessions = [], onGoSchedule, onGoStudentCare, onGoStudentInfo, mentoringPolicy = FALLBACK_MENTORING_POLICY }) {
   const [seatFilter, setSeatFilter] = useState('all');
   const [seatSearch, setSeatSearch] = useState('');
   const [quickMode, setQuickMode] = useState(false);
@@ -7427,7 +7431,8 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
       let end = timeToMinutes(slot.end_time || slot.endTime);
       if (start === null) continue;
       if (end === null || end <= start) end = start + 50;
-      if (nowMinutes < start - 10 || nowMinutes >= end) continue;
+      // v41-179: 좌석표에 멘토링 안내를 띄우기 시작하는 시점은 운영 기준을 따릅니다.
+      if (nowMinutes < start - (mentoringPolicy?.seatBoardLeadMinutes ?? 10) || nowMinutes >= end) continue;
 
       const studentId = item.student_id || item.students?.id;
       if (!studentId) continue;
@@ -7452,7 +7457,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
     }
 
     return { byStudentId, bySeatNo };
-  }, [mentoringTodayAssignments, nowTick, seatsForDisplay, sessionBySeat, students]);
+  }, [mentoringTodayAssignments, nowTick, seatsForDisplay, sessionBySeat, students, mentoringPolicy]);
 
   function getMentoringCue(row) {
     const defaultSeatStudent = defaultSeatStudentByNo[Number(row?.seat?.seat_no)] || null;
@@ -8244,15 +8249,12 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
 
 
 function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged, onOpenStudentCare, onOpenMentoringSettings, initialActiveDay = 1, cohortStudentIds = null }) {
-  const dayOptions = [
-    [1, '월요일'],
-    [2, '화요일'],
-    [3, '수요일'],
-    [4, '목요일'],
-    [5, '금요일'],
-  ];
-  const defaultMentoringDays = [1, 3, 5];
-  const allowedMentoringDays = dayOptions.map(([day]) => day);
+  // v41-179: 멘토링 요일은 운영 기준(기수별 설정)을 따릅니다.
+  const [mentoringPolicy, setMentoringPolicy] = useState(FALLBACK_MENTORING_POLICY);
+  const dayLabelFull = { 1: '월요일', 2: '화요일', 3: '수요일', 4: '목요일', 5: '금요일' };
+  const allowedMentoringDays = getSelectableMentoringDays(mentoringPolicy);
+  const dayOptions = allowedMentoringDays.map((day) => [day, dayLabelFull[day]]);
+  const defaultMentoringDays = mentoringPolicy.baseDays;
   const defaultSlotOptions = useMemo(() => buildDefaultMentoringSlotOptions(defaultSchedule), [defaultSchedule]);
   const firstDefaultSlotOption = defaultSlotOptions[0] || { key: '1차시|09:00|09:50', label: '1차시', startTime: '09:00', endTime: '09:50' };
   // v41-167: 배정 API는 학생 상품 카테고리를 내려주지 않으므로 학생 목록에서 조회표를 만듭니다.
@@ -8404,6 +8406,8 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
     setDateAssignmentConflicts(data.dateAssignmentConflicts || []);
     setDateOverrideActive(Boolean(data.dateOverrideActive));
     setMentorStudentLinks(data.mentorStudentLinks || []);
+    // v41-179: 요일 선택지는 운영 기준을 따릅니다.
+    if (data.mentoringPolicy) setMentoringPolicy(normalizeMentoringPolicy(data.mentoringPolicy));
   }
 
   function dayOfWeekForDate(dateString = selectedDate) {
@@ -18355,6 +18359,39 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
   // (v41-171 에서 MentoringTab 용 헬퍼 이름이 이 화면까지 잘못 들어가 설정 화면이 열리지 않았습니다)
   // v41-178: 지금 어느 기수의 멘토링 설정을 보고 있는지, 그리고 새 기수 준비용 복사.
   const editingCohort = cohortOptions.find((cohort) => String(cohort.id) === String(cohortScopeId)) || null;
+  // v41-179: 운영 기준(기본 요일·차시당 인원 등)을 실제 설정으로 편집합니다.
+  const [policyDraft, setPolicyDraft] = useState(FALLBACK_MENTORING_POLICY);
+  const [policyBusy, setPolicyBusy] = useState(false);
+  const [hasCohortPolicy, setHasCohortPolicy] = useState(false);
+
+  function togglePolicyDay(field, day) {
+    setPolicyDraft((prev) => {
+      const current = new Set((prev?.[field] || []).map(Number));
+      if (current.has(day)) current.delete(day); else current.add(day);
+      return normalizeMentoringPolicy({ ...prev, [field]: [...current] });
+    });
+  }
+
+  async function saveMentoringPolicy(reset = false) {
+    try {
+      setPolicyBusy(true);
+      const data = await apiFetch('/api/mentoring', {
+        method: 'POST',
+        body: JSON.stringify(reset
+          ? { action: 'resetMentoringPolicy' }
+          : { action: 'saveMentoringPolicy', policy: normalizeMentoringPolicy(policyDraft) }),
+      });
+      if (data.mentoringPolicy) setPolicyDraft(normalizeMentoringPolicy(data.mentoringPolicy));
+      setHasCohortPolicy(Boolean(data.hasCohortMentoringPolicy));
+      setMessage?.(reset ? '이 기수 전용 운영 기준을 해제했습니다.' : '운영 기준을 저장했습니다.');
+      onMentoringChanged?.();
+    } catch (error) {
+      setMessage?.(error?.message || '운영 기준 저장 실패');
+    } finally {
+      setPolicyBusy(false);
+    }
+  }
+
   const [copySourceCohortId, setCopySourceCohortId] = useState('');
   const [copyBusy, setCopyBusy] = useState(false);
 
@@ -18439,6 +18476,9 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
       const params = new URLSearchParams({ date: getKstDateString() });
       const data = await apiFetch(`/api/mentoring?${params.toString()}`);
       applyMentoringData(data);
+      // v41-179: 운영 기준도 함께 받아 편집칸에 올립니다.
+      setPolicyDraft(normalizeMentoringPolicy(data.mentoringPolicy || FALLBACK_MENTORING_POLICY));
+      setHasCohortPolicy(Boolean(data.hasCohortMentoringPolicy));
       setNotice(data.warning || '멘토링 기본 설정을 불러왔습니다.');
     } catch (error) {
       setNotice(error.message || '멘토링 기본 설정을 불러오지 못했습니다.');
@@ -18607,16 +18647,83 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
             </div>
           );
         })}
-        <div className="mentoring-mentor-card mentoring-policy-card">
-          <strong>운영 기준</strong>
-          <span>기본 요일: 월·수·금</span>
-          <span>임시 추가: 화·목 가능</span>
-          <span>차시: 기본 시간표의 1~8차시</span>
-          <span>{mentoringDefaultSlotOptions[0]?.startTime || '09:00'}~{mentoringDefaultSlotOptions.at(-1)?.endTime || '17:50'} 기준</span>
-          <span>차시당 권장: 3~4명</span>
-          <span>요일 템플릿 → 날짜별 일정 자동 반영</span>
-          <span>당일 변경: 날짜별 화면에서 수정</span>
-          <span>좌석표 표시: 차시 시작 10분 전~차시 종료</span>
+        {/* v41-179: 고정 안내문이던 운영 기준을 기수별로 저장되는 설정으로 바꿨습니다. */}
+        <div className="mentoring-mentor-card mentoring-policy-card is-editable">
+          <div className="mentoring-policy-head">
+            <strong>운영 기준</strong>
+            <em>{editingCohort ? `${editingCohort.name} 기준` : (hasCohortPolicy ? '이 기수 전용' : '공통 기준')}</em>
+          </div>
+
+          <label className="mentoring-policy-field">
+            <span>기본 요일</span>
+            <div className="mentoring-policy-days">
+              {MENTORING_DAY_OPTIONS.map(([day, label]) => (
+                <button
+                  key={`base-${day}`}
+                  type="button"
+                  className={(policyDraft.baseDays || []).includes(day) ? 'active' : ''}
+                  onClick={() => togglePolicyDay('baseDays', day)}
+                  disabled={policyBusy}
+                >{label}</button>
+              ))}
+            </div>
+            <i>기본 차시를 자동으로 만드는 요일입니다.</i>
+          </label>
+
+          <label className="mentoring-policy-field">
+            <span>임시 추가 가능 요일</span>
+            <div className="mentoring-policy-days">
+              {MENTORING_DAY_OPTIONS.map(([day, label]) => (
+                <button
+                  key={`extra-${day}`}
+                  type="button"
+                  className={(policyDraft.extraDays || []).includes(day) ? 'active' : ''}
+                  onClick={() => togglePolicyDay('extraDays', day)}
+                  disabled={policyBusy || (policyDraft.baseDays || []).includes(day)}
+                  title={(policyDraft.baseDays || []).includes(day) ? '이미 기본 요일입니다.' : ''}
+                >{label}</button>
+              ))}
+            </div>
+            <i>필요할 때만 차시를 추가로 만들 수 있는 요일입니다.</i>
+          </label>
+
+          <label className="mentoring-policy-field">
+            <span>차시당 권장 인원</span>
+            <div className="mentoring-policy-range">
+              <input type="number" min="1" max="30" value={policyDraft.minCapacity}
+                onChange={(event) => setPolicyDraft((prev) => ({ ...prev, minCapacity: Number(event.target.value) }))} disabled={policyBusy} />
+              <b>~</b>
+              <input type="number" min="1" max="30" value={policyDraft.maxCapacity}
+                onChange={(event) => setPolicyDraft((prev) => ({ ...prev, maxCapacity: Number(event.target.value) }))} disabled={policyBusy} />
+              <em>명</em>
+            </div>
+          </label>
+
+          <label className="mentoring-policy-field">
+            <span>좌석표 안내 시작</span>
+            <div className="mentoring-policy-range">
+              <em>차시 시작</em>
+              <input type="number" min="0" max="120" value={policyDraft.seatBoardLeadMinutes}
+                onChange={(event) => setPolicyDraft((prev) => ({ ...prev, seatBoardLeadMinutes: Number(event.target.value) }))} disabled={policyBusy} />
+              <em>분 전 ~ 차시 종료</em>
+            </div>
+          </label>
+
+          <div className="mentoring-policy-fixed">
+            <span>차시: 기본 시간표의 1~8차시 ({mentoringDefaultSlotOptions[0]?.startTime || '09:00'}~{mentoringDefaultSlotOptions.at(-1)?.endTime || '17:50'} 기준)</span>
+            <span>요일 템플릿 → 날짜별 일정 자동 반영 · 당일 변경은 날짜별 화면에서</span>
+          </div>
+
+          <div className="mentoring-policy-actions">
+            <button type="button" className="primary" onClick={() => saveMentoringPolicy(false)} disabled={policyBusy}>
+              {policyBusy ? '저장 중...' : '운영 기준 저장'}
+            </button>
+            {hasCohortPolicy ? (
+              <button type="button" className="secondary" onClick={() => { if (confirm('이 기수 전용 운영 기준을 해제할까요?\n\n해제하면 공통 기준을 따릅니다.')) saveMentoringPolicy(true); }} disabled={policyBusy}>
+                전용 기준 해제
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 
