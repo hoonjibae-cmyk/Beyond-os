@@ -2352,6 +2352,17 @@ export default function Page() {
   const selectedSession = selectedSeatNo ? sessionBySeat[selectedSeatNo] : null;
   const selectedSeat = selectedSeatNo ? seatsForDisplay.find((item) => Number(item.seat_no) === Number(selectedSeatNo)) : null;
   const selectedSeatStudent = selectedSession?.students || selectedSeat?.current_student || null;
+  // v41-173: 학습 체크 입력창은 학생이 바뀌면 반드시 비웁니다.
+  // 좌석을 눌러 고르면 selectSeat 에서 비우지만, 좌석 배정이 바뀌어 같은 자리에
+  // 다른 학생이 앉는 경우처럼 selectSeat 를 거치지 않는 경로가 있어 여기서 한 번 더 막습니다.
+  const studyCheckOwnerRef = useRef('');
+  useEffect(() => {
+    const owner = `${selectedSeatNo || ''}:${selectedSession?.student_id || ''}`;
+    if (studyCheckOwnerRef.current === owner) return;
+    studyCheckOwnerRef.current = owner;
+    setForm((prev) => (prev.studyContent ? { ...prev, studyContent: '' } : prev));
+  }, [selectedSeatNo, selectedSession?.student_id]);
+
   const selectedStudentForPanel = selectedSeatStudent ? mergeStudentGuardianSource(selectedSeatStudent, students) : null;
   const selectedPanelGuardians = selectedStudentForPanel ? getActiveGuardians(selectedStudentForPanel, 'daily') : [];
   const selectedReport = selectedSession ? reportsBySession[selectedSession.id] : null;
@@ -7691,6 +7702,10 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
       }
       rememberQuickCombo();
       setSelectedQuickSeats([]);
+      // v41-173: 저장한 학습 내용이 남아 있어 다음 학생 순찰 때마다 지워야 했습니다.
+      // 과목·학습 상태는 이어서 쓰는 값이라 그대로 두고, 학생마다 다른 학습 내용만 비웁니다.
+      // (방금 저장한 조합은 아래 [최근 입력값]에서 다시 불러올 수 있습니다)
+      setQuickStudyContent('');
       await loadDashboard?.({ silent: true, suppressChangeNotice: true });
       const message = `${rows.length}개 좌석에 ${quickSubject} / ${quickStudyStatus} 순찰 체크를 저장했습니다.`;
       setQuickNotice(message);
