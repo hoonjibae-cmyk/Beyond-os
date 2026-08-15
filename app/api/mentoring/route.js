@@ -28,7 +28,8 @@ const DEFAULT_SLOT_WINDOWS = [
   ['8차시', '17:00', '17:50'],
 ];
 const DEFAULT_MENTORING_DAYS = [1, 3, 5];
-const ALLOWED_MENTORING_DAYS = [1, 2, 3, 4, 5];
+// v41-180: 토·일 멘토링도 가능합니다. 실제로 쓰는 요일은 운영 기준에서 기수별로 고릅니다.
+const ALLOWED_MENTORING_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 // ── v41-178: 멘토링 설정의 기수 구분 ─────────────────────────────────────
 // 요일별 차시(mentoring_slots)와 멘토별 담당학생(mentoring_mentor_students)은
@@ -302,7 +303,7 @@ function sanitizeSlot(body = {}) {
   const minCapacity = Math.max(1, Math.min(20, Number(body.minCapacity || body.min_capacity || 3)));
   const maxCapacity = Math.max(minCapacity, Math.min(20, Number(body.maxCapacity || body.max_capacity || 4)));
   const errors = [];
-  if (!ALLOWED_MENTORING_DAYS.includes(day)) errors.push('멘토링 요일은 평일(월~금)만 선택할 수 있습니다.');
+  if (!ALLOWED_MENTORING_DAYS.includes(day)) errors.push('멘토링 요일이 올바르지 않습니다.');
   if (startMinutes === null) errors.push('시작 시간을 입력하세요.');
   if (endMinutes === null) errors.push('종료 시간을 입력하세요.');
   if (startMinutes !== null && endMinutes !== null && endMinutes <= startMinutes) errors.push('종료 시간은 시작 시간보다 늦어야 합니다.');

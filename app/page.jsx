@@ -8251,7 +8251,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
 function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged, onOpenStudentCare, onOpenMentoringSettings, initialActiveDay = 1, cohortStudentIds = null }) {
   // v41-179: 멘토링 요일은 운영 기준(기수별 설정)을 따릅니다.
   const [mentoringPolicy, setMentoringPolicy] = useState(FALLBACK_MENTORING_POLICY);
-  const dayLabelFull = { 1: '월요일', 2: '화요일', 3: '수요일', 4: '목요일', 5: '금요일' };
+  const dayLabelFull = { 0: '일요일', 1: '월요일', 2: '화요일', 3: '수요일', 4: '목요일', 5: '금요일', 6: '토요일' };
   const allowedMentoringDays = getSelectableMentoringDays(mentoringPolicy);
   const dayOptions = allowedMentoringDays.map((day) => [day, dayLabelFull[day]]);
   const defaultMentoringDays = mentoringPolicy.baseDays;
