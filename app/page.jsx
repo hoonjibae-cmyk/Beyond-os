@@ -5851,6 +5851,7 @@ export default function Page() {
               defaultScheduleLoading={defaultScheduleLoading}
               cohortOptions={cohortOptions}
               cohortScheduleConfigs={defaultScheduleCohortConfigs}
+              cohortStudentIds={cohortScopeStudentIds}
               defaultScheduleEditCohortId={defaultScheduleEditCohortId}
               selectDefaultScheduleTarget={selectDefaultScheduleTarget}
               resetCohortDefaultSchedule={resetCohortDefaultSchedule}
@@ -18329,7 +18330,7 @@ function ReportSendStatusBanner({ sendConfig, reportType = 'daily' }) {
 }
 
 
-function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged }) {
+function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged, cohortStudentIds = null }) {
   const [mentors, setMentors] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [mentorStudentLinks, setMentorStudentLinks] = useState([]);
@@ -18342,6 +18343,14 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
   const activeStudents = useMemo(() => (students || []).filter((student) => (student.status || 'active') === 'active').sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko')), [students]);
   const activeMentors = useMemo(() => (mentors || []).filter((mentor) => mentor.is_active !== false).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0) || String(a.mentor_name || '').localeCompare(String(b.mentor_name || ''), 'ko')), [mentors]);
   const mentoringDefaultSlotOptions = useMemo(() => buildDefaultMentoringSlotOptions(defaultSchedule), [defaultSchedule]);
+
+  // v41-178: 멘토별 배정 수도 헤더 [기수 보기] 기준으로 셉니다.
+  // (v41-171 에서 MentoringTab 용 헬퍼 이름이 이 화면까지 잘못 들어가 설정 화면이 열리지 않았습니다)
+  const inCohortScope = useCallback((item) => {
+    if (!cohortStudentIds) return true;
+    const allowed = new Set(cohortStudentIds.map(String));
+    return allowed.has(String(item?.student_id || item?.students?.id || ''));
+  }, [cohortStudentIds]);
 
   const assignmentsByMentor = useMemo(() => {
     const grouped = {};
@@ -18880,7 +18889,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 function SettingsTab({
   settingsView, setSettingsView, students, scopedStudents = students, cohortName = '', seatsForDisplay, openStudentEditor, reloadStudents, diagnostics, loading, runCheck, cleanup,
   operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, bulkGenerateSchedules, scheduleCoverage, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
-  cohortOptions = [], cohortScheduleConfigs = {}, defaultScheduleEditCohortId = '', selectDefaultScheduleTarget, resetCohortDefaultSchedule,
+  cohortOptions = [], cohortScheduleConfigs = {}, defaultScheduleEditCohortId = '', selectDefaultScheduleTarget, resetCohortDefaultSchedule, cohortStudentIds = null,
 }) {
   useEffect(() => {
     if (settingsView === 'users' && !canUseUserManagement) setSettingsView('students');
@@ -18989,6 +18998,7 @@ function SettingsTab({
       {settingsView === 'mentoring' ? (
         <MentoringBaseSettingsTab
           students={scopedStudents}
+          cohortStudentIds={cohortStudentIds}
           apiFetch={apiFetch}
           setMessage={setMessage}
           defaultSchedule={defaultScheduleConfig?.variants?.weekday || defaultSchedule}
