@@ -214,9 +214,27 @@ function buildMentoringSlotWindowsFromDefaultSchedule(defaultSchedule = {}) {
   return result;
 }
 
-async function getDefaultMentoringSlotWindows(supabase) {
-  const settings = await getDefaultScheduleSettings(supabase);
+// v41-180.1: 날짜를 주면 그 날짜 기준(= 그 기수, 그 요일 유형)의 시간표로 차시 구간을 만듭니다.
+// 날짜 없이 부르면 예전처럼 공통 평일 시간표를 씁니다.
+async function getDefaultMentoringSlotWindows(supabase, dateString) {
+  const settings = dateString
+    ? await getDefaultScheduleSettings(supabase, dateString)
+    : await getDefaultScheduleSettings(supabase);
   return buildMentoringSlotWindowsFromDefaultSchedule(settings);
+}
+
+// 기수 기간 안에서 그 요일에 해당하는 첫 날짜를 찾습니다. (차시 시간을 뽑을 대표 날짜)
+function findRepresentativeDateForDay(day, range = null) {
+  const target = Number(day);
+  const start = range?.start || getKstDateString();
+  // 기간 시작일부터 최대 7일만 훑으면 그 요일이 반드시 한 번 나옵니다.
+  for (let i = 0; i < 7; i += 1) {
+    const date = addDays(start, i);
+    if (range?.end && date > range.end) break;
+    if (getKstDayOfWeek(date) === target) return date;
+  }
+  // 기수 기간이 7일보다 짧아 해당 요일이 없으면 오늘 기준으로 다음 그 요일을 씁니다.
+  return getNextDateForDay(target, getKstDateString());
 }
 
 
@@ -791,7 +809,23 @@ async function seedDefaults(supabase, cohortId = null) {
     if (error) throw error;
   }
 
-  const defaultSlotWindows = await getDefaultMentoringSlotWindows(supabase);
+  // v41-180.1: 차시 시간은 '그 기수의 그 요일' 시간표에서 뽑습니다.
+  // 예전에는 날짜 없이 읽어 공통 평일 시간표만 쓰였고, 그래서 2기 토요일에도
+  // 1기(공통) 평일 시간이 들어갔습니다.
+  const cohortRowsForSeed = await listCohortRows(supabase);
+  const seedCohort = cohortId ? cohortRowsForSeed.find((row) => String(row.id) === String(cohortId)) : null;
+  const cohortRange = seedCohort
+    ? { start: String(seedCohort.start_date || '').slice(0, 10), end: String(seedCohort.end_date || '').slice(0, 10) }
+    : null;
+
+  const seedDays = mentoringPolicy.baseDays.length ? mentoringPolicy.baseDays : DEFAULT_MENTORING_DAYS;
+  const slotWindowsByDay = {};
+  for (const day of seedDays) {
+    slotWindowsByDay[day] = await getDefaultMentoringSlotWindows(
+      supabase,
+      findRepresentativeDateForDay(day, cohortRange),
+    );
+  }
   const { data: slots, error: slotError } = await withCohort(supabase
     .from('mentoring_slots')
     .select('id, day_of_week, slot_label, start_time, end_time, min_capacity, max_capacity, sort_order, is_active, cohort_id'), cohortId);
@@ -810,8 +844,8 @@ async function seedDefaults(supabase, cohortId = null) {
 
   const inserts = [];
   let updatedSlots = 0;
-  for (const day of (mentoringPolicy.baseDays.length ? mentoringPolicy.baseDays : DEFAULT_MENTORING_DAYS)) {
-    defaultSlotWindows.forEach((slotWindow, index) => {
+  for (const day of seedDays) {
+    (slotWindowsByDay[day] || []).forEach((slotWindow, index) => {
       const label = slotWindow.label || `${index + 1}차시`;
       const start = normalizeSlotClock(slotWindow.start);
       const end = normalizeSlotClock(slotWindow.end);

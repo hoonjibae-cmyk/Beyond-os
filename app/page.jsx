@@ -5813,6 +5813,7 @@ export default function Page() {
             setMessage={setMessage}
             currentUser={currentUser}
             defaultSchedule={defaultScheduleConfig?.variants?.weekday || defaultSchedule}
+            defaultScheduleConfig={defaultScheduleConfig}
             onMentoringChanged={() => loadDashboard({ silent: true, runAutoCheckout: false, suppressChangeNotice: true })}
             onOpenStudentCare={openStudentCareFromMentoring}
             onOpenMentoringSettings={() => { setSettingsView('mentoring'); setActiveTab('settings'); }}
@@ -8248,14 +8249,21 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
 
 
 
-function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged, onOpenStudentCare, onOpenMentoringSettings, initialActiveDay = 1, cohortStudentIds = null }) {
+function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, defaultScheduleConfig = null, onMentoringChanged, onOpenStudentCare, onOpenMentoringSettings, initialActiveDay = 1, cohortStudentIds = null }) {
   // v41-179: 멘토링 요일은 운영 기준(기수별 설정)을 따릅니다.
   const [mentoringPolicy, setMentoringPolicy] = useState(FALLBACK_MENTORING_POLICY);
   const dayLabelFull = { 0: '일요일', 1: '월요일', 2: '화요일', 3: '수요일', 4: '목요일', 5: '금요일', 6: '토요일' };
   const allowedMentoringDays = getSelectableMentoringDays(mentoringPolicy);
   const dayOptions = allowedMentoringDays.map((day) => [day, dayLabelFull[day]]);
   const defaultMentoringDays = mentoringPolicy.baseDays;
-  const defaultSlotOptions = useMemo(() => buildDefaultMentoringSlotOptions(defaultSchedule), [defaultSchedule]);
+  // v41-180.1: 차시 시간은 '보고 있는 날짜'의 시간표를 씁니다.
+  // 예전에는 공통 평일 시간표만 봐서, 2기 날짜를 열어도 1기(공통) 시간이 나왔습니다.
+  const defaultSlotOptions = useMemo(() => {
+    const forDate = defaultScheduleConfig?.variants
+      ? resolveScheduleForDate(defaultScheduleConfig, selectedDate)
+      : defaultSchedule;
+    return buildDefaultMentoringSlotOptions(forDate);
+  }, [defaultScheduleConfig, defaultSchedule, selectedDate]);
   const firstDefaultSlotOption = defaultSlotOptions[0] || { key: '1차시|09:00|09:50', label: '1차시', startTime: '09:00', endTime: '09:50' };
   // v41-167: 배정 API는 학생 상품 카테고리를 내려주지 않으므로 학생 목록에서 조회표를 만듭니다.
   const productTierByStudentId = useMemo(() => {
@@ -18341,7 +18349,7 @@ function ReportSendStatusBanner({ sendConfig, reportType = 'daily' }) {
 }
 
 
-function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged, cohortStudentIds = null, cohortOptions = [], cohortScopeId = '' }) {
+function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, defaultScheduleConfig = null, onMentoringChanged, cohortStudentIds = null, cohortOptions = [], cohortScopeId = '' }) {
   const [mentors, setMentors] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [mentorStudentLinks, setMentorStudentLinks] = useState([]);
@@ -18353,7 +18361,15 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
 
   const activeStudents = useMemo(() => (students || []).filter((student) => (student.status || 'active') === 'active').sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko')), [students]);
   const activeMentors = useMemo(() => (mentors || []).filter((mentor) => mentor.is_active !== false).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0) || String(a.mentor_name || '').localeCompare(String(b.mentor_name || ''), 'ko')), [mentors]);
-  const mentoringDefaultSlotOptions = useMemo(() => buildDefaultMentoringSlotOptions(defaultSchedule), [defaultSchedule]);
+  // v41-180.1: 안내에 쓰는 차시 시간도 이 기수 기준으로 뽑습니다.
+  const mentoringDefaultSlotOptions = useMemo(() => {
+    const cohort = cohortOptions.find((item) => String(item.id) === String(cohortScopeId));
+    const sampleDate = cohort?.startDate || getKstDateString();
+    const forCohort = defaultScheduleConfig?.variants
+      ? resolveScheduleForDate(defaultScheduleConfig, sampleDate)
+      : defaultSchedule;
+    return buildDefaultMentoringSlotOptions(forCohort);
+  }, [defaultScheduleConfig, defaultSchedule, cohortOptions, cohortScopeId]);
 
   // v41-178: 멘토별 배정 수도 헤더 [기수 보기] 기준으로 셉니다.
   // (v41-171 에서 MentoringTab 용 헬퍼 이름이 이 화면까지 잘못 들어가 설정 화면이 열리지 않았습니다)
@@ -19170,6 +19186,7 @@ function SettingsTab({
           apiFetch={apiFetch}
           setMessage={setMessage}
           defaultSchedule={defaultScheduleConfig?.variants?.weekday || defaultSchedule}
+          defaultScheduleConfig={defaultScheduleConfig}
           onMentoringChanged={onMentoringChanged}
         />
       ) : null}
