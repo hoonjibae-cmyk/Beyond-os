@@ -2197,6 +2197,9 @@ export default function Page() {
   // 헤더에서 한 번 고르면 학생 목록이 나오는 모든 화면이 그 기수 명단으로 좁혀집니다.
   const [cohortScopeId, setCohortScopeId] = useState('');
   const cohortScopeAutoRef = useRef(false);
+  // apiFetch 는 함수 선언 시점의 값을 잡으므로 ref 로 최신값을 들고 있습니다.
+  const cohortScopeIdRef = useRef('');
+  useEffect(() => { cohortScopeIdRef.current = String(cohortScopeId || ''); }, [cohortScopeId]);
   const [scheduleView, setScheduleView] = useState('day');
   const [scheduleBaseDate, setScheduleBaseDate] = useState(getKstDateString());
   const [scheduleStudentFilter, setScheduleStudentFilter] = useState('all');
@@ -2750,6 +2753,9 @@ export default function Page() {
         ...(adminPassword ? { 'x-admin-password': adminPassword } : {}),
         ...(appSessionToken ? { 'x-app-session-token': appSessionToken } : {}),
         ...(clientIdRef.current ? { 'x-beyond-client-id': clientIdRef.current } : {}),
+        // v41-178: 헤더 [기수 보기]에서 고른 기수를 모든 요청에 함께 보냅니다.
+        // 멘토링 요일/차시/담당학생처럼 기수마다 다른 설정이 이 값을 씁니다.
+        ...(cohortScopeIdRef.current ? { 'x-beyond-cohort-id': cohortScopeIdRef.current } : {}),
         ...(options.headers || {}),
       },
     });
@@ -5852,6 +5858,7 @@ export default function Page() {
               cohortOptions={cohortOptions}
               cohortScheduleConfigs={defaultScheduleCohortConfigs}
               cohortStudentIds={cohortScopeStudentIds}
+              settingsCohortScopeId={cohortScopeId}
               defaultScheduleEditCohortId={defaultScheduleEditCohortId}
               selectDefaultScheduleTarget={selectDefaultScheduleTarget}
               resetCohortDefaultSchedule={resetCohortDefaultSchedule}
@@ -18330,7 +18337,7 @@ function ReportSendStatusBanner({ sendConfig, reportType = 'daily' }) {
 }
 
 
-function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged, cohortStudentIds = null }) {
+function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, onMentoringChanged, cohortStudentIds = null, cohortOptions = [], cohortScopeId = '' }) {
   const [mentors, setMentors] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [mentorStudentLinks, setMentorStudentLinks] = useState([]);
@@ -18346,6 +18353,32 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
 
   // v41-178: 멘토별 배정 수도 헤더 [기수 보기] 기준으로 셉니다.
   // (v41-171 에서 MentoringTab 용 헬퍼 이름이 이 화면까지 잘못 들어가 설정 화면이 열리지 않았습니다)
+  // v41-178: 지금 어느 기수의 멘토링 설정을 보고 있는지, 그리고 새 기수 준비용 복사.
+  const editingCohort = cohortOptions.find((cohort) => String(cohort.id) === String(cohortScopeId)) || null;
+  const [copySourceCohortId, setCopySourceCohortId] = useState('');
+  const [copyBusy, setCopyBusy] = useState(false);
+
+  async function copySlotsFromCohort() {
+    if (!copySourceCohortId) return;
+    const source = cohortOptions.find((cohort) => String(cohort.id) === String(copySourceCohortId));
+    if (!confirm(`${source?.name || '선택한 기수'}의 요일·차시 구성을 ${editingCohort?.name || '이 기수'}로 복사할까요?\n\n차시 틀만 가져오고 학생 배정과 담당학생은 복사하지 않습니다.`)) return;
+    try {
+      setCopyBusy(true);
+      const data = await apiFetch('/api/mentoring', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'copyCohortSlots', sourceCohortId: copySourceCohortId }),
+      });
+      setMessage?.(`차시 ${data.result?.copied || 0}개를 복사했습니다.`);
+      setCopySourceCohortId('');
+      await loadMentoringSettings();
+      onMentoringChanged?.();
+    } catch (error) {
+      setMessage?.(error?.message || '차시 복사 실패');
+    } finally {
+      setCopyBusy(false);
+    }
+  }
+
   const inCohortScope = useCallback((item) => {
     if (!cohortStudentIds) return true;
     const allowed = new Set(cohortStudentIds.map(String));
@@ -18527,6 +18560,32 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
         </div>
         <button type="button" className="secondary" onClick={seedDefaults} disabled={loading}>기본 시간표 기준 1~8차시 동기화</button>
       </div>
+
+      {/* v41-178: 멘토링 요일·차시·담당학생은 기수마다 다릅니다. 지금 어느 기수를 보고 있는지 항상 보이게 합니다. */}
+      {cohortOptions.length ? (
+        <div className="mentoring-cohort-bar clean-panel">
+          <div>
+            <strong>{editingCohort ? `${editingCohort.name} 멘토링 설정` : '진행 중인 기수의 멘토링 설정'}</strong>
+            <span>
+              {editingCohort ? `${editingCohort.startDate} ~ ${editingCohort.endDate} · ` : ''}
+              여기서 저장하는 요일·차시와 담당학생은 이 기수에만 적용됩니다. 기수는 화면 위 [기수 보기]에서 바꿉니다.
+            </span>
+          </div>
+          {cohortOptions.length > 1 ? (
+            <div className="mentoring-cohort-copy">
+              <select value={copySourceCohortId} onChange={(event) => setCopySourceCohortId(event.target.value)} disabled={copyBusy}>
+                <option value="">다른 기수에서 차시 가져오기</option>
+                {cohortOptions
+                  .filter((cohort) => String(cohort.id) !== String(cohortScopeId))
+                  .map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.name}</option>)}
+              </select>
+              <button type="button" className="secondary" onClick={copySlotsFromCohort} disabled={copyBusy || !copySourceCohortId}>
+                {copyBusy ? '복사 중...' : '차시 복사'}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mentoring-summary-grid">
         {activeMentors.map((mentor) => {
@@ -18889,7 +18948,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 function SettingsTab({
   settingsView, setSettingsView, students, scopedStudents = students, cohortName = '', seatsForDisplay, openStudentEditor, reloadStudents, diagnostics, loading, runCheck, cleanup,
   operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, bulkGenerateSchedules, scheduleCoverage, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
-  cohortOptions = [], cohortScheduleConfigs = {}, defaultScheduleEditCohortId = '', selectDefaultScheduleTarget, resetCohortDefaultSchedule, cohortStudentIds = null,
+  cohortOptions = [], cohortScheduleConfigs = {}, defaultScheduleEditCohortId = '', selectDefaultScheduleTarget, resetCohortDefaultSchedule, cohortStudentIds = null, settingsCohortScopeId = '',
 }) {
   useEffect(() => {
     if (settingsView === 'users' && !canUseUserManagement) setSettingsView('students');
@@ -18999,6 +19058,8 @@ function SettingsTab({
         <MentoringBaseSettingsTab
           students={scopedStudents}
           cohortStudentIds={cohortStudentIds}
+          cohortOptions={cohortOptions}
+          cohortScopeId={settingsCohortScopeId}
           apiFetch={apiFetch}
           setMessage={setMessage}
           defaultSchedule={defaultScheduleConfig?.variants?.weekday || defaultSchedule}

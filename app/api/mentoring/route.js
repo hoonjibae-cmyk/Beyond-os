@@ -24,6 +24,82 @@ const DEFAULT_SLOT_WINDOWS = [
 const DEFAULT_MENTORING_DAYS = [1, 3, 5];
 const ALLOWED_MENTORING_DAYS = [1, 2, 3, 4, 5];
 
+// ── v41-178: 멘토링 설정의 기수 구분 ─────────────────────────────────────
+// 요일별 차시(mentoring_slots)와 멘토별 담당학생(mentoring_mentor_students)은
+// 기수마다 다릅니다. 요청에 기수가 없으면 오늘이 속한 기수를, 그것도 없으면
+// 가장 먼저 시작한 기수를 씁니다.
+async function listCohortRows(supabase) {
+  try {
+    const { data } = await supabase
+      .from('cohorts')
+      .select('id, name, start_date, end_date')
+      .order('start_date', { ascending: true });
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// 날짜 기반 화면(날짜별 멘토링)은 그 날짜가 속한 기수를 씁니다.
+async function resolveCohortIdForDate(supabase, dateString) {
+  const cohorts = await listCohortRows(supabase);
+  if (!cohorts.length) return null;
+  const date = String(dateString || getKstDateString()).slice(0, 10);
+  const hit = cohorts.find((row) => (
+    String(row.start_date || '').slice(0, 10) <= date && date <= String(row.end_date || '').slice(0, 10)
+  ));
+  if (hit) return String(hit.id);
+  // 어느 기수에도 안 들어가는 날짜면 진행 중(없으면 첫) 기수를 씁니다.
+  return resolveMentoringCohortId(supabase, '');
+}
+
+// 요청 헤더(x-beyond-cohort-id)로도 기수를 받습니다.
+// 화면의 [기수 보기]가 모든 요청에 이 헤더를 실어 보내므로,
+// 개별 호출마다 cohortId 를 넣지 않아도 같은 기수를 바라봅니다.
+function getCohortIdFromRequest(request) {
+  try {
+    return String(request?.headers?.get?.('x-beyond-cohort-id') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+async function resolveMentoringCohortId(supabase, requestedCohortId) {
+  const requested = String(requestedCohortId || '').trim();
+  const cohorts = await listCohortRows(supabase);
+  if (!cohorts.length) return null;
+  if (requested && cohorts.some((row) => String(row.id) === requested)) return requested;
+  const today = getKstDateString();
+  const current = cohorts.find((row) => (
+    String(row.start_date || '').slice(0, 10) <= today && today <= String(row.end_date || '').slice(0, 10)
+  ));
+  return String((current || cohorts[0]).id);
+}
+
+// v41-178 SQL 실행 시점과 이 코드 배포 사이에 만들어진 행은 cohort_id 가 비어 있습니다.
+// 그대로 두면 어느 기수에서도 보이지 않으므로 가장 먼저 시작한 기수로 주워 담습니다.
+async function adoptOrphanMentoringRows(supabase) {
+  const cohorts = await listCohortRows(supabase);
+  if (!cohorts.length) return;
+  const firstCohortId = String(cohorts[0].id);
+  for (const table of ['mentoring_slots', 'mentoring_mentor_students']) {
+    try {
+      // 매번 UPDATE 를 날리지 않도록 비어 있는 행이 있는지 먼저 확인합니다.
+      const { data } = await supabase.from(table).select('id').is('cohort_id', null).limit(1);
+      if (!data || !data.length) continue;
+      await supabase.from(table).update({ cohort_id: firstCohortId }).is('cohort_id', null);
+    } catch {
+      // 컬럼이 아직 없으면(SQL 미실행) 조용히 넘어갑니다.
+    }
+  }
+}
+
+// 기수 컬럼이 아직 없는 환경(SQL 미실행)에서도 죽지 않도록,
+// cohortId 가 null 이면 필터를 걸지 않습니다.
+function withCohort(query, cohortId) {
+  return cohortId ? query.eq('cohort_id', cohortId) : query;
+}
+
 function normalizeSlotClock(value) {
   return String(value || '').slice(0, 5);
 }
@@ -376,15 +452,17 @@ async function getExistingWeeklyAssignmentConflicts(supabase, assignments = []) 
   return getScheduleConflictsForPairs(supabase, pairs);
 }
 
-async function materializeDateSchedule(supabase, scheduleDateInput = getKstDateString()) {
+async function materializeDateSchedule(supabase, scheduleDateInput = getKstDateString(), cohortIdInput = null) {
   const scheduleDate = normalizeDateString(scheduleDateInput);
   const day = getKstDayOfWeek(scheduleDate);
+  // v41-178: 날짜별 전개는 그 날짜가 속한 기수의 요일 템플릿을 씁니다.
+  const cohortId = cohortIdInput || await resolveCohortIdForDate(supabase, scheduleDate);
 
-  const { data: weeklySlots, error: weeklySlotsError } = await supabase
+  const { data: weeklySlots, error: weeklySlotsError } = await withCohort(supabase
     .from('mentoring_slots')
     .select('*')
     .eq('is_active', true)
-    .eq('day_of_week', day)
+    .eq('day_of_week', day), cohortId)
     .order('sort_order', { ascending: true })
     .order('start_time', { ascending: true });
   if (weeklySlotsError) throw weeklySlotsError;
@@ -490,11 +568,11 @@ async function loadDateSchedule(supabase, scheduleDateInput = getKstDateString()
     let weeklyAssignments = weeklyAssignmentsSource;
 
     if (!weeklySlotsSource.length) {
-      const { data: slotRows, error: slotRowsError } = await supabase
+      const { data: slotRows, error: slotRowsError } = await withCohort(supabase
         .from('mentoring_slots')
         .select('*')
         .eq('is_active', true)
-        .eq('day_of_week', day)
+        .eq('day_of_week', day), options.cohortId ?? null)
         .order('sort_order', { ascending: true })
         .order('start_time', { ascending: true });
       if (slotRowsError) throw slotRowsError;
@@ -556,7 +634,7 @@ async function loadDateSchedule(supabase, scheduleDateInput = getKstDateString()
   };
 
   try {
-    if (options.materialize) await materializeDateSchedule(supabase, scheduleDate);
+    if (options.materialize) await materializeDateSchedule(supabase, scheduleDate, options.cohortId ?? null);
 
     let { data: dateSlotsRaw, error: dateSlotsError } = await supabase
       .from('mentoring_date_slots')
@@ -645,7 +723,7 @@ async function loadDateSchedule(supabase, scheduleDateInput = getKstDateString()
   }
 }
 
-async function seedDefaults(supabase) {
+async function seedDefaults(supabase, cohortId = null) {
   const { data: mentors, error: mentorError } = await supabase
     .from('mentoring_mentors')
     .select('id, mentor_code');
@@ -658,9 +736,9 @@ async function seedDefaults(supabase) {
   }
 
   const defaultSlotWindows = await getDefaultMentoringSlotWindows(supabase);
-  const { data: slots, error: slotError } = await supabase
+  const { data: slots, error: slotError } = await withCohort(supabase
     .from('mentoring_slots')
-    .select('id, day_of_week, slot_label, start_time, end_time, min_capacity, max_capacity, sort_order, is_active');
+    .select('id, day_of_week, slot_label, start_time, end_time, min_capacity, max_capacity, sort_order, is_active, cohort_id'), cohortId);
   if (slotError) throw slotError;
 
   const activeSlotByDayLabel = new Map();
@@ -692,6 +770,8 @@ async function seedDefaults(supabase) {
         max_capacity: 4,
         sort_order: day * 10000 + index * 100 + (timeToMinutes(start) || 0),
         is_active: true,
+        // v41-178: 기본 차시는 지금 보고 있는 기수에 만듭니다.
+        ...(cohortId ? { cohort_id: cohortId } : {}),
       };
       if (!existing) {
         inserts.push(payload);
@@ -738,11 +818,11 @@ async function seedDefaults(supabase) {
   };
 }
 
-async function loadMentorStudentLinks(supabase) {
-  const { data, error } = await supabase
+async function loadMentorStudentLinks(supabase, cohortId = null) {
+  const { data, error } = await withCohort(supabase
     .from('mentoring_mentor_students')
     .select('*, students(id, name, school, grade, default_seat_no, status), mentoring_mentors(id, mentor_name, capacity_target, sort_order)')
-    .eq('is_active', true)
+    .eq('is_active', true), cohortId)
     .order('created_at', { ascending: true });
   if (!error) return { rows: data || [], warning: '' };
   const message = String(error.message || '').toLowerCase();
@@ -757,6 +837,7 @@ async function loadMentorStudentLinks(supabase) {
 }
 
 async function loadAll(supabase, options = {}) {
+  const cohortId = options.cohortId ?? null;
   const { data: mentors, error: mentorsError } = await supabase
     .from('mentoring_mentors')
     .select('*')
@@ -764,9 +845,9 @@ async function loadAll(supabase, options = {}) {
     .order('mentor_name', { ascending: true });
   if (mentorsError) throw mentorsError;
 
-  const { data: slots, error: slotsError } = await supabase
+  const { data: slots, error: slotsError } = await withCohort(supabase
     .from('mentoring_slots')
-    .select('*')
+    .select('*'), cohortId)
     .order('day_of_week', { ascending: true })
     .order('sort_order', { ascending: true })
     .order('start_time', { ascending: true });
@@ -779,15 +860,19 @@ async function loadAll(supabase, options = {}) {
     .order('created_at', { ascending: true });
   if (assignmentsError) throw assignmentsError;
   // 비활성 학생의 배정은 표시/생성 대상에서 제외합니다.(비활성화 시 즉시 연결 해제와 동일한 취지)
-  const assignments = (assignmentsRaw || []).filter((item) => item.students?.status !== 'inactive');
+  const slotIdSet = new Set((slots || []).map((slot) => String(slot.id)));
+  const assignments = (assignmentsRaw || [])
+    .filter((item) => item.students?.status !== 'inactive')
+    // v41-178: 다른 기수 차시에 걸린 배정은 이 화면에서 빼둡니다.
+    .filter((item) => !cohortId || !item.slot_id || slotIdSet.has(String(item.slot_id)));
 
   let mentorStudentLinks = [];
   let warning = '';
   try {
-    const { data: mentorStudentRows, error: mentorStudentError } = await supabase
+    const { data: mentorStudentRows, error: mentorStudentError } = await withCohort(supabase
       .from('mentoring_mentor_students')
       .select('*, students(id, name, school, grade, default_seat_no, status), mentoring_mentors(id, mentor_name, mentor_code, capacity_target, sort_order)')
-      .eq('is_active', true)
+      .eq('is_active', true), cohortId)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
     if (mentorStudentError) throw mentorStudentError;
@@ -807,6 +892,7 @@ async function loadAll(supabase, options = {}) {
   let dateSchedule = { dateSlots: [], dateAssignments: [], dateAssignmentConflicts: [], dateWarning: '', dateScheduleDate: selectedDate };
   try {
     dateSchedule = await loadDateSchedule(supabase, selectedDate, {
+      cohortId,
       materialize: options.materializeDate === true,
       weeklySlots: slots || [],
       weeklyAssignments: assignments || [],
@@ -846,6 +932,8 @@ async function saveMentor(supabase, body) {
 
 
 async function saveMentorStudents(supabase, body) {
+  // v41-178: 담당학생은 기수마다 따로 잡습니다.
+  const cohortId = await resolveMentoringCohortId(supabase, body.cohortId);
   const mentorId = body.mentorId || body.mentor_id;
   const studentIds = normalizeStudentIds(body);
   if (!mentorId) {
@@ -868,22 +956,22 @@ async function saveMentorStudents(supabase, body) {
 
   // 저장 대상 멘토의 기존 담당 연결을 비활성화합니다.
   // 이후 선택된 학생만 다시 활성화하므로, 설정 화면의 선택 상태가 최종 기준이 됩니다.
-  const { error: deactivateMentorError } = await supabase
+  const { error: deactivateMentorError } = await withCohort(supabase
     .from('mentoring_mentor_students')
     .update({ is_active: false })
     .eq('mentor_id', mentorId)
-    .eq('is_active', true);
+    .eq('is_active', true), cohortId);
   if (deactivateMentorError) throw deactivateMentorError;
 
   if (studentIds.length) {
     // 한 학생이 여러 멘토에게 동시에 흰색 담당학생으로 보이지 않도록
     // 이번 멘토에게 저장되는 학생은 다른 멘토의 활성 담당 연결에서 제외합니다.
-    const { error: deactivateOthersError } = await supabase
+    const { error: deactivateOthersError } = await withCohort(supabase
       .from('mentoring_mentor_students')
       .update({ is_active: false })
       .in('student_id', studentIds)
       .eq('is_active', true)
-      .neq('mentor_id', mentorId);
+      .neq('mentor_id', mentorId), cohortId);
     if (deactivateOthersError) throw deactivateOthersError;
 
     const rows = studentIds.map((studentId, index) => ({
@@ -891,10 +979,12 @@ async function saveMentorStudents(supabase, body) {
       student_id: studentId,
       sort_order: index + 1,
       is_active: true,
+      ...(cohortId ? { cohort_id: cohortId } : {}),
     }));
+    // v41-178: 중복 방지 인덱스가 (기수, 멘토, 학생)으로 바뀌어 onConflict 도 맞춥니다.
     const { error: upsertError } = await supabase
       .from('mentoring_mentor_students')
-      .upsert(rows, { onConflict: 'mentor_id,student_id' });
+      .upsert(rows, { onConflict: cohortId ? 'cohort_id,mentor_id,student_id' : 'mentor_id,student_id' });
     if (upsertError) throw upsertError;
   }
 
@@ -907,6 +997,56 @@ async function saveMentorStudents(supabase, body) {
   };
 }
 
+// v41-178: 새 기수를 준비할 때 이전 기수의 요일/차시 구성을 그대로 가져옵니다.
+// 학생 배정과 담당학생은 기수마다 다르므로 복사하지 않고 차시 틀만 옮깁니다.
+async function copyCohortSlots(supabase, body) {
+  const targetCohortId = await resolveMentoringCohortId(supabase, body.cohortId);
+  const sourceCohortId = String(body.sourceCohortId || '').trim();
+  if (!targetCohortId || !sourceCohortId) {
+    const error = new Error('복사할 기수와 붙여넣을 기수를 모두 선택하세요.');
+    error.status = 400;
+    throw error;
+  }
+  if (sourceCohortId === String(targetCohortId)) {
+    const error = new Error('같은 기수끼리는 복사할 수 없습니다.');
+    error.status = 400;
+    throw error;
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from('mentoring_slots').select('id').eq('cohort_id', targetCohortId).limit(1);
+  if (existingError) throw existingError;
+  if (existing?.length) {
+    const error = new Error('이 기수에는 이미 차시가 있습니다. 기존 차시를 정리한 뒤 복사하세요.');
+    error.status = 400;
+    throw error;
+  }
+
+  const { data: sourceSlots, error: sourceError } = await supabase
+    .from('mentoring_slots').select('*').eq('cohort_id', sourceCohortId).eq('is_active', true);
+  if (sourceError) throw sourceError;
+  if (!sourceSlots?.length) {
+    const error = new Error('복사할 차시가 없습니다.');
+    error.status = 400;
+    throw error;
+  }
+
+  const rows = sourceSlots.map((slot) => ({
+    cohort_id: targetCohortId,
+    day_of_week: slot.day_of_week,
+    slot_label: slot.slot_label,
+    start_time: slot.start_time,
+    end_time: slot.end_time,
+    min_capacity: slot.min_capacity,
+    max_capacity: slot.max_capacity,
+    sort_order: slot.sort_order,
+    is_active: true,
+  }));
+  const { error: insertError } = await supabase.from('mentoring_slots').insert(rows);
+  if (insertError) throw insertError;
+  return { copied: rows.length, sourceCohortId, cohortId: targetCohortId };
+}
+
 async function saveSlot(supabase, body) {
   const id = body.id || body.slotId;
   const { errors, payload } = sanitizeSlot(body);
@@ -915,9 +1055,12 @@ async function saveSlot(supabase, body) {
     error.status = 400;
     throw error;
   }
+  // v41-178: 새로 만드는 차시는 지금 보고 있는 기수에 붙입니다. (수정은 기수를 바꾸지 않습니다)
+  const cohortId = id ? null : await resolveMentoringCohortId(supabase, body.cohortId);
+  const insertPayload = cohortId ? { ...payload, cohort_id: cohortId } : payload;
   const query = id
     ? supabase.from('mentoring_slots').update(payload).eq('id', id).select().single()
-    : supabase.from('mentoring_slots').insert(payload).select().single();
+    : supabase.from('mentoring_slots').insert(insertPayload).select().single();
   const { data, error } = await query;
   if (error) throw error;
   return data;
@@ -939,11 +1082,12 @@ async function resolveTargetSlots(supabase, sourceSlotId, repeatDays = []) {
       slots.push(sourceSlot);
       continue;
     }
-    const { data: existingRows, error: existingError } = await supabase
+    // v41-178: 다른 요일로 펼칠 때도 원본 차시와 같은 기수 안에서만 찾습니다.
+    const { data: existingRows, error: existingError } = await withCohort(supabase
       .from('mentoring_slots')
       .select('*')
       .eq('day_of_week', day)
-      .eq('is_active', true);
+      .eq('is_active', true), sourceSlot.cohort_id || null);
     if (existingError) throw existingError;
     const existing = (existingRows || []).find((item) => normalizeSlotLabelKey(item.slot_label) === normalizeSlotLabelKey(sourceSlot.slot_label));
     if (existing) {
@@ -982,6 +1126,7 @@ async function resolveTargetSlots(supabase, sourceSlotId, repeatDays = []) {
         max_capacity: sourceSlot.max_capacity || 4,
         sort_order: day * 10000 + (timeToMinutes(sourceSlot.start_time) || 0),
         is_active: true,
+        ...(sourceSlot.cohort_id ? { cohort_id: sourceSlot.cohort_id } : {}),
       })
       .select()
       .single();
@@ -1637,10 +1782,13 @@ export async function GET(request) {
   try {
     const supabase = getSupabaseAdmin();
     const { searchParams } = new URL(request.url);
-    if (searchParams.get('seed') === '1') await seedDefaults(supabase);
+    // v41-178: 멘토링 요일/차시/담당학생은 기수마다 다릅니다.
+    await adoptOrphanMentoringRows(supabase);
+    const cohortId = await resolveMentoringCohortId(supabase, searchParams.get('cohortId') || getCohortIdFromRequest(request));
+    if (searchParams.get('seed') === '1') await seedDefaults(supabase, cohortId);
     const date = normalizeDateString(searchParams.get('date') || getKstDateString());
     const materializeDate = searchParams.get('materializeDate') === '1' || searchParams.get('materialize') === '1';
-    const data = await loadAll(supabase, { date, materializeDate });
+    const data = await loadAll(supabase, { date, materializeDate, cohortId });
     return Response.json({ ok: true, ...data });
   } catch (error) {
     return Response.json({ error: error.message || '멘토링 시간표 조회 실패' }, { status: error.status || 500 });
@@ -1654,10 +1802,12 @@ export async function POST(request) {
     const action = body.action || 'load';
     const supabase = getSupabaseAdmin();
     let result = null;
-    if (action === 'seedDefaults') result = await seedDefaults(supabase);
+    const requestCohortId = body.cohortId || getCohortIdFromRequest(request);
+    if (action === 'seedDefaults') result = await seedDefaults(supabase, await resolveMentoringCohortId(supabase, requestCohortId));
     else if (action === 'saveMentor') result = await saveMentor(supabase, body);
-    else if (action === 'saveMentorStudents') result = await saveMentorStudents(supabase, body);
-    else if (action === 'saveSlot') result = await saveSlot(supabase, body);
+    else if (action === 'saveMentorStudents') result = await saveMentorStudents(supabase, { ...body, cohortId: requestCohortId });
+    else if (action === 'saveSlot') result = await saveSlot(supabase, { ...body, cohortId: requestCohortId });
+    else if (action === 'copyCohortSlots') result = await copyCohortSlots(supabase, { ...body, cohortId: requestCohortId });
     else if (action === 'saveDateSlot') result = await saveDateSlot(supabase, body);
     else if (action === 'materializeDateSchedule') result = await materializeDateSchedule(supabase, body.scheduleDate || body.schedule_date || body.date);
     else if (action === 'resetDateSchedule') result = await resetDateSchedule(supabase, body);
@@ -1687,6 +1837,7 @@ export async function POST(request) {
     const data = await loadAll(supabase, {
       date: body.scheduleDate || body.schedule_date || body.date || getKstDateString(),
       materializeDate: ['saveDateSlot', 'materializeDateSchedule', 'assignDateStudents', 'deleteDateAssignment', 'deleteDateSlot', 'validateDateAssignments', 'moveDateAssignment'].includes(action),
+      cohortId: await resolveMentoringCohortId(supabase, requestCohortId),
     });
     return Response.json({ ok: true, result, ...data });
   } catch (error) {
