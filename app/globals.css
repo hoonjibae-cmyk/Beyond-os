@@ -21847,9 +21847,10 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .weekly-section-head .weekly-head-actions button {
   width: auto;
   min-width: 0;
-  min-height: 36px;
-  padding: 0 14px;
-  font-size: 12.5px;
+  /* v41-175.1: 아래 자동 구성 콘솔 버튼과 같은 높이로 맞춥니다. */
+  min-height: 42px;
+  padding: 0 16px;
+  font-size: 13.5px;
 }
 
 /* 자동 구성 콘솔 머리말을 한 줄로 */
@@ -21906,4 +21907,18 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .weekly-view-activity > .weekly-progress-line,
 .weekly-view-history > .weekly-progress-line {
   display: none !important;
+}
+
+/* v41-175.1: 위클리 상단 [이번 주]·[지난 주]에 외곽선을 넣어
+   아래 [미작성 자동 구성]·[전체 갱신 구성]과 같은 모양으로 맞춥니다.
+   상단 버튼에만 있던 흐릿한 그림자를 빼고 두 묶음 모두 1px 선을 두릅니다. */
+.weekly-section-head .weekly-head-actions button.secondary,
+.weekly-auto-compose-actions button.secondary {
+  border: 1px solid var(--ap-sep-strong);
+  box-shadow: none;
+}
+.weekly-section-head .weekly-head-actions button.secondary:hover,
+.weekly-auto-compose-actions button.secondary:hover {
+  border-color: rgba(0, 0, 0, .28);
+  background: #e9e9ee !important;
 }
