@@ -105,6 +105,58 @@ function isMissingCohortColumn(error) {
   return /cohort_id/.test(message) && /column|does not exist/i.test(message);
 }
 
+// v41-184: 이전 기수 [학생 기초조사] 승계
+//
+// 기초조사는 학생 본인에 대한 정보라 기수가 바뀌어도 대부분 그대로입니다.
+// 그래서 이번 기수에 따로 올린 파일이 없으면 이전 기수에 올린 내용을 대신 보여줍니다.
+// 학부모 설문(시간표)은 기수마다 반드시 다시 받아야 하므로 승계하지 않습니다.
+//
+// 승계 대상 조건 (모두 만족해야 합니다)
+//   · 학생 설문일 것 (survey_type === 'student')
+//   · 이번 기수 수강 명단에 있는 학생일 것
+//   · 이번 기수에 올라온 학생 설문이 없을 것
+//   · 지금 기수보다 먼저 시작한 기수의 응답일 것 (가장 최근 것 하나)
+function buildInheritedSurveys(rows, { cohortId, cohorts, rosterIds }) {
+  if (!cohortId || !rosterIds) return [];
+
+  const cohortIndexById = new Map(cohorts.map((row, index) => [String(row.id), index]));
+  const cohortNameById = new Map(cohorts.map((row) => [String(row.id), row.name || '']));
+  // 목록에 없는 기수 id 와 기수가 비어 있는 옛 응답은 가장 앞선 것으로 봅니다.
+  const orderOf = (id) => (cohortIndexById.has(String(id || '')) ? cohortIndexById.get(String(id || '')) : -1);
+  const currentOrder = cohortIndexById.has(cohortId) ? cohortIndexById.get(cohortId) : cohorts.length;
+
+  const alreadyHasThisCohort = new Set(
+    rows
+      .filter((row) => String(row.cohort_id || '') === cohortId && row.survey_type === 'student' && row.student_id)
+      .map((row) => String(row.student_id)),
+  );
+
+  const bestByStudent = new Map();
+  for (const row of rows) {
+    if (row.survey_type !== 'student') continue;
+    const studentId = row.student_id ? String(row.student_id) : '';
+    if (!studentId) continue;                       // 이름 미매칭 응답은 누구 것인지 확정할 수 없습니다
+    if (!rosterIds.has(studentId)) continue;
+    if (alreadyHasThisCohort.has(studentId)) continue;
+
+    const order = orderOf(row.cohort_id);
+    if (order >= currentOrder) continue;            // 이전 기수만
+
+    const prev = bestByStudent.get(studentId);
+    const newer = !prev
+      || order > prev.order
+      || (order === prev.order && String(row.updated_at || '') > String(prev.row.updated_at || ''));
+    if (newer) bestByStudent.set(studentId, { order, row });
+  }
+
+  return [...bestByStudent.values()].map(({ row }) => ({
+    ...row,
+    inherited: true,
+    inherited_from_cohort_id: row.cohort_id || null,
+    inherited_from_cohort_name: cohortNameById.get(String(row.cohort_id || '')) || '',
+  }));
+}
+
 export async function GET(request) {
   if (!isAuthorized(request)) return unauthorizedResponse();
   try {
@@ -118,30 +170,40 @@ export async function GET(request) {
     // 화면에서 기수 배지로 구분합니다.
     const cohortId = String(requestedCohortId || '').trim();
 
-    async function runQuery({ withCohort }) {
-      let query = supabase
-        .from('student_surveys')
-        .select('*')
-        .order('survey_type', { ascending: true })
-        .order('updated_at', { ascending: false });
-      if (studentId && studentId !== 'all') query = query.eq('student_id', studentId);
-      if (withCohort && cohortId) query = query.eq('cohort_id', cohortId);
-      return query;
-    }
+    // v41-184: 승계 판정에 이전 기수 응답이 필요해서, 기수로 자르지 않고 모두 읽은 뒤
+    // 여기서 나눕니다. (기수당 26명 규모라 전체를 읽어도 부담이 없습니다)
+    let query = supabase
+      .from('student_surveys')
+      .select('*')
+      .order('survey_type', { ascending: true })
+      .order('updated_at', { ascending: false });
+    if (studentId && studentId !== 'all') query = query.eq('student_id', studentId);
 
-    let { data, error } = await runQuery({ withCohort: Boolean(cohortId) });
-    if (error && cohortId && isMissingCohortColumn(error)) {
-      // 마이그레이션 전이라도 화면이 죽지 않도록 기수 필터 없이 한 번 더 시도합니다.
-      const retry = await runQuery({ withCohort: false });
-      if (!retry.error) {
-        return Response.json({ surveys: retry.data || [], warning: COHORT_HINT });
-      }
-      error = retry.error;
-    }
+    const { data, error } = await query;
     if (error) {
       return Response.json({ surveys: [], warning: `${error.message} / ${SCHEMA_HINT}` });
     }
-    return Response.json({ surveys: data || [], cohortId: cohortId || null });
+
+    const rows = data || [];
+    if (!cohortId) return Response.json({ surveys: rows, cohortId: null, inherited: 0 });
+
+    // 마이그레이션 전(cohort_id 컬럼 없음)이면 기수로 나눌 수 없으므로 전부 내려줍니다.
+    if (rows.length && !Object.prototype.hasOwnProperty.call(rows[0], 'cohort_id')) {
+      return Response.json({ surveys: rows, warning: COHORT_HINT });
+    }
+
+    const current = rows.filter((row) => String(row.cohort_id || '') === cohortId);
+    const [cohorts, rosterIds] = await Promise.all([
+      listCohortRows(supabase),
+      loadCohortStudentIds(supabase, cohortId),
+    ]);
+    const inherited = buildInheritedSurveys(rows, { cohortId, cohorts, rosterIds });
+
+    return Response.json({
+      surveys: [...current, ...inherited],
+      cohortId,
+      inherited: inherited.length,
+    });
   } catch (error) {
     return Response.json({ surveys: [], warning: error.message || 'Unknown error' });
   }

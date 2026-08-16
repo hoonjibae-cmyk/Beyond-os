@@ -17450,6 +17450,12 @@ function SurveyCard({ survey, cohortName = '' }) {
         <div className="survey-card-title">
           <span className={`survey-type-badge ${isParent ? 'parent' : 'student'}`}>{isParent ? '학부모 설문' : '학생 설문'}</span>
           {cohortName ? <span className="survey-cohort-badge">{cohortName}</span> : null}
+          {/* v41-184: 이번 기수 업로드가 없어 이전 기수 응답을 그대로 보여주는 경우 */}
+          {survey.inherited ? (
+            <span className="survey-inherited-badge" title="이번 기수에 올라온 학생 기초조사가 없어 이전 기수 응답을 보여주고 있습니다. 새 파일을 올리면 교체됩니다.">
+              {survey.inherited_from_cohort_name ? `${survey.inherited_from_cohort_name} 자료` : '이전 기수 자료'}
+            </span>
+          ) : null}
           {!survey.matched ? <span className="survey-unmatched-badge">이름 미매칭</span> : null}
         </div>
         <dl className="survey-card-meta">
@@ -17534,8 +17540,10 @@ function SurveyPanel({ surveyProps = {}, selectedStudent = null, selectedStudent
   const studentFileRef = useRef(null);
   const parentFileRef = useRef(null);
 
-  const totalStudent = useMemo(() => surveys.filter((s) => s.survey_type === 'student').length, [surveys]);
-  const totalParent = useMemo(() => surveys.filter((s) => s.survey_type === 'parent').length, [surveys]);
+  // v41-184: 승계 표시분은 '이번 기수에 저장된 건수'가 아니므로 따로 셉니다.
+  const totalStudent = useMemo(() => surveys.filter((s) => s.survey_type === 'student' && !s.inherited).length, [surveys]);
+  const totalParent = useMemo(() => surveys.filter((s) => s.survey_type === 'parent' && !s.inherited).length, [surveys]);
+  const totalInherited = useMemo(() => surveys.filter((s) => s.inherited).length, [surveys]);
 
   // v41-182: 설문은 기수별로 따로 보관합니다. 어느 기수로 저장되는지 먼저 알려줍니다.
   const cohortNameById = useMemo(
@@ -17585,12 +17593,17 @@ function SurveyPanel({ surveyProps = {}, selectedStudent = null, selectedStudent
         <details className="content-card survey-upload-card">
           <summary className="survey-upload-summary">
             <span>설문 엑셀 업로드</span>
-            <em>학생 설문 {totalStudent}건 · 학부모 설문 {totalParent}건 저장됨</em>
+            <em>학생 설문 {totalStudent}건 · 학부모 설문 {totalParent}건 저장됨{totalInherited ? ` · 이전 기수 승계 ${totalInherited}명` : ''}</em>
           </summary>
           <div className="survey-upload-body">
             <p className="survey-upload-hint">
               구글폼 응답 스프레드시트를 엑셀(.xlsx)로 내려받아 업로드하세요.
               선택한 학생과 무관하게 <b>파일 안의 모든 학생</b>이 저장되며, 같은 기수·같은 유형의 같은 학생이면 최신 응답으로 갱신됩니다.
+            </p>
+            {/* v41-184 */}
+            <p className="survey-upload-hint">
+              <b>학생 설문</b>은 이번 기수에 올린 파일이 없으면 이전 기수 응답을 그대로 보여줍니다(카드에 승계 표시).
+              이번 기수 파일을 올리면 그 학생부터 새 응답으로 바뀝니다. <b>학부모 설문(시간표)</b>은 승계하지 않으므로 기수마다 다시 올려야 합니다.
             </p>
             {uploadTargetCohort ? (
               <p className="survey-upload-target">

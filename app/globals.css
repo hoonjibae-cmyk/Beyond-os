@@ -19221,6 +19221,8 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .survey-unmatched-badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:#fff3e0; color:#b26a00; }
 /* v41-182: 전체 보기에서 어느 기수 설문인지 구분합니다. */
 .survey-cohort-badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:#eef1f6; color:#4a5568; border:1px solid #dfe3ea; }
+/* v41-184: 이번 기수 업로드가 없어 이전 기수 응답을 보여주는 카드 */
+.survey-inherited-badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:#eef7ee; color:#2f6b3a; border:1px solid #d5e8d7; cursor:help; }
 .survey-card-meta{ display:flex; flex-wrap:wrap; gap:6px 16px; margin:10px 0 0; }
 .survey-card-meta > div{ display:flex; align-items:baseline; gap:6px; }
 .survey-card-meta dt{ margin:0; font-size:11px; font-weight:700; color:#86868b; }
