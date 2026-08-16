@@ -6789,7 +6789,11 @@ function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBre
       String(item.startDate || '') <= popup.scheduleDate && popup.scheduleDate <= String(item.endDate || '')
     )) || null
     : null;
-  const repeatUntilValue = popup.repeatUntil || popup.scheduleDate;
+  // v41-190: 반복 종료일 기본값은 이 날짜가 속한 기수의 종료일입니다.
+  // 개인 시간표는 기수 하나만 채우므로(v41-185) 기수 끝까지가 가장 자연스러운 기본값입니다.
+  // 기수를 쓰지 않거나 기수 밖 날짜면 예전처럼 그 날짜만 잡습니다.
+  const defaultRepeatUntil = anchorCohort?.endDate || popup.scheduleDate;
+  const repeatUntilValue = popup.repeatUntil || defaultRepeatUntil;
   const crossesCohort = Boolean(
     anchorCohort && repeatMode !== 'none' && repeatUntilValue > anchorCohort.endDate,
   );
@@ -6801,12 +6805,21 @@ function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBre
     setField({ repeatWeekdays: Array.from(set).sort((a, b) => a - b) });
   };
 
+  // 반복을 켜는 순간 종료일을 기수 종료일로 채웁니다.
+  // 사용자가 이미 날짜를 고쳐 두었으면 그대로 둡니다.
+  const chooseRepeatMode = (mode) => {
+    const patch = { repeatMode: mode };
+    const untouched = !popup.repeatUntil || popup.repeatUntil === popup.scheduleDate;
+    if (mode !== 'none' && untouched) patch.repeatUntil = defaultRepeatUntil;
+    setField(patch);
+  };
+
   const repeatSection = (
     <div className="repeat-box event-repeat-box">
       <h4>반복 설정</h4>
       <div className="event-repeat-modes">
         {EVENT_REPEAT_OPTIONS.map(([value, label]) => (
-          <button type="button" key={value} className={`event-repeat-chip ${repeatMode === value ? 'active' : ''}`} onClick={() => setField({ repeatMode: value })}>{label}</button>
+          <button type="button" key={value} className={`event-repeat-chip ${repeatMode === value ? 'active' : ''}`} onClick={() => chooseRepeatMode(value)}>{label}</button>
         ))}
       </div>
       {repeatMode === 'custom' ? (
@@ -6817,7 +6830,13 @@ function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBre
         </div>
       ) : null}
       {repeatMode !== 'none' ? (
-        <div className="field"><label>반복 종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={popup.repeatUntil || popup.scheduleDate} onChange={(e) => setField({ repeatUntil: e.target.value })} /></div>
+        <div className="field">
+          <label>반복 종료일</label>
+          <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={repeatUntilValue} onChange={(e) => setField({ repeatUntil: e.target.value })} />
+          {anchorCohort ? (
+            <div className="hint">기본값은 {anchorCohort.name} 종료일({anchorCohort.endDate})입니다.</div>
+          ) : null}
+        </div>
       ) : (
         <p className="event-repeat-hint">이 날짜({popup.scheduleDate})에만 적용됩니다.</p>
       )}
