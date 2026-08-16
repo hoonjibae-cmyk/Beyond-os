@@ -1261,8 +1261,23 @@ async function validateAssignmentScheduleConflicts(supabase, { studentIds = [], 
   if (!studentIds.length || !targetSlots.length) return [];
   const defaultSchedule = await getDefaultScheduleSettings(supabase);
   const today = getKstDateString();
+
+  // v41-191: 개인 시간표와 맞춰 볼 '표본 날짜'는 그 차시가 속한 기수 안에서 고릅니다.
+  // 예전에는 오늘 기준 '다음 그 요일'을 썼습니다. 2기 차시를 1기 기간에 배정하면
+  // 1기 날짜의 개인 시간표와 비교해 엉뚱한 경고가 나왔습니다.
+  const cohortRows = await listCohortRows(supabase);
+  const rangeByCohortId = new Map(cohortRows.map((row) => [String(row.id), {
+    start: String(row.start_date || '').slice(0, 10),
+    end: String(row.end_date || '').slice(0, 10),
+  }]));
+
   const dateByDay = {};
-  for (const slot of targetSlots) dateByDay[Number(slot.day_of_week)] = getNextDateForDay(slot.day_of_week, today);
+  for (const slot of targetSlots) {
+    const range = rangeByCohortId.get(String(slot.cohort_id || '')) || null;
+    dateByDay[Number(slot.day_of_week)] = range
+      ? findRepresentativeDateForDay(slot.day_of_week, range)
+      : getNextDateForDay(slot.day_of_week, today);
+  }
   const dates = Object.values(dateByDay);
 
   const { data: students, error: studentsError } = await supabase
@@ -1480,7 +1495,17 @@ async function validatePersonalScheduleConflicts(supabase, body) {
     .maybeSingle();
   if (studentError) throw studentError;
 
-  const dateSchedule = await loadDateSchedule(supabase, scheduleDate, { materialize: false });
+  // v41-191: 그 날짜가 속한 기수의 멘토링 차시만 봅니다.
+  //
+  // 예전에는 기수를 넘기지 않아 withCohort(query, null) 이 되면서 요일이 같은
+  // 모든 기수의 차시를 끌어왔습니다. 그래서 2기 멘토링을 아직 설정하지 않았는데도
+  // 1기 월요일 차시와 그 배정이 잡혀 "멘토링 시간과 맞지 않는다"는 경고가 떴습니다.
+  const dateCohort = await resolveDateCohortInfo(supabase, scheduleDate);
+  const dateSchedule = await loadDateSchedule(supabase, scheduleDate, {
+    materialize: false,
+    cohortId: dateCohort.cohortId,
+    noCohortForDate: dateCohort.noMatch,
+  });
   const assignmentRows = (dateSchedule.dateAssignments || []).filter((item) => String(item.student_id || item.students?.id || '') === studentId && item.is_active !== false);
   const slotById = Object.fromEntries((dateSchedule.dateSlots || []).map((slot) => [String(slot.id), slot]));
   const plannedCheckIn = String(body.plannedCheckIn || body.planned_check_in || '').slice(0, 5);
@@ -1778,12 +1803,18 @@ async function assignStudents(supabase, body) {
 
   const { data: existingAssignments, error: existingError } = await supabase
     .from('mentoring_assignments')
-    .select('id, student_id, slot_id, mentoring_slots(day_of_week, slot_label, start_time)')
+    .select('id, student_id, slot_id, mentoring_slots(day_of_week, slot_label, start_time, cohort_id)')
     .in('student_id', studentIds)
     .eq('is_active', true);
   if (existingError) throw existingError;
+
+  // v41-191: '같은 요일 중복' 판정은 같은 기수 안에서만 합니다.
+  // 1기와 2기를 이어서 듣는 학생은 두 기수 모두 월요일 멘토링을 가질 수 있는데,
+  // 예전에는 기수를 가리지 않아 1기 배정 때문에 2기 배정이 막혔습니다.
+  const targetCohortIds = new Set(targetSlots.map((slot) => String(slot.cohort_id || '')));
   const existingByStudentDay = new Map();
   for (const item of existingAssignments || []) {
+    if (!targetCohortIds.has(String(item.mentoring_slots?.cohort_id || ''))) continue;
     const key = `${item.student_id}-${Number(item.mentoring_slots?.day_of_week)}`;
     existingByStudentDay.set(key, item);
   }
