@@ -19221,6 +19221,18 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .survey-unmatched-badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:#fff3e0; color:#b26a00; }
 /* v41-182: 전체 보기에서 어느 기수 설문인지 구분합니다. */
 .survey-cohort-badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:#eef1f6; color:#4a5568; border:1px solid #dfe3ea; }
+/* v41-187: 기수 명단 밖 학생이 좌석에 남아 있을 때의 경고 */
+.seat-cohort-warning{ display:flex; flex-direction:column; gap:4px; margin:0 0 12px; padding:12px 14px; border:1px solid #f2d6a8; border-radius:12px; background:#fff8ec; }
+.seat-cohort-warning strong{ font-size:13px; font-weight:800; color:#8a5a00; }
+.seat-cohort-warning span{ font-size:12px; line-height:1.55; color:#8a6a2a; }
+
+/* v41-187: 기수 기간 밖 개인 시간표 정리 카드 */
+.schedule-cleanup-card .cross-cohort-check{ font-weight:600; }
+.schedule-cleanup-report{ margin-top:10px; padding:10px 12px; border:1px solid #e3e3e6; border-radius:10px; background:#fff; }
+.schedule-cleanup-report b{ display:block; font-size:12.5px; color:#1d1d1f; }
+.schedule-cleanup-report ul{ margin:8px 0 0; padding-left:18px; }
+.schedule-cleanup-report li{ font-size:12px; line-height:1.6; color:#6e6e73; }
+
 /* v41-185: 개인 시간표를 기수 단위로 끊는 안내 / 예외 체크 */
 .cross-cohort-box{ margin:10px 0 0; padding:10px 12px; border:1px solid #dfe3ea; border-radius:12px; background:#f7f8fa; }
 .cross-cohort-check{ display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:700; color:#1d1d1f; cursor:pointer; }

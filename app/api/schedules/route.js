@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
-import { loadScheduleCohortContext, planScheduleDates, describeBlockedDates } from '../../../lib/scheduleCohort';
+import { loadScheduleCohortContext, planScheduleDates, describeBlockedDates, getCohortForDate } from '../../../lib/scheduleCohort';
 
 export const dynamic = 'force-dynamic';
 
@@ -513,6 +513,119 @@ export async function POST(request) {
   }
 }
 
+// v41-187: 기수 기간 밖에 남아 있는 개인 시간표를 찾아 정리합니다.
+//
+// v41-185 는 앞으로의 생성만 막습니다. 그 전에 만들어진 시간표는 그대로 남아,
+// 기수가 끝난 뒤에도 좌석배치도에 결석으로 뜨는 등 계속 영향을 줍니다.
+//
+// 판정
+//   기간 밖 : 어느 기수 기간에도 들어가지 않는 날짜의 시간표
+//   명단 밖 : 그 날짜가 속한 기수의 수강 명단에 없는 학생의 시간표
+// 기본은 '기간 밖'만 지웁니다. 명단은 운영 중에 바뀔 수 있어서, 명단 밖까지
+// 지우려면 요청에 includeNotEnrolled:true 를 넣어야 합니다.
+async function cleanupSchedulesOutsideCohorts(supabase, request, body) {
+  const dryRun = body.dryRun === true;
+  const includeNotEnrolled = body.includeNotEnrolled === true;
+
+  const context = await loadScheduleCohortContext(supabase);
+  if (!context.enabled) {
+    return Response.json({ error: '등록된 기수가 없어 기간 밖 여부를 판단할 수 없습니다.' }, { status: 400 });
+  }
+
+  const { data: rows, error: rowsError } = await supabase
+    .from('student_daily_schedules')
+    .select('id, student_id, schedule_date, planned_absent, students(name)')
+    .order('schedule_date', { ascending: true });
+  if (rowsError) throw rowsError;
+
+  // 기수별 수강 명단 (명단이 비어 있는 기수는 판정에서 제외합니다)
+  const rosterByCohort = new Map();
+  if (includeNotEnrolled) {
+    const { data: rosterRows, error: rosterError } = await supabase
+      .from('cohort_students')
+      .select('cohort_id, student_id')
+      .eq('is_active', true);
+    if (rosterError) throw rosterError;
+    for (const row of rosterRows || []) {
+      const key = String(row.cohort_id);
+      if (!rosterByCohort.has(key)) rosterByCohort.set(key, new Set());
+      rosterByCohort.get(key).add(String(row.student_id));
+    }
+  }
+
+  const outsidePeriod = [];
+  const notEnrolled = [];
+  for (const row of rows || []) {
+    const date = String(row.schedule_date || '').slice(0, 10);
+    const cohort = getCohortForDate(context, date);
+    if (!cohort) { outsidePeriod.push(row); continue; }
+    if (!includeNotEnrolled) continue;
+    const roster = rosterByCohort.get(String(cohort.id));
+    if (roster && roster.size && !roster.has(String(row.student_id))) notEnrolled.push(row);
+  }
+
+  const targets = includeNotEnrolled ? [...outsidePeriod, ...notEnrolled] : outsidePeriod;
+  const summarize = (list) => {
+    const byStudent = new Map();
+    for (const row of list) {
+      const key = String(row.student_id);
+      if (!byStudent.has(key)) {
+        byStudent.set(key, { studentId: key, name: row.students?.name || key, count: 0, firstDate: null, lastDate: null });
+      }
+      const entry = byStudent.get(key);
+      entry.count += 1;
+      const date = String(row.schedule_date || '').slice(0, 10);
+      if (!entry.firstDate || date < entry.firstDate) entry.firstDate = date;
+      if (!entry.lastDate || date > entry.lastDate) entry.lastDate = date;
+    }
+    return [...byStudent.values()].sort((a, b) => b.count - a.count);
+  };
+
+  const result = {
+    dryRun,
+    includeNotEnrolled,
+    total: targets.length,
+    outsidePeriodCount: outsidePeriod.length,
+    notEnrolledCount: notEnrolled.length,
+    students: summarize(targets),
+    cohorts: context.cohorts.map((cohort) => ({ name: cohort.name, startDate: cohort.startDate, endDate: cohort.endDate })),
+  };
+
+  if (dryRun || !targets.length) return Response.json({ ...result, deleted: 0 });
+
+  const ids = targets.map((row) => row.id);
+  for (let index = 0; index < ids.length; index += 200) {
+    const chunk = ids.slice(index, index + 200);
+    const { error: breaksError } = await supabase.from('student_schedule_breaks').delete().in('schedule_id', chunk);
+    if (breaksError) throw breaksError;
+    const { error: deleteError } = await supabase.from('student_daily_schedules').delete().in('id', chunk);
+    if (deleteError) throw deleteError;
+  }
+
+  // 그 시간표를 근거로 만들어진 '[예약결석]' 세션도 함께 정리합니다.
+  for (const row of targets) {
+    if (row.planned_absent === false) continue;
+    await rollbackPlannedAbsentSession(supabase, {
+      studentId: row.student_id,
+      date: String(row.schedule_date || '').slice(0, 10),
+    });
+  }
+
+  await writeUserActionLog(supabase, request, {
+    actionType: 'schedule.cleanup_outside_cohorts',
+    targetType: 'student_schedule',
+    targetName: `기수 밖 개인 시간표 ${targets.length}건`,
+    payload: {
+      deleted: targets.length,
+      outsidePeriodCount: outsidePeriod.length,
+      notEnrolledCount: notEnrolled.length,
+      includeNotEnrolled,
+    },
+  });
+
+  return Response.json({ ...result, deleted: targets.length });
+}
+
 // 개인 시간표(등하원 조정 + 외출 일정)를 삭제합니다.
 // v41-42부터 삭제하면 해당 날짜는 빈 날(등원 예정 없음)이 됩니다.
 // v41-44: 저장과 동일한 반복 옵션(repeat/repeatUntil)으로 여러 날짜를 한 번에 삭제할 수 있습니다.
@@ -529,6 +642,13 @@ export async function DELETE(request) {
     const repeatUntil = body.repeatUntil || searchParams.get('repeatUntil') || scheduleDate;
     const fromDate = body.fromDate || searchParams.get('fromDate') || scheduleDate;
 
+    const supabase = getSupabaseAdmin();
+
+    // v41-187: 기수 기간 밖에 남아 있는 개인 시간표 일괄 정리 (학생 지정 없이 전체 대상)
+    if (mode === 'outsideCohorts') {
+      return await cleanupSchedulesOutsideCohorts(supabase, request, body);
+    }
+
     if (!studentId) {
       return Response.json({ error: 'studentId is required' }, { status: 400 });
     }
@@ -539,7 +659,6 @@ export async function DELETE(request) {
       return Response.json({ error: 'fromDate is required' }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
     let findQuery = supabase
       .from('student_daily_schedules')
       .select('*, students(name)')
@@ -577,6 +696,15 @@ export async function DELETE(request) {
     if (deleteError) throw deleteError;
 
     const deletedDates = schedules.map((schedule) => schedule.schedule_date).sort();
+
+    // v41-187: 시간표를 지우면 그 근거로 만들어진 '[예약결석]' 세션도 함께 정리합니다.
+    // 지금까지는 세션이 남아 좌석배치도에 결석으로 계속 떴습니다.
+    // planned_absent 컬럼이 없는 환경(undefined)에서는 안전하게 전부 확인합니다.
+    // rollbackPlannedAbsentSession 은 자동 생성 세션만 지우므로 부작용이 없습니다.
+    for (const schedule of schedules) {
+      if (schedule.planned_absent === false) continue;
+      await rollbackPlannedAbsentSession(supabase, { studentId, date: schedule.schedule_date });
+    }
     await writeUserActionLog(supabase, request, {
       actionType: 'schedule.delete',
       targetType: 'student_schedule',

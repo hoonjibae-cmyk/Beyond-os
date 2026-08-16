@@ -5722,7 +5722,7 @@ export default function Page() {
         {isActiveTabAllowed && activeTab === 'dashboard' ? (
           <>
             <AlertCenter alerts={scheduleAlerts} nowTick={nowTick} onConfirm={confirmScheduleAlert} onNotifyParent={notifyParent} onParentConfirmed={(alert) => dismissFocusAlert(alert, '학부모 확인 완료')} getParentAlertSentInfo={getParentAlertSentInfo} />
-            <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} mentoringPolicy={mentoringPolicy} checksBySession={checksBySession} defaultSchedule={defaultSchedule} todaySchedules={todaySchedules} todayScheduleBreaks={todayScheduleBreaks} sessions={sessions} onGoSchedule={goToScheduleFromSeat} onGoStudentCare={goToStudentCareFromSeat} onGoStudentInfo={goToStudentInfoFromSeat} />
+            <DashboardTab summary={summary} view={view} seatsForDisplay={seatsForDisplay} sessionBySeat={sessionBySeat} selectedSeatNo={selectedSeatNo} selectSeat={selectSeat} students={students} nowTick={nowTick} apiFetch={apiFetch} loadDashboard={loadDashboard} setMessage={setMessage} currentUser={currentUser} scheduleAlerts={scheduleAlerts} onDismissFocusAlert={dismissFocusAlert} dismissedAlertMemos={dismissedAlertMemos} mentoringTodayAssignments={mentoringTodayAssignments} mentoringPolicy={mentoringPolicy} checksBySession={checksBySession} defaultSchedule={defaultSchedule} todaySchedules={todaySchedules} todayScheduleBreaks={todayScheduleBreaks} sessions={sessions} onGoSchedule={goToScheduleFromSeat} onGoStudentCare={goToStudentCareFromSeat} onGoStudentInfo={goToStudentInfoFromSeat} cohortScopeId={cohortScopeId} cohortScopeName={cohortScopeInfo?.name || ''} cohortScopeStudentIds={cohortScopeStudentIds} />
           </>
         ) : null}
 
@@ -7161,7 +7161,7 @@ function buildKioskHoldHistoryGroups(history = []) {
   }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedSeatNo, selectSeat, students, nowTick, apiFetch, loadDashboard, setMessage, currentUser, scheduleAlerts = [], onDismissFocusAlert, dismissedAlertMemos = {}, mentoringTodayAssignments = [], checksBySession = {}, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, todaySchedules = [], todayScheduleBreaks = [], sessions = [], onGoSchedule, onGoStudentCare, onGoStudentInfo, mentoringPolicy = FALLBACK_MENTORING_POLICY }) {
+function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedSeatNo, selectSeat, students, nowTick, apiFetch, loadDashboard, setMessage, currentUser, scheduleAlerts = [], onDismissFocusAlert, dismissedAlertMemos = {}, mentoringTodayAssignments = [], checksBySession = {}, defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, todaySchedules = [], todayScheduleBreaks = [], sessions = [], onGoSchedule, onGoStudentCare, onGoStudentInfo, mentoringPolicy = FALLBACK_MENTORING_POLICY, cohortScopeId = '', cohortScopeName = '', cohortScopeStudentIds = null }) {
   const [seatFilter, setSeatFilter] = useState('all');
   const [seatSearch, setSeatSearch] = useState('');
   const [quickMode, setQuickMode] = useState(false);
@@ -7518,6 +7518,18 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
   }
 
   const seatRows = (seatsForDisplay || []).map(getSeatDisplay).sort((a, b) => Number(a.seat.seat_no) - Number(b.seat.seat_no));
+
+  // v41-187: 지금 보고 있는 기수 명단에 없는데 좌석에 남아 있는 학생.
+  // 좌석 배정은 기수와 별개인 '현재 상태'라서, 기수를 바꿔도 자동으로 비워지지 않습니다.
+  const outsideCohortSeats = useMemo(() => {
+    if (!cohortScopeId || !Array.isArray(cohortScopeStudentIds)) return [];
+    const allowed = new Set(cohortScopeStudentIds.map(String));
+    return seatRows
+      .filter((row) => row.student && !allowed.has(String(row.student.id)))
+      .map((row) => ({ seatNo: Number(row.seat.seat_no), name: row.student.name || '학생' }))
+      .sort((a, b) => a.seatNo - b.seatNo);
+  }, [seatRows, cohortScopeId, cohortScopeStudentIds]);
+
   const statusCounts = seatRows.reduce((acc, row) => {
     acc[row.status] = (acc[row.status] || 0) + 1;
     return acc;
@@ -8207,6 +8219,16 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
             {(seatSearch || seatFilter !== 'all') ? <button type="button" onClick={() => { setSeatSearch(''); setSeatFilter('all'); }}>초기화</button> : null}
           </div>
         </div>
+
+        {/* v41-187: 좌석은 '지금 누가 어디 앉는가'라서 기수와 별개로 유지됩니다.
+            기수가 바뀌었는데 좌석을 옮기지 않으면 지난 기수 학생이 그대로 남습니다. */}
+        {outsideCohortSeats.length ? (
+          <div className="seat-cohort-warning">
+            <strong>{cohortScopeName || '선택한 기수'} 명단에 없는 학생이 좌석에 배정되어 있습니다 ({outsideCohortSeats.length}명)</strong>
+            <span>{outsideCohortSeats.map((item) => `${item.seatNo}번 ${item.name}`).join(' · ')}</span>
+            <span>설정 · 기수 관리에서 이 기수 좌석 배치를 만든 뒤 [실제 좌석에 반영]을 누르면 정리됩니다.</span>
+          </div>
+        ) : null}
 
         {view === 'map' ? (
           <div className="seat-map-wrap">
@@ -9900,6 +9922,40 @@ function CohortSettingsTab({ apiFetch, setMessage }) {
   const [rosterDraft, setRosterDraft] = useState([]);
   const [rosterSearch, setRosterSearch] = useState('');
   const [notice, setNotice] = useState('');
+  // v41-187: 기수 기간 밖에 남아 있는 개인 시간표 정리
+  const [cleanupReport, setCleanupReport] = useState(null);
+  const [cleanupBusy, setCleanupBusy] = useState('');
+  const [cleanupIncludeNotEnrolled, setCleanupIncludeNotEnrolled] = useState(false);
+
+  async function runScheduleCleanup(dryRun) {
+    if (!dryRun) {
+      const target = cleanupReport?.total || 0;
+      if (!target) return;
+      const ok = confirm(
+        `기수 기간 밖 개인 시간표 ${target}건을 삭제할까요?\n\n`
+        + '▶ 해당 날짜의 등하원 예정·외출 일정이 사라집니다.\n'
+        + '▶ 그 시간표 때문에 생긴 결석 표시도 함께 정리됩니다.\n'
+        + '▶ 출결 기록과 순공시간 기록은 지우지 않습니다.\n\n'
+        + '되돌릴 수 없습니다. 진행할까요?',
+      );
+      if (!ok) return;
+    }
+    try {
+      setCleanupBusy(dryRun ? 'check' : 'delete');
+      const result = await apiFetch('/api/schedules', {
+        method: 'DELETE',
+        body: JSON.stringify({ mode: 'outsideCohorts', dryRun, includeNotEnrolled: cleanupIncludeNotEnrolled }),
+      });
+      setCleanupReport(result);
+      setMessage(dryRun
+        ? `기수 밖 개인 시간표 ${result.total}건을 찾았습니다. (기간 밖 ${result.outsidePeriodCount}건${result.includeNotEnrolled ? ` · 명단 밖 ${result.notEnrolledCount}건` : ''})`
+        : `기수 밖 개인 시간표 ${result.deleted}건을 정리했습니다.`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setCleanupBusy('');
+    }
+  }
 
   const load = useCallback(async (keepId = '') => {
     try {
@@ -10054,6 +10110,60 @@ function CohortSettingsTab({ apiFetch, setMessage }) {
             disabled={saving === 'policy'}
           >
             이어서 누적
+          </button>
+        </div>
+      </div>
+
+      {/* v41-187: 기수 전환 뒤에 남는 옛 개인 시간표 정리 */}
+      <div className="cohort-policy-card schedule-cleanup-card">
+        <div>
+          <strong>기수 기간 밖 개인 시간표 정리</strong>
+          <span>
+            기수가 끝난 뒤에도 남아 있는 개인 시간표를 찾아 지웁니다.
+            남아 있으면 기수 사이 공백일에도 좌석배치도에 결석으로 뜨거나 리포트 대상에 잡힙니다.
+            출결·순공시간 기록은 지우지 않습니다.
+          </span>
+          <label className="cross-cohort-check" style={{ marginTop: '10px' }}>
+            <input
+              type="checkbox"
+              checked={cleanupIncludeNotEnrolled}
+              onChange={(e) => { setCleanupIncludeNotEnrolled(e.target.checked); setCleanupReport(null); }}
+            />
+            <span>그 기수 수강 명단에 없는 학생의 시간표도 함께 정리</span>
+          </label>
+          {cleanupReport ? (
+            <div className="schedule-cleanup-report">
+              {cleanupReport.total ? (
+                <>
+                  <b>
+                    {cleanupReport.deleted
+                      ? `${cleanupReport.deleted}건을 정리했습니다.`
+                      : `정리 대상 ${cleanupReport.total}건 (기간 밖 ${cleanupReport.outsidePeriodCount}건${cleanupReport.includeNotEnrolled ? ` · 명단 밖 ${cleanupReport.notEnrolledCount}건` : ''})`}
+                  </b>
+                  <ul>
+                    {cleanupReport.students.slice(0, 12).map((item) => (
+                      <li key={item.studentId}>{item.name} · {item.count}일 ({item.firstDate} ~ {item.lastDate})</li>
+                    ))}
+                    {cleanupReport.students.length > 12 ? <li>… 외 {cleanupReport.students.length - 12}명</li> : null}
+                  </ul>
+                </>
+              ) : (
+                <b>기수 기간 밖에 남은 개인 시간표가 없습니다.</b>
+              )}
+            </div>
+          ) : null}
+        </div>
+        <div className="cohort-policy-actions">
+          <button type="button" className="secondary" onClick={() => runScheduleCleanup(true)} disabled={Boolean(cleanupBusy)}>
+            {cleanupBusy === 'check' ? '확인 중...' : '정리 대상 확인'}
+          </button>
+          <button
+            type="button"
+            className="danger-lite"
+            onClick={() => runScheduleCleanup(false)}
+            disabled={Boolean(cleanupBusy) || !cleanupReport?.total}
+          >
+            {cleanupBusy === 'delete' ? '정리 중...' : '정리 실행'}
           </button>
         </div>
       </div>

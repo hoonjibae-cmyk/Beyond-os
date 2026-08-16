@@ -130,27 +130,73 @@ export async function GET(request) {
       });
     }
 
-    // v41-119: 예약결석 세션 정합성 자동 보정.
-    // 개인 시간표가 더 이상 결석(planned_absent)이 아닌데도, 이전에 자동 생성된
-    // '[예약결석]' 세션(체크인 없음)이 남아 좌석배치도에 결석으로 잘못 뜨는 경우를 정리합니다.
-    // (관리자가 수동 결석 처리한 세션은 메모가 달라 건드리지 않습니다.)
+    // v41-187: 기수 정보는 결석 세션 보정과 멘토링 운영 기준 양쪽에서 씁니다.
+    let cohortRows = [];
+    let todayCohort = null;
+    try {
+      const { data } = await supabase
+        .from('cohorts').select('id, name, start_date, end_date').order('start_date', { ascending: true });
+      cohortRows = data || [];
+      // 기간이 겹치면 나중에 시작한 기수를 씁니다.
+      todayCohort = [...cohortRows].reverse().find((row) => (
+        String(row.start_date || '').slice(0, 10) <= today && today <= String(row.end_date || '').slice(0, 10)
+      )) || null;
+    } catch {
+      cohortRows = [];
+      todayCohort = null;
+    }
+
+    // 예약결석 세션 정합성 자동 보정 (v41-119 → v41-187 확장)
+    //
+    // '[예약결석]' 세션은 개인 시간표의 planned_absent 를 근거로 자동 생성됩니다.
+    // 근거가 사라졌는데 세션만 남으면 좌석배치도에 결석으로 계속 뜹니다.
+    // v41-119 는 '오늘 시간표가 명시적으로 결석 아님'인 경우만 지웠습니다.
+    // 그래서 기수가 끝나 오늘 시간표 자체가 없어진 학생은 계속 결석으로 남았습니다.
+    //
+    // 이제 다음 경우를 모두 정리합니다.
+    //   · 오늘 개인 시간표가 결석이 아님
+    //   · 오늘 개인 시간표가 아예 없음 (시간표를 지웠거나 기수가 끝난 경우)
+    //   · 오늘이 어느 기수 기간에도 속하지 않음 (기수 사이 공백일)
+    //   · 오늘 기수 명단에 없는 학생임
+    // 관리자가 손으로 결석 처리한 세션은 메모가 달라 건드리지 않습니다.
     try {
       const staleAbsent = (sessions || []).filter((s) => s.seat_status === 'absent'
         && !s.check_in_at
         && String(s.attendance_memo || '').startsWith('[예약결석]'));
       if (staleAbsent.length) {
         const studentIds = [...new Set(staleAbsent.map((s) => s.student_id).filter(Boolean))];
-        const { data: scheduleRows } = await supabase
+        const { data: scheduleRows, error: scheduleError } = await supabase
           .from('student_daily_schedules')
           .select('student_id, planned_absent')
           .eq('schedule_date', today)
           .in('student_id', studentIds);
+        // 시간표 조회에 실패하면 근거를 알 수 없으므로 아무것도 지우지 않습니다.
+        if (scheduleError) throw scheduleError;
+
         const absentByStudent = {};
         for (const row of scheduleRows || []) absentByStudent[String(row.student_id)] = Boolean(row.planned_absent);
-        // 오늘 개인 시간표가 명시적으로 '결석 아님'인 학생의 stale 세션만 삭제합니다.
-        const removeIds = staleAbsent
-          .filter((s) => absentByStudent[String(s.student_id)] === false)
-          .map((s) => s.id);
+
+        // 오늘 기수 명단 (기수를 쓰지 않는 환경이면 null → 명단 조건 미적용)
+        let todayRoster = null;
+        if (cohortRows.length && todayCohort) {
+          const { data: rosterRows, error: rosterError } = await supabase
+            .from('cohort_students')
+            .select('student_id')
+            .eq('cohort_id', todayCohort.id)
+            .eq('is_active', true);
+          if (!rosterError && (rosterRows || []).length) {
+            todayRoster = new Set((rosterRows || []).map((row) => String(row.student_id)));
+          }
+        }
+
+        const removeIds = staleAbsent.filter((session) => {
+          const studentId = String(session.student_id || '');
+          if (absentByStudent[studentId] !== true) return true;       // 결석 근거가 없음
+          if (cohortRows.length && !todayCohort) return true;          // 오늘은 어느 기수도 아님
+          if (todayRoster && !todayRoster.has(studentId)) return true; // 오늘 기수 명단 밖
+          return false;
+        }).map((session) => session.id);
+
         if (removeIds.length) {
           await supabase.from('daily_sessions').delete().in('id', removeIds);
           const removeSet = new Set(removeIds);
@@ -172,11 +218,7 @@ export async function GET(request) {
     // 오늘이 속한 기수에 전용 설정이 있으면 그것을, 없으면 공통을 씁니다.
     let mentoringPolicy = normalizeMentoringPolicy(FALLBACK_MENTORING_POLICY);
     try {
-      const { data: cohortRows } = await supabase
-        .from('cohorts').select('id, start_date, end_date').order('start_date', { ascending: true });
-      const todayCohort = (cohortRows || []).find((row) => (
-        String(row.start_date || '').slice(0, 10) <= today && today <= String(row.end_date || '').slice(0, 10)
-      ));
+      // v41-187: 위에서 이미 읽어 둔 기수를 그대로 씁니다.
       const keys = [MENTORING_POLICY_SETTING_KEY];
       if (todayCohort) keys.push(getMentoringPolicyCohortKey(todayCohort.id));
       const { data: policyRows } = await supabase
