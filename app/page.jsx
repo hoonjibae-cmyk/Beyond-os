@@ -1106,6 +1106,22 @@ const ATTENDANCE_ACTION_UNLOCK_MS = 450;
 // v41-183: 로그인 상태에서 계정 상태(활성/비활성)를 다시 확인하는 주기입니다.
 const SESSION_RECHECK_MS = 3 * 60 * 1000;
 
+// v41-194: 부재(늦은 등원 / 이른 하원) 구간의 이름.
+//
+// 지금까지 일정 메모(schedule_note)를 부재 사유로 붙였습니다. 그런데 메모에는
+// '비욘드2기 설문 응답 기준 자동 등록', '평일 기본 시간표 · 일괄 생성'처럼
+// 그 시간표가 어디서 만들어졌는지가 들어 있습니다. 부재 사유가 아닙니다.
+// 그래서 화면이 "부재_비욘드2기 설문 응답 기준 자동 등록"으로 읽혀
+// 무엇 때문에 비는 구간인지 알 수 없었습니다.
+// 이제 늦은 등원인지 이른 하원인지를 그대로 적고, 사람이 쓴 메모만 덧붙입니다.
+const AUTO_SCHEDULE_NOTE_PATTERN = /(자동\s*등록|일괄\s*생성|기본\s*시간표|학부모\s*확인\s*시간표|설문\s*응답)/;
+function formatAbsenceLabel(kind, scheduleNote) {
+  const base = kind === 'in' ? '늦은 등원' : '이른 하원';
+  const note = String(scheduleNote || '').trim();
+  if (!note || AUTO_SCHEDULE_NOTE_PATTERN.test(note)) return base;
+  return `${base} · ${note}`;
+}
+
 // v41-193: 이번 저장으로 '운영 → 휴무'가 되는 날짜를 찾습니다.
 // 공휴일 지정, 날짜별 예외 지정, 요일 유형 운영 토글이 모두 반영됩니다.
 // 이미 휴무였던 날짜는 제외합니다. (그 날 일부러 넣어 둔 일정을 지우지 않기 위해)
@@ -5506,9 +5522,9 @@ export default function Page() {
       }))
       .filter((item) => item.startMinute !== null && item.endMinute !== null && item.endMinute > item.startMinute);
 
-    // 부재(늦은 등원/이른 하원) 사유: 일정 메모(schedule_note)를 사용
-    const absenceReason = String(schedule.schedule_note || '').trim();
-    const absenceLabel = absenceReason ? `부재_${absenceReason}` : '부재';
+    // v41-194: 부재 구간은 '늦은 등원 / 이른 하원'으로 표기합니다. (일정 메모는 등록 출처라 사유가 아닙니다)
+    const absenceLabelIn = formatAbsenceLabel('in', schedule.schedule_note);
+    const absenceLabelOut = formatAbsenceLabel('out', schedule.schedule_note);
 
     // 학습 세그먼트 + 외출을 시간순으로 병합. 외출을 만나면 그 전까지의 연속 차시를 한 배지로 flush.
     const events = [...segments, ...breakItems]
@@ -5539,10 +5555,10 @@ export default function Page() {
 
     // 기본 등원보다 늦게 옴 / 기본 하원보다 일찍 감 → '부재' 구간 배지
     if (startMin !== null && baseInMin !== null && startMin > baseInMin) {
-      chips.unshift({ label: `${minutesToTime(baseInMin)}~${minutesToTime(startMin)} ${absenceLabel}`, kind: 'deviation' });
+      chips.unshift({ label: `${minutesToTime(baseInMin)}~${minutesToTime(startMin)} ${absenceLabelIn}`, kind: 'deviation' });
     }
     if (endMin !== null && baseOutMin !== null && endMin < baseOutMin) {
-      chips.push({ label: `${minutesToTime(endMin)}~${minutesToTime(baseOutMin)} ${absenceLabel}`, kind: 'deviation' });
+      chips.push({ label: `${minutesToTime(endMin)}~${minutesToTime(baseOutMin)} ${absenceLabelOut}`, kind: 'deviation' });
     }
 
     if (!chips.length) return [{ label: `${start}~${end} 등원 예정`, kind: 'match' }];
@@ -11687,8 +11703,6 @@ function SchedulesTab(props) {
     // v41-48: 2색 표기 — 기본 시간표 부합(match)=회색, 외출/부재(deviation)=연한 파랑
     const baseInMin = timeToMinutes(settings.plannedCheckIn);
     const baseOutMin = timeToMinutes(settings.plannedCheckOut);
-    const absenceReason = String(schedule.schedule_note || '').trim();
-    const absenceLabel = absenceReason ? `부재_${absenceReason}` : '부재';
     const breaks = getBreaks(schedule);
     const periodBlocks = getDefaultScheduleSegmentsExcludingBreaks(minutesToTime(start), minutesToTime(end), breaks, settings).map((segment) => ({
       id: `period-${schedule.student_id}-${schedule.schedule_date}-${segment.label}-${segment.startMinute}-${segment.endMinute}-${segment.splitIndex || 0}`,
@@ -11723,10 +11737,10 @@ function SchedulesTab(props) {
     // 늦은 등원 / 이른 하원 → '부재' 구간(연한 파랑)
     const absenceBlocks = [];
     if (start !== null && baseInMin !== null && start > baseInMin) {
-      absenceBlocks.push({ id: `absence-in-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: baseInMin, endMinute: start, title: absenceLabel, detail: `${minutesToTime(baseInMin)}~${minutesToTime(start)}`, schedule });
+      absenceBlocks.push({ id: `absence-in-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: baseInMin, endMinute: start, title: formatAbsenceLabel('in', schedule.schedule_note), detail: `${minutesToTime(baseInMin)}~${minutesToTime(start)} · 기본 등원 ${minutesToTime(baseInMin)}`, schedule });
     }
     if (end !== null && baseOutMin !== null && end < baseOutMin) {
-      absenceBlocks.push({ id: `absence-out-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: end, endMinute: baseOutMin, title: absenceLabel, detail: `${minutesToTime(end)}~${minutesToTime(baseOutMin)}`, schedule });
+      absenceBlocks.push({ id: `absence-out-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: end, endMinute: baseOutMin, title: formatAbsenceLabel('out', schedule.schedule_note), detail: `${minutesToTime(end)}~${minutesToTime(baseOutMin)} · 기본 하원 ${minutesToTime(baseOutMin)}`, schedule });
     }
 
     blocks.push(...periodBlocks, ...breakBlocks, ...absenceBlocks);
@@ -11754,8 +11768,18 @@ function SchedulesTab(props) {
       <span key={`grid-${hour}`} className="gantt-gridline" style={{ left: `${timelinePercent(hour * 60)}%` }} />
     ));
 
+    // v41-194: 파란 '부재' 구간은 이 기준(기본 시간표)과의 차이를 그린 것입니다.
+    // 기준이 화면에 없어서 무엇과 비교한 것인지 알 수 없었습니다.
+    const ganttBase = resolveForDate(scheduleBaseDate);
+
     return (
       <div className="schedule-gantt-wrap">
+        <div className="gantt-baseline-note">
+          기준 · {DEFAULT_SCHEDULE_DAY_TYPE_LABELS[ganttBase.dayType] || '평일'} 기본 시간표{' '}
+          <b>{ganttBase.plannedCheckIn}~{ganttBase.plannedCheckOut}</b>
+          {ganttBase.operating ? '' : ' (휴무일)'}
+          <span> — 파란 구간은 이 기준보다 늦게 오거나 일찍 가는 시간입니다. 기준이 실제 운영과 다르면 설정 · 기본 시간표에서 맞춰 주세요.</span>
+        </div>
         <div className="schedule-gantt">
           <div className="schedule-gantt-row schedule-gantt-ruler">
             <div className="schedule-gantt-name">시간</div>
@@ -19606,6 +19630,8 @@ function SettingsTab({
           scheduleCoverage={scheduleCoverage}
           cohortOptions={cohortOptions}
           cohortScheduleConfigs={cohortScheduleConfigs}
+          apiFetch={apiFetch}
+          setMessage={setMessage}
           editCohortId={defaultScheduleEditCohortId}
           onSelectTarget={selectDefaultScheduleTarget}
           onResetCohort={resetCohortDefaultSchedule}
@@ -22149,7 +22175,7 @@ function validateScheduleVariantDraft(variant = {}, dayLabel = '') {
   return errors;
 }
 
-function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, students = [], bulkGenerateSchedules, scheduleCoverage = null, cohortOptions = [], cohortScheduleConfigs = {}, editCohortId = '', onSelectTarget, onResetCohort }) {
+function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, students = [], bulkGenerateSchedules, scheduleCoverage = null, cohortOptions = [], cohortScheduleConfigs = {}, editCohortId = '', onSelectTarget, onResetCohort, apiFetch, setMessage }) {
   const [activeDayType, setActiveDayType] = useState('weekday');
   const [overrideBaseDate, setOverrideBaseDate] = useState(getKstDateString());
   const [bulkStart, setBulkStart] = useState(getKstDateString());
@@ -22159,6 +22185,40 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
   // v41-185: 개인 시간표는 기수 하나만 채우는 것이 기본입니다.
   const [bulkAllowCrossCohort, setBulkAllowCrossCohort] = useState(false);
   const [bulkCohortId, setBulkCohortId] = useState('');
+  // v41-194: 휴무일에 남아 있는 개인 시간표 정리
+  const [closedCleanupReport, setClosedCleanupReport] = useState(null);
+  const [closedCleanupBusy, setClosedCleanupBusy] = useState('');
+
+  async function runClosedCleanup(dryRun) {
+    if (!apiFetch) return;
+    if (!dryRun) {
+      const target = closedCleanupReport?.total || 0;
+      if (!target) return;
+      const ok = window.confirm(
+        `휴무일에 남아 있는 개인 시간표 ${target}건을 삭제할까요?\n\n`
+        + '▶ 그 날의 등하원 예정·외출 일정이 사라집니다.\n'
+        + '▶ 그 시간표 때문에 생긴 결석 표시도 함께 정리됩니다.\n'
+        + '▶ 출결 기록과 순공시간 기록은 지우지 않습니다.\n\n'
+        + '되돌릴 수 없습니다. 진행할까요?',
+      );
+      if (!ok) return;
+    }
+    try {
+      setClosedCleanupBusy(dryRun ? 'check' : 'delete');
+      const result = await apiFetch('/api/schedules', {
+        method: 'DELETE',
+        body: JSON.stringify({ mode: 'closedDates', dryRun, cohortId: editCohortId || '' }),
+      });
+      setClosedCleanupReport(result);
+      setMessage?.(dryRun
+        ? `휴무일 개인 시간표 ${result.total}건을 찾았습니다. (휴무일 ${result.closedDateCount || 0}일 검사)`
+        : `휴무일 개인 시간표 ${result.deleted}건을 정리했습니다.`);
+    } catch (error) {
+      setMessage?.(error.message);
+    } finally {
+      setClosedCleanupBusy('');
+    }
+  }
   const [selectedOverrideDate, setSelectedOverrideDate] = useState('');
 
   const configDraft = defaultScheduleConfigDraft && defaultScheduleConfigDraft.variants
@@ -22533,6 +22593,56 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
             ))}
           </div>
         ) : null}
+
+        {/* v41-194: 저장 시 자동 정리는 '이번에 새로 휴무가 된 날짜'만 대상입니다.
+            예전에 지정해 둔 휴무일에 남아 있는 시간표는 여기서 한 번에 걷어냅니다. */}
+        <div className="cross-cohort-box closed-cleanup-box">
+          <strong>휴무일에 남아 있는 개인 시간표 정리</strong>
+          <p className="cross-cohort-note">
+            지금 설정 기준으로 <b>운영하지 않는 날</b>(공휴일 지정·미운영 요일)에 개인 시간표가 남아 있으면 찾아서 지웁니다.
+            남아 있으면 그 날도 등원 예정으로 잡혀 결석 판정·리포트 대상에 들어갑니다.
+            {editCohortId ? ' 지금 고른 기수의 기간과 수강 명단 안에서만 정리합니다.' : ' 기수를 고르면 그 기수 안에서만 정리합니다.'}
+            {' '}출결·순공시간 기록은 지우지 않습니다.
+          </p>
+          {closedCleanupReport ? (
+            <div className="schedule-cleanup-report">
+              {closedCleanupReport.total ? (
+                <>
+                  <b>
+                    {closedCleanupReport.deleted
+                      ? `${closedCleanupReport.deleted}건을 정리했습니다.`
+                      : `정리 대상 ${closedCleanupReport.total}건 · 휴무일 ${closedCleanupReport.dates?.length || 0}일`}
+                  </b>
+                  <ul>
+                    {(closedCleanupReport.students || []).slice(0, 10).map((item) => (
+                      <li key={item.studentId}>{item.name} · {item.count}일</li>
+                    ))}
+                    {(closedCleanupReport.students || []).length > 10
+                      ? <li>… 외 {closedCleanupReport.students.length - 10}명</li> : null}
+                  </ul>
+                  {closedCleanupReport.dates?.length ? (
+                    <span className="cross-cohort-note">대상 날짜: {closedCleanupReport.dates.slice(0, 12).join(', ')}{closedCleanupReport.dates.length > 12 ? ' 외' : ''}</span>
+                  ) : null}
+                </>
+              ) : (
+                <b>휴무일에 남아 있는 개인 시간표가 없습니다.</b>
+              )}
+            </div>
+          ) : null}
+          <div className="planner-head-actions" style={{ marginTop: '10px' }}>
+            <button type="button" className="secondary section-action" onClick={() => runClosedCleanup(true)} disabled={Boolean(closedCleanupBusy)}>
+              {closedCleanupBusy === 'check' ? '확인 중...' : '정리 대상 확인'}
+            </button>
+            <button
+              type="button"
+              className="danger-lite section-action"
+              onClick={() => runClosedCleanup(false)}
+              disabled={Boolean(closedCleanupBusy) || !closedCleanupReport?.total}
+            >
+              {closedCleanupBusy === 'delete' ? '정리 중...' : '정리 실행'}
+            </button>
+          </div>
+        </div>
       </div>
 
       {bulkGenerateSchedules ? (

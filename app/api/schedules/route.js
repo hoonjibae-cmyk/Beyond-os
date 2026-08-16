@@ -3,6 +3,8 @@ import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
 import { loadScheduleCohortContext, planScheduleDates, describeBlockedDates, getCohortForDate } from '../../../lib/scheduleCohort';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -626,6 +628,109 @@ async function cleanupSchedulesOutsideCohorts(supabase, request, body) {
   return Response.json({ ...result, deleted: targets.length });
 }
 
+// v41-194: 휴무일(공휴일·미운영 요일)에 남아 있는 개인 시간표를 한 번에 걷어냅니다.
+//
+// v41-193 은 '이번 저장으로 새로 휴무가 된 날짜'만 정리합니다.
+// 그래서 예전에 이미 공휴일로 지정해 둔 날짜는 그대로 남아 있습니다.
+// 이 정리는 지금 설정 기준으로 휴무인 날짜 전부를 훑습니다.
+async function cleanupSchedulesOnClosedDates(supabase, request, body) {
+  const dryRun = body.dryRun === true;
+  const cohortId = String(body.cohortId || request.headers.get('x-beyond-cohort-id') || '').trim();
+
+  const context = await loadScheduleCohortContext(supabase);
+  let range = null;
+  let cohort = null;
+  if (cohortId && context.enabled) {
+    cohort = context.cohorts.find((item) => String(item.id) === cohortId) || null;
+    if (cohort) range = { start: cohort.startDate, end: cohort.endDate };
+  }
+  if (!range) {
+    // 기수를 지정하지 않으면 저장된 개인 시간표가 있는 전체 구간을 봅니다.
+    const { data: bounds, error: boundsError } = await supabase
+      .from('student_daily_schedules')
+      .select('schedule_date')
+      .order('schedule_date', { ascending: true });
+    if (boundsError) throw boundsError;
+    if (!bounds?.length) return Response.json({ dryRun, total: 0, dates: [], students: [], deleted: 0 });
+    range = {
+      start: String(bounds[0].schedule_date).slice(0, 10),
+      end: String(bounds[bounds.length - 1].schedule_date).slice(0, 10),
+    };
+  }
+
+  const scheduleConfig = await getDefaultScheduleConfig(supabase);
+  const closedDates = [];
+  let cursor = range.start;
+  let guard = 0;
+  while (cursor <= range.end && guard <= 800) {
+    if (!resolveScheduleForDate(scheduleConfig, cursor).operating) closedDates.push(cursor);
+    cursor = addDays(cursor, 1);
+    guard += 1;
+  }
+  if (!closedDates.length) {
+    return Response.json({ dryRun, total: 0, dates: [], students: [], deleted: 0, range, cohortName: cohort?.name || '' });
+  }
+
+  let query = supabase
+    .from('student_daily_schedules')
+    .select('id, student_id, schedule_date, planned_absent, students(name)')
+    .in('schedule_date', closedDates);
+  if (cohort) {
+    const { data: rosterRows, error: rosterError } = await supabase
+      .from('cohort_students').select('student_id').eq('cohort_id', cohort.id).eq('is_active', true);
+    if (rosterError) throw rosterError;
+    const roster = (rosterRows || []).map((row) => String(row.student_id));
+    if (roster.length) query = query.in('student_id', roster);
+  }
+  const { data: rows, error: rowsError } = await query;
+  if (rowsError) throw rowsError;
+
+  const byStudent = new Map();
+  const hitDates = new Set();
+  for (const row of rows || []) {
+    hitDates.add(String(row.schedule_date).slice(0, 10));
+    const key = String(row.student_id);
+    if (!byStudent.has(key)) byStudent.set(key, { studentId: key, name: row.students?.name || key, count: 0 });
+    byStudent.get(key).count += 1;
+  }
+  const summary = {
+    dryRun,
+    total: (rows || []).length,
+    dates: [...hitDates].sort(),
+    closedDateCount: closedDates.length,
+    students: [...byStudent.values()].sort((a, b) => b.count - a.count),
+    range,
+    cohortName: cohort?.name || '',
+  };
+
+  if (dryRun || !rows?.length) return Response.json({ ...summary, deleted: 0 });
+
+  const ids = rows.map((row) => row.id);
+  for (let index = 0; index < ids.length; index += 200) {
+    const part = ids.slice(index, index + 200);
+    const { error: breaksError } = await supabase.from('student_schedule_breaks').delete().in('schedule_id', part);
+    if (breaksError) throw breaksError;
+    const { error: deleteError } = await supabase.from('student_daily_schedules').delete().in('id', part);
+    if (deleteError) throw deleteError;
+  }
+  for (const row of rows) {
+    if (row.planned_absent === false) continue;
+    await rollbackPlannedAbsentSession(supabase, {
+      studentId: row.student_id,
+      date: String(row.schedule_date).slice(0, 10),
+    });
+  }
+
+  await writeUserActionLog(supabase, request, {
+    actionType: 'schedule.cleanup_closed_dates',
+    targetType: 'student_schedule',
+    targetName: `휴무일 개인 시간표 ${ids.length}건`,
+    payload: { deleted: ids.length, cohortId: cohort?.id || null, range },
+  });
+
+  return Response.json({ ...summary, deleted: ids.length });
+}
+
 // 개인 시간표(등하원 조정 + 외출 일정)를 삭제합니다.
 // v41-42부터 삭제하면 해당 날짜는 빈 날(등원 예정 없음)이 됩니다.
 // v41-44: 저장과 동일한 반복 옵션(repeat/repeatUntil)으로 여러 날짜를 한 번에 삭제할 수 있습니다.
@@ -647,6 +752,10 @@ export async function DELETE(request) {
     // v41-187: 기수 기간 밖에 남아 있는 개인 시간표 일괄 정리 (학생 지정 없이 전체 대상)
     if (mode === 'outsideCohorts') {
       return await cleanupSchedulesOutsideCohorts(supabase, request, body);
+    }
+    // v41-194: 휴무일에 남아 있는 개인 시간표 일괄 정리
+    if (mode === 'closedDates') {
+      return await cleanupSchedulesOnClosedDates(supabase, request, body);
     }
 
     if (!studentId) {
