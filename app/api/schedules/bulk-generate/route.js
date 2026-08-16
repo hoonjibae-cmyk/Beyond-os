@@ -4,6 +4,7 @@ import { writeUserActionLog } from '../../../../lib/actionLog';
 import { getKstDateString } from '../../../../lib/date';
 import { getDefaultScheduleConfig } from '../../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../../lib/defaultSchedule';
+import { loadScheduleCohortContext, getCohortForDate, clampRangeToCohort } from '../../../../lib/scheduleCohort';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,10 +32,43 @@ export async function POST(request) {
     const supabase = getSupabaseAdmin();
     const today = getKstDateString();
 
-    const startDate = isValidDate(body.startDate) ? body.startDate : today;
-    const endDate = isValidDate(body.endDate) ? body.endDate : addDays(startDate, 27);
+    let startDate = isValidDate(body.startDate) ? body.startDate : today;
+    let endDate = isValidDate(body.endDate) ? body.endDate : addDays(startDate, 27);
     if (endDate < startDate) {
       return Response.json({ error: '종료일은 시작일보다 빠를 수 없습니다.' }, { status: 400 });
+    }
+
+    // v41-185: 개인 시간표는 기수 하나만 채웁니다.
+    // 요청 기간이 기수 경계를 넘으면 경계에서 자르고, 어느 기수에도 속하지 않는
+    // 기간이면 아예 만들지 않습니다. (allowCrossCohort 로만 예외)
+    const allowCrossCohort = body.allowCrossCohort === true;
+    const cohortContext = await loadScheduleCohortContext(supabase);
+    const requestedCohortId = String(body.cohortId || request.headers.get('x-beyond-cohort-id') || '').trim();
+    let cohort = null;
+    let clampedToCohort = false;
+
+    if (cohortContext.enabled && !allowCrossCohort) {
+      cohort = requestedCohortId
+        ? cohortContext.cohorts.find((item) => String(item.id) === requestedCohortId) || null
+        : null;
+      // 기수를 지정하지 않았으면 시작일이 속한 기수를 씁니다.
+      if (!cohort) cohort = getCohortForDate(cohortContext, startDate);
+      if (!cohort) {
+        return Response.json({
+          error: `${startDate}은 어느 기수 기간에도 들어가지 않습니다.`
+            + ' 개인 시간표는 기수 기간 안에만 만들 수 있습니다. 설정 · 기수 관리에서 기간을 확인하거나 시작일을 조정하세요.',
+        }, { status: 400 });
+      }
+
+      const clamped = clampRangeToCohort(cohort, startDate, endDate);
+      if (!clamped) {
+        return Response.json({
+          error: `요청한 기간(${startDate}~${endDate})이 ${cohort.name} 기간(${cohort.startDate}~${cohort.endDate})과 겹치지 않습니다.`,
+        }, { status: 400 });
+      }
+      startDate = clamped.startDate;
+      endDate = clamped.endDate;
+      clampedToCohort = clamped.clamped;
     }
 
     const dates = [];
@@ -53,9 +87,32 @@ export async function POST(request) {
     const { data: students, error: studentsError } = await studentQuery;
     if (studentsError) throw studentsError;
 
-    const targetStudents = (students || []).filter((student) => student.status !== 'inactive');
+    let targetStudents = (students || []).filter((student) => student.status !== 'inactive');
+
+    // v41-185: 그 기수 수강 명단에 있는 학생만 만듭니다.
+    // 명단을 아직 만들지 않은 기수라면(0명) 명단 조건은 적용하지 않습니다.
+    let skippedNotEnrolled = 0;
+    if (cohort) {
+      const { data: rosterRows, error: rosterError } = await supabase
+        .from('cohort_students')
+        .select('student_id')
+        .eq('cohort_id', cohort.id)
+        .eq('is_active', true);
+      if (rosterError) throw rosterError;
+      const rosterIds = new Set((rosterRows || []).map((row) => String(row.student_id)));
+      if (rosterIds.size) {
+        const before = targetStudents.length;
+        targetStudents = targetStudents.filter((student) => rosterIds.has(String(student.id)));
+        skippedNotEnrolled = before - targetStudents.length;
+      }
+    }
+
     if (!targetStudents.length) {
-      return Response.json({ error: '일괄 생성 대상 학생이 없습니다.' }, { status: 400 });
+      return Response.json({
+        error: cohort
+          ? `${cohort.name} 수강 명단에 있는 생성 대상 학생이 없습니다. 설정 · 기수 관리에서 명단을 먼저 만들어 주세요.`
+          : '일괄 생성 대상 학생이 없습니다.',
+      }, { status: 400 });
     }
 
     const scheduleConfig = await getDefaultScheduleConfig(supabase);
@@ -109,6 +166,10 @@ export async function POST(request) {
         created: rowsToInsert.length,
         skippedExisting: existingKeys.size,
         skippedRestDays,
+        cohortId: cohort?.id || null,
+        cohortName: cohort?.name || '',
+        clampedToCohort,
+        skippedNotEnrolled,
       },
     });
 
@@ -120,6 +181,12 @@ export async function POST(request) {
       skippedExisting: (existingRows || []).length,
       startDate,
       endDate,
+      cohortId: cohort?.id || null,
+      cohortName: cohort?.name || '',
+      cohortStartDate: cohort?.startDate || null,
+      cohortEndDate: cohort?.endDate || null,
+      clampedToCohort,
+      skippedNotEnrolled,
     });
   } catch (error) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });

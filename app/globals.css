@@ -19221,6 +19221,13 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .survey-unmatched-badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:#fff3e0; color:#b26a00; }
 /* v41-182: 전체 보기에서 어느 기수 설문인지 구분합니다. */
 .survey-cohort-badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:#eef1f6; color:#4a5568; border:1px solid #dfe3ea; }
+/* v41-185: 개인 시간표를 기수 단위로 끊는 안내 / 예외 체크 */
+.cross-cohort-box{ margin:10px 0 0; padding:10px 12px; border:1px solid #dfe3ea; border-radius:12px; background:#f7f8fa; }
+.cross-cohort-check{ display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:700; color:#1d1d1f; cursor:pointer; }
+.cross-cohort-check input[type=checkbox]{ width:auto; margin:0; }
+.cross-cohort-note{ margin:6px 0 0; font-size:12px; line-height:1.55; color:#6e6e73; }
+.cross-cohort-note.warn{ margin:10px 0 0; padding:8px 12px; border:1px solid #f2d6a8; border-radius:10px; background:#fff8ec; color:#8a5a00; font-weight:600; }
+
 /* v41-184: 이번 기수 업로드가 없어 이전 기수 응답을 보여주는 카드 */
 .survey-inherited-badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:#eef7ee; color:#2f6b3a; border:1px solid #d5e8d7; cursor:help; }
 .survey-card-meta{ display:flex; flex-wrap:wrap; gap:6px 16px; margin:10px 0 0; }

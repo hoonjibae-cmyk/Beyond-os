@@ -2,8 +2,29 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
+import { loadScheduleCohortContext, planScheduleDates, describeBlockedDates } from '../../../lib/scheduleCohort';
 
 export const dynamic = 'force-dynamic';
+
+// v41-185: 개인 시간표는 기수 하나만 채웁니다.
+// 반복 저장이 기수 경계를 넘어가면 경계에서 자르고, 어느 기수에도 속하지 않는
+// 날짜는 아예 만들지 않습니다. body.allowCrossCohort 가 true 면 예전처럼 그대로 갑니다.
+async function planDatesForCohort(supabase, body, dates) {
+  const context = await loadScheduleCohortContext(supabase);
+  return planScheduleDates(context, {
+    anchorDate: body.scheduleDate,
+    dates,
+    allowCrossCohort: body.allowCrossCohort === true,
+  });
+}
+
+function blockedResponse(plan) {
+  return Response.json({
+    error: describeBlockedDates(plan) || '기수 기간 안의 날짜가 아니어서 개인 시간표를 만들 수 없습니다.',
+    blockedDates: plan.blocked,
+    cohort: plan.cohort ? { id: plan.cohort.id, name: plan.cohort.name, startDate: plan.cohort.startDate, endDate: plan.cohort.endDate } : null,
+  }, { status: 400 });
+}
 
 function addDays(dateString, amount) {
   const d = new Date(`${dateString}T00:00:00`);
@@ -226,7 +247,13 @@ async function replaceBreaksForSchedule(supabase, scheduleId, breaks) {
 // 선택한 이벤트만 반복 날짜에 적용하고, 같은 날짜의 다른 이벤트 필드는 기존 값을 보존합니다.
 async function saveScopedEvent(supabase, request, body) {
   const scope = body.eventScope;
-  const dates = expandDatesForEvent(body.scheduleDate, body.repeatMode || 'none', body.repeatWeekdays || [], body.repeatUntil || body.scheduleDate);
+  const requestedDates = expandDatesForEvent(body.scheduleDate, body.repeatMode || 'none', body.repeatWeekdays || [], body.repeatUntil || body.scheduleDate);
+
+  // v41-185: 기수 경계에서 자릅니다.
+  const plan = await planDatesForCohort(supabase, body, requestedDates);
+  if (!plan.allowed.length) return blockedResponse(plan);
+  const dates = plan.allowed;
+  const cohortNotice = describeBlockedDates(plan);
 
   let absenceSupported = true;
   try {
@@ -315,10 +342,25 @@ async function saveScopedEvent(supabase, request, body) {
     targetType: 'student_schedule',
     targetId: saved[0]?.id,
     targetName: body.studentName || body.studentId,
-    payload: { studentId: body.studentId, eventScope: scope, affectedDates: dates, repeatMode: body.repeatMode || 'none', repeatWeekdays: body.repeatWeekdays || [] },
+    payload: {
+      studentId: body.studentId,
+      eventScope: scope,
+      affectedDates: dates,
+      repeatMode: body.repeatMode || 'none',
+      repeatWeekdays: body.repeatWeekdays || [],
+      cohortId: plan.cohort?.id || null,
+      blockedCount: plan.blocked.length,
+    },
   });
 
-  return Response.json({ schedules: saved, affectedDates: dates, eventScope: scope });
+  return Response.json({
+    schedules: saved,
+    affectedDates: dates,
+    eventScope: scope,
+    blockedDates: plan.blocked,
+    cohortNotice,
+    cohort: plan.cohort ? { id: plan.cohort.id, name: plan.cohort.name } : null,
+  });
 }
 
 export async function GET(request) {
@@ -380,8 +422,14 @@ export async function POST(request) {
     const absentDates = body.plannedAbsent
       ? expandDates(body.scheduleDate, body.absentRepeat || 'none', body.absentRepeatUntil || body.scheduleDate)
       : [];
-    const absentSet = new Set(absentDates);
-    const allDates = [...new Set([...commuteDates, ...breakDates, ...absentDates])].sort();
+    // v41-185: 반복 저장이 기수 경계를 넘지 않도록 자릅니다.
+    const plan = await planDatesForCohort(supabase, body, [...commuteDates, ...breakDates, ...absentDates]);
+    if (!plan.allowed.length) return blockedResponse(plan);
+    const allowedSet = new Set(plan.allowed);
+    const cohortNotice = describeBlockedDates(plan);
+
+    const absentSet = new Set(absentDates.filter((date) => allowedSet.has(date)));
+    const allDates = plan.allowed;
     const savedSchedules = [];
 
     // planned_absent 컬럼(마이그레이션) 적용 여부를 확인하고, 롤백 판정을 위해 이전 값을 읽어둡니다.
@@ -445,10 +493,21 @@ export async function POST(request) {
         breakDates,
         absentDates,
         breakCount: Array.isArray(body.breaks) ? body.breaks.length : 0,
+        cohortId: plan.cohort?.id || null,
+        blockedCount: plan.blocked.length,
       },
     });
 
-    return Response.json({ schedules: savedSchedules, affectedDates: allDates, commuteDates, breakDates, absentDates });
+    return Response.json({
+      schedules: savedSchedules,
+      affectedDates: allDates,
+      commuteDates: commuteDates.filter((date) => allowedSet.has(date)),
+      breakDates: breakDates.filter((date) => allowedSet.has(date)),
+      absentDates: [...absentSet].sort(),
+      blockedDates: plan.blocked,
+      cohortNotice,
+      cohort: plan.cohort ? { id: plan.cohort.id, name: plan.cohort.name } : null,
+    });
   } catch (error) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
   }

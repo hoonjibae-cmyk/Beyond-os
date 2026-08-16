@@ -3163,14 +3163,19 @@ export default function Page() {
     }
   }
 
-  async function bulkGenerateSchedules({ studentIds = null, startDate, endDate }) {
+  // v41-185: 개인 시간표는 기수 하나만 채웁니다. cohortId 는 지금 보고 있는 기수를 넘기고,
+  // allowCrossCohort 를 켜야만 기수 경계를 넘어 생성합니다.
+  async function bulkGenerateSchedules({ studentIds = null, startDate, endDate, cohortId = '', allowCrossCohort = false }) {
     try {
       setMessage('기본 시간표로 개인 시간표 일괄 생성 중...');
       const data = await apiFetch('/api/schedules/bulk-generate', {
         method: 'POST',
-        body: JSON.stringify({ studentIds, startDate, endDate }),
+        body: JSON.stringify({ studentIds, startDate, endDate, cohortId, allowCrossCohort }),
       });
-      setMessage(`일괄 생성 완료: 학생 ${data.studentCount}명 × 운영일 ${data.operatingDayCount}일 → ${data.created}건 생성 (기존 ${data.skippedExisting}건 보존${data.skippedRestDays ? ` · 휴무일 ${data.skippedRestDays}일 제외` : ''})`);
+      const cohortText = data.cohortName ? `[${data.cohortName}] ` : '';
+      const clampText = data.clampedToCohort ? ` · 기수 기간(${data.cohortStartDate}~${data.cohortEndDate})으로 조정됨` : '';
+      const rosterText = data.skippedNotEnrolled ? ` · 기수 명단 밖 ${data.skippedNotEnrolled}명 제외` : '';
+      setMessage(`${cohortText}일괄 생성 완료: 학생 ${data.studentCount}명 × 운영일 ${data.operatingDayCount}일 → ${data.created}건 생성 (기존 ${data.skippedExisting}건 보존${data.skippedRestDays ? ` · 휴무일 ${data.skippedRestDays}일 제외` : ''}${clampText}${rosterText})`);
       await loadSchedules();
       await loadDashboard({ silent: true, suppressChangeNotice: true });
     } catch (error) {
@@ -5161,6 +5166,9 @@ export default function Page() {
       repeatMode,
       repeatWeekdays,
       repeatUntil: repeatMode === 'none' ? activityPopup.scheduleDate : (activityPopup.repeatUntil || activityPopup.scheduleDate),
+      // v41-185: 반복이 기수 경계를 넘으면 서버가 잘라 냅니다.
+      // 체크했을 때만 예전처럼 기수를 넘어 이어서 저장합니다.
+      allowCrossCohort: activityPopup.allowCrossCohort === true,
       // 새 행 생성 시 기준 등하원 시간(기존 행이 있으면 서버에서 보존)
       plannedCheckIn: activityPopup.plannedCheckIn,
       plannedCheckOut: activityPopup.plannedCheckOut,
@@ -5193,14 +5201,20 @@ export default function Page() {
 
     try {
       setMessage('일정 저장 중...');
-      await apiFetch('/api/schedules', {
+      const result = await apiFetch('/api/schedules', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
       setActivityPopup(null);
       await loadSchedules();
       await loadDashboard({ silent: true, suppressChangeNotice: true });
-      setMessage(`${EVENT_TYPE_LABELS[scope] || '일정'} 저장 완료`);
+      // v41-185: 기수 경계에서 잘린 경우 어디까지 저장됐는지 알려 줍니다.
+      if (result?.cohortNotice) {
+        alert(result.cohortNotice);
+        setMessage(result.cohortNotice);
+      } else {
+        setMessage(`${EVENT_TYPE_LABELS[scope] || '일정'} 저장 완료`);
+      }
     } catch (error) {
       // 모달이 열린 상태에서는 하단 토스트가 가려질 수 있어 alert로도 즉시 표시합니다.
       alert(error.message || '일정 저장에 실패했습니다.');
@@ -5747,6 +5761,7 @@ export default function Page() {
               addBreak={addActivityPopupBreak}
               removeBreak={removeActivityPopupBreak}
               deletePopupSchedule={deleteActivitySchedule}
+              cohortOptions={cohortOptions}
             />
           </>
         ) : null}
@@ -6736,12 +6751,25 @@ function AlertCenter({ alerts, nowTick, onConfirm, onNotifyParent, onParentConfi
 
 
 
-function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBreak, removeBreak, deletePopupSchedule }) {
+function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBreak, removeBreak, deletePopupSchedule, cohortOptions = [] }) {
   if (!popup) return null;
   const step = popup.step || 'type';
   const eventType = popup.eventType;
   const repeatMode = popup.repeatMode || 'none';
   const setField = (patch) => setPopup({ ...popup, ...patch });
+
+  // v41-185: 개인 시간표는 기수 하나만 채웁니다.
+  // 반복 종료일이 이 날짜가 속한 기수를 넘어갈 때만 [이어서 만들기] 선택지를 보여줍니다.
+  const anchorCohort = cohortOptions.length
+    ? [...cohortOptions].reverse().find((item) => (
+      String(item.startDate || '') <= popup.scheduleDate && popup.scheduleDate <= String(item.endDate || '')
+    )) || null
+    : null;
+  const repeatUntilValue = popup.repeatUntil || popup.scheduleDate;
+  const crossesCohort = Boolean(
+    anchorCohort && repeatMode !== 'none' && repeatUntilValue > anchorCohort.endDate,
+  );
+  const outsideAnyCohort = Boolean(cohortOptions.length && !anchorCohort);
   const chooseType = (type) => setPopup({ ...popup, eventType: type, step: 'detail' });
   const toggleWeekday = (dow) => {
     const set = new Set(popup.repeatWeekdays || []);
@@ -6769,6 +6797,24 @@ function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBre
       ) : (
         <p className="event-repeat-hint">이 날짜({popup.scheduleDate})에만 적용됩니다.</p>
       )}
+      {/* v41-185: 기수 경계를 넘는 반복은 기본으로 끊고, 여기서만 이어 갑니다. */}
+      {outsideAnyCohort ? (
+        <p className="cross-cohort-note warn">
+          {popup.scheduleDate}은 어느 기수 기간에도 들어가지 않습니다. 개인 시간표는 기수 기간 안에만 만들 수 있습니다.
+        </p>
+      ) : crossesCohort ? (
+        <div className="cross-cohort-box">
+          <label className="cross-cohort-check">
+            <input type="checkbox" checked={popup.allowCrossCohort === true} onChange={(e) => setField({ allowCrossCohort: e.target.checked })} />
+            <span>기수가 바뀌어도 이어서 만들기</span>
+          </label>
+          <p className="cross-cohort-note">
+            {popup.allowCrossCohort
+              ? `⚠ ${anchorCohort.name} 기간을 넘어 ${repeatUntilValue}까지 이어서 만듭니다.`
+              : `${anchorCohort.name} 종료일(${anchorCohort.endDate})까지만 만듭니다. 다음 기수 시간표는 그 기수에서 새로 입력해 주세요.`}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 
@@ -21882,6 +21928,9 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
   const [bulkEnd, setBulkEnd] = useState(addDays(getKstDateString(), 27));
   const [bulkTargetStudentId, setBulkTargetStudentId] = useState('all');
   const [bulkWorking, setBulkWorking] = useState(false);
+  // v41-185: 개인 시간표는 기수 하나만 채우는 것이 기본입니다.
+  const [bulkAllowCrossCohort, setBulkAllowCrossCohort] = useState(false);
+  const [bulkCohortId, setBulkCohortId] = useState('');
   const [selectedOverrideDate, setSelectedOverrideDate] = useState('');
 
   const configDraft = defaultScheduleConfigDraft && defaultScheduleConfigDraft.variants
@@ -21924,16 +21973,51 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
     return getDayTypeForDate({ holidays }, date);
   }
 
+  // v41-185: 어느 기수 기간을 채우는지 화면에서 먼저 확인할 수 있게 합니다.
+  const bulkCohort = useMemo(() => {
+    if (!cohortOptions.length) return null;
+    if (bulkCohortId) return cohortOptions.find((item) => String(item.id) === String(bulkCohortId)) || null;
+    // 기수를 고르지 않았으면 서버와 같은 규칙(시작일이 속한 기수)으로 미리 보여줍니다.
+    return [...cohortOptions].reverse().find((item) => (
+      String(item.startDate || '') <= bulkStart && bulkStart <= String(item.endDate || '')
+    )) || null;
+  }, [cohortOptions, bulkCohortId, bulkStart]);
+
+  const bulkOutOfCohort = Boolean(
+    cohortOptions.length && !bulkAllowCrossCohort && bulkCohort
+    && (bulkStart < bulkCohort.startDate || bulkEnd > bulkCohort.endDate),
+  );
+
+  function applyBulkCohortRange(cohortId) {
+    setBulkCohortId(cohortId);
+    const picked = cohortOptions.find((item) => String(item.id) === String(cohortId));
+    if (picked?.startDate && picked?.endDate) {
+      setBulkStart(picked.startDate);
+      setBulkEnd(picked.endDate);
+    }
+  }
+
   async function runBulkGenerate() {
     if (!bulkGenerateSchedules) return;
     const targetStudent = bulkTargetStudentId !== 'all' ? students.find((student) => String(student.id) === String(bulkTargetStudentId)) : null;
+    const cohortLine = cohortOptions.length
+      ? (bulkAllowCrossCohort
+        ? '\n\n⚠ [기수가 바뀌어도 이어서 생성]이 켜져 있습니다. 기수 경계를 넘어 생성합니다.'
+        : `\n\n대상 기수: ${bulkCohort ? `${bulkCohort.name} (${bulkCohort.startDate}~${bulkCohort.endDate})` : '시작일이 속한 기수'}\n기수 기간과 수강 명단을 벗어나는 부분은 생성하지 않습니다.`)
+      : '';
     const confirmed = window.confirm(
-      `${targetStudent ? `${targetStudent.name} 학생` : '전체 학생'} · ${bulkStart} ~ ${bulkEnd}\n\n요일 유형별 기본 시간표(운영일 기준)로 개인 시간표를 일괄 생성합니다.\n이미 저장된 날짜는 변경하지 않습니다. 진행할까요?`
+      `${targetStudent ? `${targetStudent.name} 학생` : '전체 학생'} · ${bulkStart} ~ ${bulkEnd}\n\n요일 유형별 기본 시간표(운영일 기준)로 개인 시간표를 일괄 생성합니다.\n이미 저장된 날짜는 변경하지 않습니다.${cohortLine}\n\n진행할까요?`
     );
     if (!confirmed) return;
     setBulkWorking(true);
     try {
-      await bulkGenerateSchedules({ studentIds: targetStudent ? [targetStudent.id] : null, startDate: bulkStart, endDate: bulkEnd });
+      await bulkGenerateSchedules({
+        studentIds: targetStudent ? [targetStudent.id] : null,
+        startDate: bulkStart,
+        endDate: bulkEnd,
+        cohortId: bulkCohortId,
+        allowCrossCohort: bulkAllowCrossCohort,
+      });
     } finally {
       setBulkWorking(false);
     }
@@ -22238,6 +22322,17 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
             </div>
           ) : null}
           <div className="time-grid">
+            {cohortOptions.length ? (
+              <div className="field">
+                <label>기수</label>
+                <select value={bulkCohortId} onChange={(e) => applyBulkCohortRange(e.target.value)}>
+                  <option value="">시작일이 속한 기수</option>
+                  {cohortOptions.map((cohort) => (
+                    <option key={cohort.id} value={cohort.id}>{cohort.name} ({cohort.startDate}~{cohort.endDate})</option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div className="field">
               <label>시작일</label>
               <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={bulkStart} onChange={(e) => setBulkStart(e.target.value)} />
@@ -22258,6 +22353,22 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
               <button className="primary" onClick={runBulkGenerate} disabled={bulkWorking || defaultScheduleLoading}>{bulkWorking ? '생성 중...' : '일괄 생성'}</button>
             </div>
           </div>
+          {/* v41-185: 기수 경계를 넘는 생성은 기본으로 막고, 여기서만 열어 줍니다. */}
+          {cohortOptions.length ? (
+            <div className="cross-cohort-box">
+              <label className="cross-cohort-check">
+                <input type="checkbox" checked={bulkAllowCrossCohort} onChange={(e) => setBulkAllowCrossCohort(e.target.checked)} />
+                <span>기수가 바뀌어도 이어서 생성 (기수 기간·명단 제한 해제)</span>
+              </label>
+              <p className="cross-cohort-note">
+                {bulkAllowCrossCohort
+                  ? '⚠ 기수 경계를 무시하고 요청 기간 전체를 생성합니다. 다음 기수 시간표까지 미리 만들어야 할 때만 쓰세요.'
+                  : bulkOutOfCohort && bulkCohort
+                    ? `요청 기간이 ${bulkCohort.name} 기간(${bulkCohort.startDate}~${bulkCohort.endDate})을 벗어납니다. 벗어난 부분은 생성하지 않습니다.`
+                    : `개인 시간표는 기수 기간 안에만 만듭니다. ${bulkCohort ? `${bulkCohort.name} 수강 명단` : '해당 기수 수강 명단'}에 있는 학생만 대상입니다.`}
+              </p>
+            </div>
+          ) : null}
           <div className="hint">신규 학생 등록 후에는 대상에서 해당 학생만 선택해 실행하세요. 시간표 저장을 먼저 완료한 뒤 실행해야 최신 기본 시간표가 반영됩니다.</div>
         </div>
       ) : null}
