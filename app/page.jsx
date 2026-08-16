@@ -1106,6 +1106,27 @@ const ATTENDANCE_ACTION_UNLOCK_MS = 450;
 // v41-183: 로그인 상태에서 계정 상태(활성/비활성)를 다시 확인하는 주기입니다.
 const SESSION_RECHECK_MS = 3 * 60 * 1000;
 
+// v41-193: 이번 저장으로 '운영 → 휴무'가 되는 날짜를 찾습니다.
+// 공휴일 지정, 날짜별 예외 지정, 요일 유형 운영 토글이 모두 반영됩니다.
+// 이미 휴무였던 날짜는 제외합니다. (그 날 일부러 넣어 둔 일정을 지우지 않기 위해)
+function findNewlyClosedDates(savedConfig, nextConfig) {
+  if (!nextConfig) return [];
+  const dates = new Set();
+  for (const config of [savedConfig, nextConfig]) {
+    if (!config) continue;
+    for (const date of Object.keys(config.dateOverrides || {})) dates.add(date);
+    for (const date of config.holidays || []) dates.add(date);
+  }
+  return [...dates]
+    .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .filter((date) => {
+      if (resolveScheduleForDate(nextConfig, date).operating) return false;
+      if (!savedConfig) return true;
+      return resolveScheduleForDate(savedConfig, date).operating;
+    })
+    .sort();
+}
+
 // v41-189: 모달 바깥(배경)을 눌러 닫을 때 쓰는 핸들러입니다.
 //
 // 배경에 onClick 만 달면, 입력칸 안에서 드래그를 시작해 배경에서 손을 떼는 순간
@@ -2964,9 +2985,26 @@ export default function Page() {
 
   async function saveDefaultSchedule(nextConfig = defaultScheduleConfigDraft) {
     try {
-      setDefaultScheduleLoading(true);
       const normalizedConfig = normalizeDefaultScheduleConfig(nextConfig);
       const targetCohortId = String(defaultScheduleEditCohortId || '');
+
+      // v41-193: 이번 저장으로 휴무가 되는 날짜가 있으면 먼저 알리고 확인받습니다.
+      // 그 날짜의 개인 시간표는 서버에서 함께 정리됩니다.
+      const savedConfig = targetCohortId
+        ? (defaultScheduleCohortConfigs[targetCohortId] || null)
+        : defaultScheduleConfig;
+      const newlyClosed = findNewlyClosedDates(savedConfig, normalizedConfig);
+      if (newlyClosed.length) {
+        const preview = newlyClosed.slice(0, 10).join(', ');
+        const ok = window.confirm(
+          `휴무로 지정한 날짜가 ${newlyClosed.length}일 있습니다.\n${preview}${newlyClosed.length > 10 ? ' 외' : ''}\n\n`
+          + '이 날짜에 이미 저장된 개인 시간표는 함께 삭제됩니다.\n'
+          + '(휴무일에는 등원 예정이 없어야 결석 판정·리포트에서 빠집니다)\n\n계속할까요?',
+        );
+        if (!ok) return;
+      }
+
+      setDefaultScheduleLoading(true);
       const data = await apiFetch('/api/default-schedule', {
         method: 'POST',
         body: JSON.stringify({ defaultScheduleConfig: normalizedConfig, cohortId: targetCohortId || undefined }),
@@ -2978,7 +3016,14 @@ export default function Page() {
       } else {
         applyDefaultScheduleConfig(data.defaultScheduleConfig || normalizedConfig);
       }
-      setMessage(data.warning || (targetCohortId ? '이 기수 기본 시간표 저장 완료' : '기본 시간표 저장 완료'));
+      const closedText = data.closedScheduleDeleted
+        ? ` · 휴무 지정한 ${data.closedDates?.length || 0}일의 개인 시간표 ${data.closedScheduleDeleted}건 정리`
+        : '';
+      setMessage(
+        data.closedCleanupWarning
+        || data.warning
+        || `${targetCohortId ? '이 기수 기본 시간표 저장 완료' : '기본 시간표 저장 완료'}${closedText}`,
+      );
       // v41-34.1: 멘토링 차시 드롭다운/요일 템플릿도 설정 탭의 기본 시간표를 기준으로 쓰도록 동기화합니다.
       await apiFetch('/api/mentoring', { method: 'POST', body: JSON.stringify({ action: 'seedDefaults', scheduleDate: getKstDateString() }) }).catch(() => null);
       await Promise.allSettled([loadDashboard({ silent: true, runAutoCheckout: false }), loadSchedules()]);

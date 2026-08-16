@@ -16,6 +16,8 @@ import {
   DAY_LABELS,
 } from '../../../lib/scheduleImport';
 import { normalizeCohort, formatCohortLabel } from '../../../lib/cohorts';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -46,6 +48,12 @@ function isValidTime(value) {
 function timeToMinutes(value) {
   if (!isValidTime(value)) return null;
   return Number(String(value).slice(0, 2)) * 60 + Number(String(value).slice(3, 5));
+}
+
+function addDays(dateString, amount) {
+  const d = new Date(`${dateString}T12:00:00+09:00`);
+  d.setUTCDate(d.getUTCDate() + amount);
+  return d.toISOString().slice(0, 10);
 }
 
 function daysBetween(start, end) {
@@ -176,6 +184,21 @@ export async function POST(request) {
       absenceSupported = false;
     }
 
+    // v41-193: 기간 안에서 운영하지 않는 날(공휴일·휴무 지정, 토·일 미운영 등)을 미리 모읍니다.
+    const closedDateSet = new Set();
+    try {
+      const scheduleConfig = await getDefaultScheduleConfig(supabase);
+      let cursor = startDate;
+      let guard = 0;
+      while (cursor <= endDate && guard <= MAX_RANGE_DAYS + 1) {
+        if (!resolveScheduleForDate(scheduleConfig, cursor).operating) closedDateSet.add(cursor);
+        cursor = addDays(cursor, 1);
+        guard += 1;
+      }
+    } catch {
+      // 설정을 못 읽으면 예전처럼 전부 등록합니다.
+    }
+
     const payloads = [];
     const perStudent = [];
     const breakPlans = [];
@@ -218,7 +241,9 @@ export async function POST(request) {
       // 특정 날짜 예외(가족여행 결석 · 병원 외출 · 늦은 등원 시작일)를 덮어씌웁니다.
       const special = normalizeSpecialOverrides(entry.special, { periodStart: startDate, periodEnd: endDate });
       const baseDates = expandPatternToDates({ days }, startDate, endDate, MAX_RANGE_DAYS + 1);
-      const dates = applySpecialToDates(baseDates, special);
+      // v41-193: 공휴일·휴무로 지정한 날에는 시간표를 만들지 않습니다.
+      // 설정 · 기본 시간표의 휴무 지정이 설문 응답보다 우선입니다.
+      const dates = applySpecialToDates(baseDates, special).filter((item) => !closedDateSet.has(item.date));
       if (!absenceSupported) specialSkipped += special.absent.length;
 
       let created = 0;

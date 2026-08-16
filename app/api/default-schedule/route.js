@@ -15,7 +15,107 @@ import {
   isFiveMinuteTime24,
 } from '../../../lib/defaultSchedule';
 
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
+
 export const dynamic = 'force-dynamic';
+
+// v41-193: 휴무로 바꾼 날짜의 개인 시간표를 걷어냅니다.
+//
+// 어떤 날을 공휴일(또는 휴무)로 지정하면 그 날은 운영하지 않는 날입니다.
+// 그런데 개인 시간표가 이미 깔려 있으면 그 날도 '등원 예정'으로 남아
+// 결석 판정·리포트 대상에 계속 잡혔습니다. 설정이 우선이어야 합니다.
+//
+// 이번 저장으로 '운영 → 휴무'가 된 날짜만 정리합니다.
+// 이미 휴무였던 날짜는 건드리지 않습니다. 휴무일에 일부러 넣어 둔 보강 일정을
+// 설정을 저장할 때마다 지워 버리면 안 되기 때문입니다.
+function collectCandidateDates(...configs) {
+  const dates = new Set();
+  for (const config of configs) {
+    if (!config) continue;
+    for (const date of Object.keys(config.dateOverrides || {})) dates.add(date);
+    for (const date of config.holidays || []) dates.add(date);
+  }
+  return [...dates].filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)).sort();
+}
+
+async function clearSchedulesOnClosedDates(supabase, { previousValue, cohortId }) {
+  // 저장이 끝난 뒤의 실제 판정 기준(공통 + 기수별 병합)을 그대로 씁니다.
+  const mergedAfter = await getDefaultScheduleConfig(supabase);
+  const previousConfig = previousValue
+    ? normalizeDefaultScheduleConfig({ ...previousValue, cohortSchedules: [] })
+    : null;
+
+  const candidates = collectCandidateDates(mergedAfter, previousConfig);
+  if (!candidates.length) return { dates: [], deleted: 0 };
+
+  // 이번 저장으로 새로 휴무가 된 날짜만 고릅니다.
+  const closedDates = candidates.filter((date) => {
+    if (resolveScheduleForDate(mergedAfter, date).operating) return false;
+    if (!previousConfig) return true;
+    return resolveScheduleForDate(previousConfig, date).operating;
+  });
+  if (!closedDates.length) return { dates: [], deleted: 0 };
+
+  // 기수 전용 설정을 저장했다면 그 기수 명단·기간 안에서만 정리합니다.
+  let studentIds = null;
+  let range = null;
+  if (cohortId) {
+    const { data: cohortRow } = await supabase
+      .from('cohorts').select('id, start_date, end_date').eq('id', cohortId).maybeSingle();
+    if (cohortRow) {
+      range = {
+        start: String(cohortRow.start_date || '').slice(0, 10),
+        end: String(cohortRow.end_date || '').slice(0, 10),
+      };
+    }
+    const { data: rosterRows } = await supabase
+      .from('cohort_students').select('student_id').eq('cohort_id', cohortId).eq('is_active', true);
+    const roster = (rosterRows || []).map((row) => String(row.student_id));
+    if (roster.length) studentIds = roster;
+  }
+
+  const targetDates = range
+    ? closedDates.filter((date) => date >= range.start && date <= range.end)
+    : closedDates;
+  if (!targetDates.length) return { dates: [], deleted: 0 };
+
+  let query = supabase
+    .from('student_daily_schedules')
+    .select('id, student_id, schedule_date, planned_absent')
+    .in('schedule_date', targetDates);
+  if (studentIds) query = query.in('student_id', studentIds);
+  const { data: rows, error: rowsError } = await query;
+  if (rowsError) throw rowsError;
+  if (!rows?.length) return { dates: targetDates, deleted: 0 };
+
+  const ids = rows.map((row) => row.id);
+  const { error: breaksError } = await supabase
+    .from('student_schedule_breaks').delete().in('schedule_id', ids);
+  if (breaksError) throw breaksError;
+  const { error: deleteError } = await supabase
+    .from('student_daily_schedules').delete().in('id', ids);
+  if (deleteError) throw deleteError;
+
+  // 그 시간표를 근거로 만들어진 '[예약결석]' 세션도 함께 정리합니다.
+  for (const row of rows) {
+    if (row.planned_absent === false) continue;
+    const { data: session } = await supabase
+      .from('daily_sessions')
+      .select('id, seat_status, check_in_at, attendance_memo')
+      .eq('student_id', row.student_id)
+      .eq('session_date', row.schedule_date)
+      .maybeSingle();
+    if (!session) continue;
+    if (session.seat_status === 'absent'
+      && !session.check_in_at
+      && String(session.attendance_memo || '').startsWith('[예약결석]')) {
+      await supabase.from('daily_sessions').delete().eq('id', session.id);
+    }
+  }
+
+  return { dates: targetDates, deleted: ids.length };
+}
 
 
 function validateScheduleVariant(value = {}, dayLabel = '') {
@@ -197,6 +297,16 @@ export async function POST(request) {
     const settingValue = { ...normalized };
     delete settingValue.cohortSchedules;
 
+    // v41-193: 저장 전 값을 남겨 두었다가 '이번에 휴무가 된 날짜'를 가려냅니다.
+    let previousValue = null;
+    try {
+      const { data: previousRow } = await supabase
+        .from('system_settings').select('setting_value').eq('setting_key', settingKey).maybeSingle();
+      previousValue = previousRow?.setting_value || null;
+    } catch {
+      previousValue = null;
+    }
+
     const { data, error } = await supabase
       .from('system_settings')
       .upsert({
@@ -213,11 +323,22 @@ export async function POST(request) {
       }, { status: 500 });
     }
 
+    // 휴무로 바뀐 날짜의 개인 시간표 정리. 실패해도 저장은 유지합니다.
+    let closedCleanup = { dates: [], deleted: 0 };
+    try {
+      closedCleanup = await clearSchedulesOnClosedDates(supabase, { previousValue, cohortId });
+    } catch (cleanupError) {
+      closedCleanup = { dates: [], deleted: 0, warning: cleanupError.message || '휴무일 시간표 정리 실패' };
+    }
+
     return Response.json({
       cohortId: cohortId || null,
       defaultSchedule: normalizeDefaultScheduleSettings(data.setting_value),
       defaultScheduleConfig: normalizeDefaultScheduleConfig(data.setting_value),
       saved: true,
+      closedDates: closedCleanup.dates,
+      closedScheduleDeleted: closedCleanup.deleted,
+      closedCleanupWarning: closedCleanup.warning || '',
     });
   } catch (error) {
     return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
