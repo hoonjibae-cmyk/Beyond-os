@@ -1106,6 +1106,30 @@ const ATTENDANCE_ACTION_UNLOCK_MS = 450;
 // v41-183: 로그인 상태에서 계정 상태(활성/비활성)를 다시 확인하는 주기입니다.
 const SESSION_RECHECK_MS = 3 * 60 * 1000;
 
+// v41-189: 모달 바깥(배경)을 눌러 닫을 때 쓰는 핸들러입니다.
+//
+// 배경에 onClick 만 달면, 입력칸 안에서 드래그를 시작해 배경에서 손을 떼는 순간
+// 창이 닫혀 버립니다. 브라우저가 누른 곳과 뗀 곳의 공통 조상(=배경)에 click 을
+// 발생시키기 때문입니다. 메모를 마우스로 긁어 지우려다 칸을 살짝 벗어나면
+// 입력하던 내용이 통째로 날아갔습니다.
+//
+// 그래서 '배경에서 눌러서 배경에서 뗀 경우'에만 닫습니다.
+// 한 번에 하나의 누름만 진행되므로 모듈 변수 하나로 충분합니다.
+let backdropPressStartedOnSelf = false;
+function backdropCloseProps(onClose) {
+  return {
+    onPointerDown: (event) => {
+      backdropPressStartedOnSelf = event.target === event.currentTarget;
+    },
+    onClick: (event) => {
+      if (event.target !== event.currentTarget) return;
+      if (!backdropPressStartedOnSelf) return;
+      backdropPressStartedOnSelf = false;
+      onClose?.();
+    },
+  };
+}
+
 function isMutationMethod(method = 'GET') {
   return !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
 }
@@ -6398,7 +6422,7 @@ function SendPreviewModal({ preview, setPreview, sendReportToParent, prepareRepo
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => setPreview(null)}>
+    <div className="modal-backdrop" {...backdropCloseProps(() => setPreview(null))}>
       <div className="send-preview-modal" onClick={(event) => event.stopPropagation()}>
         <div className="popup-head">
           <div>
@@ -6512,7 +6536,7 @@ function AwayDetailPopup({ popup, setPopup, savePopup }) {
   if (!popup) return null;
 
   return (
-    <div className="modal-backdrop" onClick={() => setPopup(null)}>
+    <div className="modal-backdrop" {...backdropCloseProps(() => setPopup(null))}>
       <div className="small-action-popup" onClick={(event) => event.stopPropagation()}>
         <div className="popup-head">
           <div>
@@ -6550,7 +6574,7 @@ function AttendanceAdjustPopup({ popup, setPopup, savePopup }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={requestClose}>
+    <div className="modal-backdrop" {...backdropCloseProps(requestClose)}>
       <div className="small-action-popup" onClick={(event) => event.stopPropagation()}>
         <div className="popup-head">
           <div>
@@ -6619,7 +6643,7 @@ function ParentConfirmationAlertModal({ popup, setPopup, sendPopup, sendConfig }
   }
 
   return (
-    <div className="modal-backdrop" onClick={closeModal}>
+    <div className="modal-backdrop" {...backdropCloseProps(closeModal)}>
       <div className="parent-confirmation-modal" onClick={(event) => event.stopPropagation()}>
         <div className="popup-head parent-confirmation-head">
           <div>
@@ -6819,7 +6843,7 @@ function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBre
   );
 
   return (
-    <div className="modal-backdrop" onClick={() => setPopup(null)}>
+    <div className="modal-backdrop" {...backdropCloseProps(() => setPopup(null))}>
       <div className="activity-popup event-scoped-popup" onClick={(event) => event.stopPropagation()}>
         <div className="popup-head">
           <div>
@@ -6927,7 +6951,7 @@ function ScheduleQuickPopup({ popup, students, setPopup, applyPopup }) {
   const selectedStudent = students.find((student) => student.id === popup.studentId);
 
   return (
-    <div className="modal-backdrop" onClick={() => setPopup(null)}>
+    <div className="modal-backdrop" {...backdropCloseProps(() => setPopup(null))}>
       <div className="schedule-popup" onClick={(event) => event.stopPropagation()}>
         <div className="popup-head">
           <div>
@@ -8088,7 +8112,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
         const signals = group?.signals || [];
         const modeOptions = [['apply_notify', '반영 + 알림'], ['apply_silent', '반영만'], ['discard', '제외']];
         return (
-          <div className="modal-backdrop kiosk-hold-apply-backdrop" onClick={() => { if (!kioskHoldApplySaving) setKioskHoldApplyModal(null); }}>
+          <div className="modal-backdrop kiosk-hold-apply-backdrop" {...backdropCloseProps(() => { if (!kioskHoldApplySaving) setKioskHoldApplyModal(null); })}>
             <div className="modal-card kiosk-hold-apply-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
               <div className="modal-head">
                 <div>
@@ -11212,7 +11236,7 @@ function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, save
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => setEditor(null)}>
+    <div className="modal-backdrop" {...backdropCloseProps(() => setEditor(null))}>
       <div className="student-editor-modal" onClick={(event) => event.stopPropagation()}>
         <div className="popup-head">
           <div>
@@ -13153,7 +13177,7 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
       ) : null}
 
       {confirmSend ? (
-        <div className="modal-backdrop" onClick={() => setConfirmSend(null)}>
+        <div className="modal-backdrop" {...backdropCloseProps(() => setConfirmSend(null))}>
           <div className="send-preview-modal compact-send-modal" onClick={(event) => event.stopPropagation()}>
             <div className="popup-head">
               <div>
@@ -14427,7 +14451,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
       </div>
 
       {weeklyRangePickerOpen ? (
-        <div className="modal-backdrop" onClick={() => setWeeklyRangePickerOpen(false)}>
+        <div className="modal-backdrop" {...backdropCloseProps(() => setWeeklyRangePickerOpen(false))}>
           <div className="small-action-popup weekly-range-picker-popup" onClick={(event) => event.stopPropagation()}>
             <div className="popup-head">
               <div>
@@ -14876,7 +14900,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
       ) : null}
 
       {weeklySendConfirm ? (
-        <div className="modal-backdrop" onClick={() => setWeeklySendConfirm(null)}>
+        <div className="modal-backdrop" {...backdropCloseProps(() => setWeeklySendConfirm(null))}>
           <div className="send-preview-modal compact-send-modal weekly-confirm-modal" onClick={(event) => event.stopPropagation()}>
             <div className="popup-head">
               <div>
@@ -15012,7 +15036,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
       ) : null}
 
       {weeklyBulkSendConfirm ? (
-        <div className="modal-backdrop" onClick={() => setWeeklyBulkSendConfirm(null)}>
+        <div className="modal-backdrop" {...backdropCloseProps(() => setWeeklyBulkSendConfirm(null))}>
           <div className="send-preview-modal compact-send-modal" onClick={(event) => event.stopPropagation()}>
             <div className="popup-head">
               <div>
