@@ -10849,16 +10849,44 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
         <div className="schedule-import-result clean-panel">
           <strong>등록 결과</strong>
           <span>{result.message}</span>
+
+          {/* v41-188: 저장에 실패한 건을 사유와 함께 보여줍니다. */}
+          {result.failed ? (
+            <div className="schedule-import-failed">
+              <b>저장 실패 {result.failed}건</b>
+              <ul>
+                {(result.failedRows || []).slice(0, 8).map((row, index) => (
+                  <li key={`${row.studentId}-${row.date}-${index}`}>
+                    {row.studentName || '학생'} · {row.date} ({row.checkIn}~{row.checkOut}) — {row.reason}
+                  </li>
+                ))}
+                {result.failed > 8 ? <li>… 외 {result.failed - 8}건</li> : null}
+              </ul>
+              <span>원인을 고친 뒤 [기존 시간표가 있으면]을 <b>덮어쓰기</b>로 두고 다시 실행하면 빠진 부분만 채워집니다.</span>
+            </div>
+          ) : null}
+
+          {result.zeroStudents?.length ? (
+            <div className="schedule-import-failed warn">
+              <b>한 건도 등록되지 않은 학생 {result.zeroStudents.length}명</b>
+              <span>{result.zeroStudents.join(', ')}</span>
+            </div>
+          ) : null}
+
           <div className="schedule-import-result-list">
             {(result.perStudent || []).map((item) => (
-              <div key={item.studentId}>
+              <div key={item.studentId} className={!item.created ? 'is-empty' : ''}>
                 <b>{item.studentName || '학생'}</b>
                 <span>
                   등록 {item.created}일
                   {item.absentDays ? ` · 결석 ${item.absentDays}일` : ''}
                   {item.startFrom ? ` · ${item.startFrom}부터 등원` : ''}
                   {item.skipped ? ` · 건너뜀 ${item.skipped}일` : ''}
+                  {item.failed ? ` · 실패 ${item.failed}일` : ''}
                 </span>
+                {item.invalidDays?.length ? (
+                  <em className="schedule-import-invalid">시간표를 만들지 않음 — {item.invalidDays.join(' / ')}</em>
+                ) : null}
               </div>
             ))}
           </div>

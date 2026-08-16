@@ -13,6 +13,7 @@ import {
   applySpecialToDates,
   normalizeSpecialOverrides,
   DAY_KEYS,
+  DAY_LABELS,
 } from '../../../lib/scheduleImport';
 import { normalizeCohort, formatCohortLabel } from '../../../lib/cohorts';
 
@@ -26,8 +27,25 @@ function isValidDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 }
 
+// v41-188: 자리수만 보던 것을 실제 시각인지까지 봅니다.
+// "17:75" 처럼 자리수는 맞지만 시각이 아닌 값이 그대로 DB 로 넘어가면
+// 그 행이 든 묶음(최대 300건)이 통째로 실패해 다른 학생 시간표까지 날아갔습니다.
 function isValidTime(value) {
-  return /^\d{2}:\d{2}$/.test(String(value || ''));
+  const raw = String(value || '');
+  if (!/^\d{2}:\d{2}$/.test(raw)) return false;
+  const hour = Number(raw.slice(0, 2));
+  const minute = Number(raw.slice(3, 5));
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return false;
+  if (minute < 0 || minute > 59) return false;
+  if (hour < 0 || hour > 24) return false;
+  // 24시는 하루의 끝(24:00)만 허용됩니다.
+  if (hour === 24 && minute !== 0) return false;
+  return true;
+}
+
+function timeToMinutes(value) {
+  if (!isValidTime(value)) return null;
+  return Number(String(value).slice(0, 2)) * 60 + Number(String(value).slice(3, 5));
 }
 
 function daysBetween(start, end) {
@@ -171,12 +189,29 @@ export async function POST(request) {
 
       // 요일 패턴 정규화 (신뢰할 수 없는 값은 여기서 걸러냅니다)
       const days = {};
+      const invalidDayNotes = [];
       for (const dayKey of DAY_KEYS) {
         const config = entry.days?.[dayKey];
         if (!config) continue;
         const checkIn = isValidTime(config.checkIn) ? config.checkIn : '';
         const checkOut = isValidTime(config.checkOut) ? config.checkOut : '';
+
+        // v41-188: 자리수는 맞지만 시각이 아닌 값(예: 17:75)은 여기서 걸러 냅니다.
+        if (config.checkIn && !checkIn) invalidDayNotes.push(`${DAY_LABELS[dayKey]} 등원 시각을 읽지 못했습니다(${config.checkIn})`);
+        if (config.checkOut && !checkOut) invalidDayNotes.push(`${DAY_LABELS[dayKey]} 하원 시각을 읽지 못했습니다(${config.checkOut})`);
+
         if (!checkIn && !checkOut) continue;
+
+        // v41-188: 하원이 등원보다 빠르거나 같은 시간표는 만들지 않습니다.
+        // 설문에 시각이 하나만 적혀 있어 하원으로 추정하는 과정에서 생기며,
+        // 그대로 저장하면 순공시간과 출결 판정이 그 날만 어긋납니다.
+        const inMinutes = timeToMinutes(checkIn);
+        const outMinutes = timeToMinutes(checkOut);
+        if (inMinutes !== null && outMinutes !== null && outMinutes <= inMinutes) {
+          invalidDayNotes.push(`${DAY_LABELS[dayKey]} 하원(${checkOut})이 등원(${checkIn})보다 빠릅니다`);
+          continue;
+        }
+
         days[dayKey] = { checkIn, checkOut };
       }
 
@@ -230,6 +265,8 @@ export async function POST(request) {
         absentDays,
         startFrom: special.startFrom || '',
         totalDates: dates.length,
+        // v41-188: 시각이 이상해서 만들지 않은 요일
+        invalidDays: invalidDayNotes,
       });
     }
 
@@ -243,13 +280,54 @@ export async function POST(request) {
       });
     }
 
+    // v41-188: 한 건이 실패해도 나머지는 살립니다.
+    //
+    // 지금까지는 묶음(최대 300건) 저장이 실패하면 그 자리에서 throw 해서,
+    // 앞 묶음은 이미 저장되고 뒤 묶음은 시도조차 못 한 채 오류만 떴습니다.
+    // 학생 단위로 payload 를 쌓기 때문에 "앞쪽 몇 명만 반영되고 나머지는 통째로 누락"
+    // 되는 결과가 나옵니다. 이제 실패한 묶음은 한 건씩 다시 넣어 원인을 가려내고,
+    // 문제 있는 건만 빼고 계속 진행합니다.
+    const nameByStudentId = new Map(entries.map((entry) => [String(entry.studentId || ''), entry.studentName || '']));
+    const failedRows = [];
     let created = 0;
+
     for (const group of chunk(payloads, CHUNK_SIZE)) {
       const { error } = await supabase
         .from('student_daily_schedules')
         .upsert(group, { onConflict: 'student_id,schedule_date' });
-      if (error) throw error;
-      created += group.length;
+      if (!error) {
+        created += group.length;
+        continue;
+      }
+      // 묶음이 실패하면 어느 건이 문제인지 한 건씩 확인합니다.
+      for (const row of group) {
+        const { error: rowError } = await supabase
+          .from('student_daily_schedules')
+          .upsert([row], { onConflict: 'student_id,schedule_date' });
+        if (rowError) {
+          failedRows.push({
+            studentId: row.student_id,
+            studentName: nameByStudentId.get(String(row.student_id)) || '',
+            date: row.schedule_date,
+            checkIn: row.planned_check_in,
+            checkOut: row.planned_check_out,
+            reason: rowError.message || '알 수 없는 오류',
+          });
+          continue;
+        }
+        created += 1;
+      }
+    }
+
+    const failedByStudent = new Map();
+    for (const row of failedRows) {
+      const key = String(row.studentId);
+      if (!failedByStudent.has(key)) failedByStudent.set(key, 0);
+      failedByStudent.set(key, failedByStudent.get(key) + 1);
+    }
+    for (const item of perStudent) {
+      item.failed = failedByStudent.get(String(item.studentId)) || 0;
+      item.created = Math.max(0, item.created - item.failed);
     }
 
     // 정기 외출 저장: 방금 만든 시간표의 id를 찾아 연결합니다.
@@ -327,10 +405,17 @@ export async function POST(request) {
     }).catch(() => {});
 
     const skipped = perStudent.reduce((sum, item) => sum + item.skipped, 0);
+    const zeroStudents = perStudent.filter((item) => !item.created).map((item) => item.studentName || item.studentId);
+    const failedNames = [...new Set(failedRows.map((row) => row.studentName).filter(Boolean))];
+
     return Response.json({
       ok: true,
       created,
       skipped,
+      failed: failedRows.length,
+      failedRows: failedRows.slice(0, 50),
+      failedNames,
+      zeroStudents,
       breakCount,
       absentCount,
       students: perStudent.length,
@@ -344,7 +429,9 @@ export async function POST(request) {
         + `${skipped ? ` (기존 시간표가 있어 ${skipped}건 건너뜀)` : ''}`
         + `${clampedToCohort ? ` ※ 기간이 기수 일정(${cohort.startDate}~${cohort.endDate})에 맞춰 조정되었습니다.` : ''}`
         + `${notInRoster.length ? ` ※ 기수 명단에 없어 제외: ${notInRoster.slice(0, 5).join(', ')}${notInRoster.length > 5 ? ` 외 ${notInRoster.length - 5}명` : ''}` : ''}`
-        + `${specialSkipped ? ` ※ 결석 ${specialSkipped}건은 beyond-os-supabase-planned-absence-v41-73.sql 미실행으로 반영되지 않았습니다.` : ''}`,
+        + `${specialSkipped ? ` ※ 결석 ${specialSkipped}건은 beyond-os-supabase-planned-absence-v41-73.sql 미실행으로 반영되지 않았습니다.` : ''}`
+        + `${failedRows.length ? ` ※ 저장에 실패한 ${failedRows.length}건이 있습니다(${failedNames.slice(0, 5).join(', ')}${failedNames.length > 5 ? ` 외 ${failedNames.length - 5}명` : ''}). 아래 목록에서 사유를 확인하세요.` : ''}`
+        + `${zeroStudents.length ? ` ※ 한 건도 등록되지 않은 학생 ${zeroStudents.length}명: ${zeroStudents.slice(0, 8).join(', ')}${zeroStudents.length > 8 ? ' 외' : ''}` : ''}`,
     });
   } catch (error) {
     return Response.json({ error: error.message || '시간표 일괄 등록 실패' }, { status: 500 });

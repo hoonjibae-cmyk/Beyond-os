@@ -21582,8 +21582,18 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-import-result { display: grid; gap: 8px; padding: 16px; }
 .schedule-import-result > strong { font-size: 14px; color: #211f1b; }
 .schedule-import-result > span { font-size: 12.5px; font-weight: 900; color: #1f7a44; }
+/* v41-188: 저장 실패 / 만들지 않은 요일 안내 */
+.schedule-import-failed { margin: 10px 0; padding: 10px 12px; border: 1px solid #f0c9c9; border-radius: 12px; background: #fff5f5; }
+.schedule-import-failed.warn { border-color: #f2d6a8; background: #fff8ec; }
+.schedule-import-failed b { display: block; font-size: 12.5px; font-weight: 800; color: #a33a3a; }
+.schedule-import-failed.warn b { color: #8a5a00; }
+.schedule-import-failed ul { margin: 8px 0 6px; padding-left: 18px; }
+.schedule-import-failed li { font-size: 12px; line-height: 1.6; color: #6e6e73; }
+.schedule-import-failed > span { display: block; font-size: 12px; line-height: 1.55; color: #6e6e73; }
+.schedule-import-invalid { flex-basis: 100%; font-style: normal; font-size: 11.5px; line-height: 1.5; color: #b26a00; }
+.schedule-import-result-list > div.is-empty { background: #fff5f5; }
 .schedule-import-result-list { display: grid; gap: 5px; max-height: 260px; overflow-y: auto; }
-.schedule-import-result-list > div { display: flex; gap: 9px; align-items: baseline; border-radius: 10px; background: #f8f5ef; padding: 7px 11px; }
+.schedule-import-result-list > div { display: flex; flex-wrap: wrap; gap: 4px 9px; align-items: baseline; border-radius: 10px; background: #f8f5ef; padding: 7px 11px; }
 .schedule-import-result-list b { font-size: 12.5px; color: #211f1b; }
 .schedule-import-result-list span { font-size: 11.5px; font-weight: 850; color: #7a756b; }
 
