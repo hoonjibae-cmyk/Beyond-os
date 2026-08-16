@@ -201,7 +201,9 @@ export async function POST(request) {
           schedule_note: String(
             body.scheduleNote || (cohort ? `${cohort.name} 설문 응답 기준 자동 등록` : '설문 응답 기준 자동 등록'),
           ).slice(0, 200),
-          created_by: actorName,
+          // v41-186: student_daily_schedules 에는 created_by 컬럼이 없습니다.
+          // (v15 스키마에서 created_by 는 parent_notification_logs 쪽 컬럼입니다)
+          // 누가 등록했는지는 아래 user_action_logs 에 남습니다.
         };
         if (absenceSupported) {
           payload.planned_absent = Boolean(item.absent);

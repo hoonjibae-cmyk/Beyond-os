@@ -297,7 +297,8 @@ export async function POST(request) {
           planned_check_in: item.checkIn || '09:00',
           planned_check_out: item.checkOut || '22:00',
           schedule_note: '학부모 확인 시간표',
-          created_by: actorName,
+          // v41-186: student_daily_schedules 에는 created_by 컬럼이 없습니다.
+          // 반영한 사람은 아래 user_action_logs 와 schedule_confirmations.applied_by 에 남습니다.
         };
         if (absenceSupported) {
           payload.planned_absent = Boolean(item.absent);
