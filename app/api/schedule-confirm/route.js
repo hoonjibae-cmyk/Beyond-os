@@ -101,6 +101,213 @@ export function normalizeSpecialItems(items = [], { periodStart = '', periodEnd 
   return out;
 }
 
+// ── v41-195: 저장된 개인 시간표 → 주간 루틴 + 특별 일정 ──────────────────────
+//
+// 설문으로 자동 등록한 뒤 손으로 고친 결과가 지금의 개인 시간표입니다.
+// 학부모에게 보여줄 때는 날짜 60개를 나열할 것이 아니라
+// "월 17:30~22:30, 화 …" 같은 주간 루틴 한 장과, 거기서 벗어나는 날짜만 필요합니다.
+//
+// 같은 요일에 가장 많이 나온 (등원·하원·외출) 조합을 그 요일의 루틴으로 보고,
+// 조합이 다른 날짜만 특별 일정으로 떼어 냅니다.
+const ROUTINE_DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+function dayKeyOfDate(dateString) {
+  return ROUTINE_DAY_KEYS[new Date(`${dateString}T12:00:00+09:00`).getUTCDay()];
+}
+
+function clockOf(value) {
+  return String(value || '').slice(0, 5);
+}
+
+function breakListOf(rows = []) {
+  return rows
+    .map((item) => ({
+      start: clockOf(item.leave_start),
+      end: clockOf(item.return_time),
+      reason: [item.reason, item.reason_detail].filter(Boolean).join(' · ').slice(0, 60),
+    }))
+    .filter((item) => item.start)
+    .sort((a, b) => a.start.localeCompare(b.start));
+}
+
+function signatureOf(entry) {
+  if (entry.absent) return 'ABSENT';
+  const breaks = entry.breaks.map((item) => `${item.start}-${item.end}-${item.reason}`).join(',');
+  return `${entry.checkIn}|${entry.checkOut}|${breaks}`;
+}
+
+function buildRoutineForStudent(dayEntries) {
+  const days = {};
+  const exceptions = [];
+
+  for (const dayKey of ROUTINE_DAY_KEYS) {
+    const list = (dayEntries[dayKey] || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    if (!list.length) { days[dayKey] = null; continue; }
+
+    // 결석일은 루틴 후보에서 뺍니다. (그 요일 전부가 결석이면 등원하지 않는 요일)
+    const attending = list.filter((item) => !item.absent);
+    if (!attending.length) {
+      days[dayKey] = null;
+      for (const item of list) exceptions.push(item);
+      continue;
+    }
+
+    const countBySignature = new Map();
+    for (const item of attending) {
+      const key = signatureOf(item);
+      if (!countBySignature.has(key)) countBySignature.set(key, { count: 0, sample: item });
+      countBySignature.get(key).count += 1;
+    }
+    let dominant = null;
+    for (const value of countBySignature.values()) {
+      if (!dominant || value.count > dominant.count) dominant = value;
+    }
+    const dominantKey = signatureOf(dominant.sample);
+    days[dayKey] = {
+      checkIn: dominant.sample.checkIn,
+      checkOut: dominant.sample.checkOut,
+      breaks: dominant.sample.breaks,
+    };
+    for (const item of list) {
+      if (!item.absent && signatureOf(item) === dominantKey) continue;
+      exceptions.push(item);
+    }
+  }
+
+  exceptions.sort((a, b) => a.date.localeCompare(b.date));
+  return { days, exceptions };
+}
+
+// 특별 일정을 학부모 확인 링크가 이해하는 형태로 바꿉니다.
+// 결석과 외출은 그대로 담기고, 그 날만 등하원 시각이 다른 경우는
+// 링크 스키마에 자리가 없어 안내 문구(specialRaw)로 함께 보냅니다.
+function splitExceptions(exceptions) {
+  const absentByReason = new Map();
+  const away = [];
+  const customLines = [];
+
+  for (const item of exceptions) {
+    if (item.absent) {
+      const reason = String(item.absentReason || '').trim();
+      if (!absentByReason.has(reason)) absentByReason.set(reason, []);
+      absentByReason.get(reason).push(item.date);
+      continue;
+    }
+    customLines.push(
+      `${item.date} 등하원 ${item.checkIn}~${item.checkOut}`
+      + (item.breaks.length ? ` · 외출 ${item.breaks.map((b) => `${b.start}~${b.end}`).join(', ')}` : ''),
+    );
+    for (const brk of item.breaks) {
+      away.push({ type: 'away', dates: [item.date], start: brk.start, end: brk.end, reason: brk.reason });
+    }
+  }
+
+  const special = [];
+  for (const [reason, dates] of absentByReason) {
+    special.push({ type: 'absent', dates, start: '', end: '', reason: reason || '결석' });
+  }
+  special.push(...away);
+  return { special, customLines };
+}
+
+async function buildRoutineFromSaved(supabase, body) {
+  const cohortId = String(body.cohortId || '').trim();
+  const today = getKstDateString();
+  let cohort = null;
+  if (cohortId) {
+    const { data: cohortRow } = await supabase.from('cohorts').select('*').eq('id', cohortId).maybeSingle();
+    if (cohortRow) cohort = normalizeCohort(cohortRow);
+  }
+  const startDate = isValidDate(body.startDate) ? body.startDate : (cohort?.startDate || today);
+  const endDate = isValidDate(body.endDate) ? body.endDate : (cohort?.endDate || startDate);
+  if (endDate < startDate) {
+    return Response.json({ error: '종료일은 시작일보다 빠를 수 없습니다.' }, { status: 400 });
+  }
+
+  // 대상 학생: 지정한 학생 → 기수 명단 → 활성 학생 전원
+  let studentIds = Array.isArray(body.studentIds) ? body.studentIds.map(String).filter(Boolean) : [];
+  if (!studentIds.length && cohort) {
+    const { data: rosterRows } = await supabase
+      .from('cohort_students').select('student_id').eq('cohort_id', cohort.id).eq('is_active', true);
+    studentIds = (rosterRows || []).map((row) => String(row.student_id));
+  }
+  let studentQuery = supabase.from('students').select('id, name, school, grade, status').order('name', { ascending: true });
+  if (studentIds.length) studentQuery = studentQuery.in('id', studentIds);
+  const { data: studentRows, error: studentError } = await studentQuery;
+  if (studentError) throw studentError;
+  const students = (studentRows || []).filter((student) => student.status !== 'inactive');
+  if (!students.length) {
+    return Response.json({ error: '대상 학생이 없습니다. 기수 수강 명단을 확인하세요.' }, { status: 400 });
+  }
+
+  const { data: scheduleRows, error: scheduleError } = await supabase
+    .from('student_daily_schedules')
+    .select('id, student_id, schedule_date, planned_check_in, planned_check_out, planned_absent, absent_reason')
+    .in('student_id', students.map((student) => student.id))
+    .gte('schedule_date', startDate)
+    .lte('schedule_date', endDate);
+  if (scheduleError) throw scheduleError;
+
+  const scheduleIds = (scheduleRows || []).map((row) => row.id);
+  const breaksBySchedule = {};
+  for (let index = 0; index < scheduleIds.length; index += 300) {
+    const part = scheduleIds.slice(index, index + 300);
+    if (!part.length) continue;
+    const { data: breakRows } = await supabase
+      .from('student_schedule_breaks').select('*').in('schedule_id', part);
+    for (const item of breakRows || []) {
+      if (!breaksBySchedule[item.schedule_id]) breaksBySchedule[item.schedule_id] = [];
+      breaksBySchedule[item.schedule_id].push(item);
+    }
+  }
+
+  const byStudent = new Map();
+  for (const row of scheduleRows || []) {
+    const key = String(row.student_id);
+    if (!byStudent.has(key)) byStudent.set(key, {});
+    const date = String(row.schedule_date).slice(0, 10);
+    const dayKey = dayKeyOfDate(date);
+    const entry = {
+      date,
+      absent: Boolean(row.planned_absent),
+      absentReason: row.absent_reason || '',
+      checkIn: clockOf(row.planned_check_in),
+      checkOut: clockOf(row.planned_check_out),
+      breaks: breakListOf(breaksBySchedule[row.id] || []),
+    };
+    const bucket = byStudent.get(key);
+    if (!bucket[dayKey]) bucket[dayKey] = [];
+    bucket[dayKey].push(entry);
+  }
+
+  const entries = students.map((student) => {
+    const dayEntries = byStudent.get(String(student.id)) || {};
+    const { days, exceptions } = buildRoutineForStudent(dayEntries);
+    const { special, customLines } = splitExceptions(exceptions);
+    const scheduledDays = Object.values(days).filter(Boolean).length;
+    return {
+      studentId: String(student.id),
+      studentName: student.name || '',
+      school: student.school || '',
+      grade: student.grade || '',
+      days,
+      special,
+      specialRaw: customLines.slice(0, 8).join('\n'),
+      exceptions,
+      scheduledDays,
+      hasSchedule: scheduledDays > 0 || exceptions.length > 0,
+    };
+  });
+
+  return Response.json({
+    ok: true,
+    startDate,
+    endDate,
+    cohort: cohort ? { id: cohort.id, name: cohort.name } : null,
+    entries,
+  });
+}
+
 export async function GET(request) {
   if (!isAuthorized(request)) return unauthorizedResponse();
 
@@ -155,6 +362,12 @@ export async function POST(request) {
     const actor = getAuthorizedUser(request);
     const actorName = actor?.displayName || body.createdBy || '관리자';
     const today = getKstDateString();
+
+    // v41-195: 저장된 개인 시간표에서 주간 루틴을 뽑아 돌려줍니다.
+    // 시간표 이미지와 학부모 확인 링크가 같은 값을 씁니다.
+    if (action === 'routine_from_saved') {
+      return await buildRoutineFromSaved(supabase, body);
+    }
 
     // ── 확인 링크 생성 ────────────────────────────────────────
     if (action === 'create_links') {
