@@ -19235,6 +19235,25 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-confirm-links-list b{ min-width:72px; font-size:12.5px; font-weight:700; color:#1d1d1f; }
 .schedule-confirm-links-list a{ flex:1; font-size:12px; color:#0071e3; word-break:break-all; }
 .schedule-confirm-links-list button{ flex:none; padding:4px 10px; font-size:11.5px; }
+/* v41-204: 학부모 확정 도구는 기수 세팅 때만 쓰므로 접어 둡니다. */
+.schedule-setup-tools{ margin:0 0 14px; border:1px solid #e3e3e6; border-radius:14px; background:#fff; overflow:hidden; }
+.schedule-setup-tools.is-open{ border-color:#cfe0f7; }
+.schedule-setup-toggle{ display:flex; align-items:center; gap:9px; width:100%; padding:10px 14px; border:0;
+  background:#fafafc; cursor:pointer; text-align:left; font-family:inherit; }
+.schedule-setup-tools.is-open .schedule-setup-toggle{ background:#f7fbff; border-bottom:1px solid #e8f0fb; }
+.schedule-setup-toggle:hover{ background:#f2f2f5; }
+.schedule-setup-caret{ flex:none; font-size:11px; color:#86868b; }
+.schedule-setup-toggle b{ flex:none; font-size:13px; font-weight:800; color:#1d1d1f; }
+.schedule-setup-toggle em{ flex:1; min-width:0; font-style:normal; font-size:11.5px; font-weight:600; color:#86868b;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.schedule-setup-badge{ flex:none; font-style:normal; font-size:11px; font-weight:800; color:#0058b8;
+  background:#eef4ff; border-radius:999px; padding:3px 9px; }
+.schedule-setup-open{ flex:none; font-size:11.5px; font-weight:800; color:#0071e3; }
+.schedule-setup-body{ padding:12px 14px 2px; }
+.schedule-setup-body > .schedule-image-bar,
+.schedule-setup-body > .schedule-confirm-links,
+.schedule-setup-body > .schedule-confirm-send{ margin-bottom:12px; }
+
 /* v41-203: 확인 링크 알림톡 발송 미리보기 */
 .schedule-confirm-send{ margin:0 0 14px; padding:12px 14px; border:1px solid #cfe0f7; border-radius:14px; background:#f7fbff; }
 .schedule-confirm-send > p{ margin:8px 0 0; font-size:12.5px; color:#1d1d1f; }

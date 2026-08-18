@@ -156,14 +156,14 @@ export default async function ScheduleConfirmPage({ params }) {
         <div className="inner">
           <header>
             <span className="badge">시간표 최종 확인</span>
-            <h1>{student.name || '학생'} 학생 시간표를 확인해 주세요</h1>
+            <h1>{student.name || '학생'} 학생 시간표를 확정해 주세요</h1>
             <p>
               {[student.school, student.grade].filter(Boolean).join(' ')}
               {student.school || student.grade ? ' · ' : ''}
               {row.start_date} ~ {row.end_date}
               <br />
               학생이 직접 설문을 통해 작성한 {row.cohortName ? `${row.cohortName} ` : ''}주간 시간표를 아래와 같이 정리했습니다.
-              주간 시간표와 특별 일정을 함께 확인해 주세요.
+              주간 시간표와 특별 일정을 함께 확인하신 뒤 아래 버튼으로 제출해 주세요.
               수정이 필요하면 직접 고쳐서 제출하실 수 있습니다.
             </p>
           </header>
