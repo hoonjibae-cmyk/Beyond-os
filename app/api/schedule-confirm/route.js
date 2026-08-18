@@ -15,6 +15,8 @@ import { getKstDateString } from '../../../lib/date';
 import { DAY_KEYS, DAY_LABELS, expandPatternToDates, applySpecialToDates } from '../../../lib/scheduleImport';
 import { buildSpecialOverrides } from '../../../lib/specialScheduleParse';
 import { normalizeCohort } from '../../../lib/cohorts';
+import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
+import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,6 +113,12 @@ export function normalizeSpecialItems(items = [], { periodStart = '', periodEnd 
 // 조합이 다른 날짜만 특별 일정으로 떼어 냅니다.
 const ROUTINE_DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
+function addDaysLocal(dateString, amount) {
+  const d = new Date(`${dateString}T12:00:00+09:00`);
+  d.setUTCDate(d.getUTCDate() + amount);
+  return d.toISOString().slice(0, 10);
+}
+
 function dayKeyOfDate(dateString) {
   return ROUTINE_DAY_KEYS[new Date(`${dateString}T12:00:00+09:00`).getUTCDay()];
 }
@@ -134,6 +142,16 @@ function signatureOf(entry) {
   if (entry.absent) return 'ABSENT';
   const breaks = entry.breaks.map((item) => `${item.start}-${item.end}-${item.reason}`).join(',');
   return `${entry.checkIn}|${entry.checkOut}|${breaks}`;
+}
+
+// v41-196: 일정 메모에는 사람이 적은 사유('타학원', '수학과외')와
+// 등록 출처('비욘드2기 설문 응답 기준 자동 등록')가 섞여 있습니다.
+// 사유로 보여줄 수 있는 것만 남깁니다. (화면 쪽 formatAbsenceLabel 과 같은 기준)
+const AUTO_NOTE_PATTERN = /(자동\s*등록|일괄\s*생성|기본\s*시간표|학부모\s*확인\s*시간표|설문\s*응답)/;
+function reasonNoteOf(value) {
+  const note = String(value || '').trim();
+  if (!note || AUTO_NOTE_PATTERN.test(note)) return '';
+  return note.slice(0, 60);
 }
 
 function buildRoutineForStudent(dayEntries) {
@@ -167,6 +185,8 @@ function buildRoutineForStudent(dayEntries) {
       checkIn: dominant.sample.checkIn,
       checkOut: dominant.sample.checkOut,
       breaks: dominant.sample.breaks,
+      // v41-196: 늦은 등원 / 이른 하원의 사유로 보여줄 메모
+      note: dominant.sample.note || '',
     };
     for (const item of list) {
       if (!item.absent && signatureOf(item) === dominantKey) continue;
@@ -242,7 +262,7 @@ async function buildRoutineFromSaved(supabase, body) {
 
   const { data: scheduleRows, error: scheduleError } = await supabase
     .from('student_daily_schedules')
-    .select('id, student_id, schedule_date, planned_check_in, planned_check_out, planned_absent, absent_reason')
+    .select('id, student_id, schedule_date, planned_check_in, planned_check_out, planned_absent, absent_reason, schedule_note')
     .in('student_id', students.map((student) => student.id))
     .gte('schedule_date', startDate)
     .lte('schedule_date', endDate);
@@ -274,10 +294,34 @@ async function buildRoutineFromSaved(supabase, body) {
       checkIn: clockOf(row.planned_check_in),
       checkOut: clockOf(row.planned_check_out),
       breaks: breakListOf(breaksBySchedule[row.id] || []),
+      note: reasonNoteOf(row.schedule_note),
     };
     const bucket = byStudent.get(key);
     if (!bucket[dayKey]) bucket[dayKey] = [];
     bucket[dayKey].push(entry);
+  }
+
+  // v41-196: 요일별 기준 시간표(기본 시간표)를 함께 내려 줍니다.
+  // 이미지에서 '늦은 등원 / 이른 하원'을 판정하고, 요일 유형으로 자율학습 시간을 고릅니다.
+  const scheduleConfig = await getDefaultScheduleConfig(supabase);
+  const baseByDay = {};
+  {
+    let cursor = startDate;
+    let guard = 0;
+    while (cursor <= endDate && guard < 14 && Object.keys(baseByDay).length < 7) {
+      const dayKey = dayKeyOfDate(cursor);
+      if (!baseByDay[dayKey]) {
+        const resolved = resolveScheduleForDate(scheduleConfig, cursor);
+        baseByDay[dayKey] = {
+          dayType: resolved.dayType,
+          operating: Boolean(resolved.operating),
+          checkIn: clockOf(resolved.plannedCheckIn),
+          checkOut: clockOf(resolved.plannedCheckOut),
+        };
+      }
+      cursor = addDaysLocal(cursor, 1);
+      guard += 1;
+    }
   }
 
   const entries = students.map((student) => {
@@ -304,6 +348,7 @@ async function buildRoutineFromSaved(supabase, body) {
     startDate,
     endDate,
     cohort: cohort ? { id: cohort.id, name: cohort.name } : null,
+    baseByDay,
     entries,
   });
 }
