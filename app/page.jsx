@@ -11703,6 +11703,9 @@ function SchedulesTab(props) {
         cohortName: data.cohort?.name || cohortScopeName || '',
         startDate: data.startDate,
         endDate: data.endDate,
+        // v41-198: 요일별 기준 시간표. 없으면 이미지에서 늦은 등원 / 이른 하원을 판정하지 못해
+        // 일정 메모에 적어 둔 사유가 한 줄도 나오지 않습니다.
+        baseByDay: data.baseByDay || {},
       };
       for (const entry of entries) {
         const blob = await renderScheduleImage(entry, meta);

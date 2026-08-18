@@ -53,7 +53,11 @@ export function normalizeWeekPattern(days = {}) {
   for (const dayKey of DAY_KEYS) {
     const config = days?.[dayKey];
     if (!config) { out[dayKey] = null; continue; }
-    if (config.absent) { out[dayKey] = { absent: true }; continue; }
+    // v41-198: 매주 빠지는 요일은 사유까지 함께 보여 줘야 학부모가 맞는지 판단할 수 있습니다.
+    if (config.absent) {
+      out[dayKey] = { absent: true, absentReason: String(config.absentReason || '').slice(0, 60) };
+      continue;
+    }
     const checkIn = isValidTime(config.checkIn) ? config.checkIn : '';
     const checkOut = isValidTime(config.checkOut) ? config.checkOut : '';
     if (!checkIn && !checkOut) { out[dayKey] = null; continue; }
@@ -139,7 +143,9 @@ function breakListOf(rows = []) {
 }
 
 function signatureOf(entry) {
-  if (entry.absent) return 'ABSENT';
+  // v41-198: 결석도 사유별로 다른 패턴으로 봅니다.
+  // ('수학학원' 때문에 빠지는 수요일과 '가족 일정'으로 빠진 하루는 같은 것이 아닙니다)
+  if (entry.absent) return `ABSENT|${String(entry.absentReason || '').trim()}`;
   const breaks = entry.breaks.map((item) => `${item.start}-${item.end}-${item.reason}`).join(',');
   return `${entry.checkIn}|${entry.checkOut}|${breaks}`;
 }
@@ -162,34 +168,41 @@ function buildRoutineForStudent(dayEntries) {
     const list = (dayEntries[dayKey] || []).slice().sort((a, b) => a.date.localeCompare(b.date));
     if (!list.length) { days[dayKey] = null; continue; }
 
-    // 결석일은 루틴 후보에서 뺍니다. (그 요일 전부가 결석이면 등원하지 않는 요일)
-    const attending = list.filter((item) => !item.absent);
-    if (!attending.length) {
-      days[dayKey] = null;
-      for (const item of list) exceptions.push(item);
-      continue;
-    }
-
+    // v41-198: 결석도 하나의 요일 패턴으로 셉니다.
+    // 수·금이 매주 학원 때문에 빠진다면 그 날짜를 특별 일정에 14줄 늘어놓을 것이 아니라,
+    // 주간 표의 수·금 칸에 '결석 · 수학학원'으로 적는 편이 학부모가 보기에 분명합니다.
     const countBySignature = new Map();
-    for (const item of attending) {
+    for (const item of list) {
       const key = signatureOf(item);
       if (!countBySignature.has(key)) countBySignature.set(key, { count: 0, sample: item });
       countBySignature.get(key).count += 1;
     }
     let dominant = null;
     for (const value of countBySignature.values()) {
-      if (!dominant || value.count > dominant.count) dominant = value;
+      if (!dominant) { dominant = value; continue; }
+      if (value.count > dominant.count) { dominant = value; continue; }
+      // 횟수가 같으면 등원하는 쪽을 루틴으로 둡니다. (출결 판정 대상으로 남기는 편이 안전합니다)
+      if (value.count === dominant.count && dominant.sample.absent && !value.sample.absent) dominant = value;
     }
     const dominantKey = signatureOf(dominant.sample);
-    days[dayKey] = {
-      checkIn: dominant.sample.checkIn,
-      checkOut: dominant.sample.checkOut,
-      breaks: dominant.sample.breaks,
-      // v41-196: 늦은 등원 / 이른 하원의 사유로 보여줄 메모
-      note: dominant.sample.note || '',
-    };
+    days[dayKey] = dominant.sample.absent
+      ? {
+        absent: true,
+        absentReason: dominant.sample.absentReason || '',
+        checkIn: '',
+        checkOut: '',
+        breaks: [],
+        note: '',
+      }
+      : {
+        checkIn: dominant.sample.checkIn,
+        checkOut: dominant.sample.checkOut,
+        breaks: dominant.sample.breaks,
+        // v41-196: 늦은 등원 / 이른 하원의 사유로 보여줄 메모
+        note: dominant.sample.note || '',
+      };
     for (const item of list) {
-      if (!item.absent && signatureOf(item) === dominantKey) continue;
+      if (signatureOf(item) === dominantKey) continue;
       exceptions.push(item);
     }
   }
@@ -328,7 +341,9 @@ async function buildRoutineFromSaved(supabase, body) {
     const dayEntries = byStudent.get(String(student.id)) || {};
     const { days, exceptions } = buildRoutineForStudent(dayEntries);
     const { special, customLines } = splitExceptions(exceptions);
-    const scheduledDays = Object.values(days).filter(Boolean).length;
+    const routineDays = Object.values(days).filter(Boolean);
+    // 결석 요일은 '등원하는 요일 수'에서 뺍니다.
+    const scheduledDays = routineDays.filter((day) => !day.absent).length;
     return {
       studentId: String(student.id),
       studentName: student.name || '',
@@ -339,7 +354,7 @@ async function buildRoutineFromSaved(supabase, body) {
       specialRaw: customLines.slice(0, 8).join('\n'),
       exceptions,
       scheduledDays,
-      hasSchedule: scheduledDays > 0 || exceptions.length > 0,
+      hasSchedule: routineDays.length > 0 || exceptions.length > 0,
     };
   });
 

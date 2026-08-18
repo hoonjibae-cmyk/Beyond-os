@@ -74,7 +74,12 @@ export default function ConfirmForm({
     setDays((prev) => ({ ...prev, [dayKey]: prev[dayKey] ? { ...prev[dayKey], ...patch } : { ...emptyDay(), ...patch } }));
   }
   function toggleAttend(dayKey, attend) {
-    setDays((prev) => ({ ...prev, [dayKey]: attend ? (prev[dayKey] || emptyDay()) : null }));
+    // v41-198: '결석 요일'을 등원으로 되돌릴 때는 빈 칸에서 다시 적습니다.
+    // (absent 표시가 남아 있으면 시간을 입력해도 등원일로 반영되지 않습니다)
+    setDays((prev) => ({
+      ...prev,
+      [dayKey]: attend ? (prev[dayKey] && !prev[dayKey].absent ? prev[dayKey] : emptyDay()) : null,
+    }));
   }
   function setBreak(dayKey, index, patch) {
     setDays((prev) => {
@@ -183,7 +188,9 @@ export default function ConfirmForm({
           <tbody>
             {DAY_KEYS.map((dayKey) => {
               const day = days[dayKey];
-              const attend = Boolean(day);
+              // v41-198: 매주 빠지는 요일은 days[dayKey] = { absent: true, absentReason } 로 옵니다.
+              const attend = Boolean(day) && !day.absent;
+              const offReason = day?.absent ? String(day.absentReason || '').trim() : '';
               return (
                 <tr key={dayKey} className={attend ? '' : 'is-off'}>
                   <th scope="row">
@@ -196,7 +203,7 @@ export default function ConfirmForm({
                     ) : null}
                   </th>
                   {!attend ? (
-                    <td colSpan={3} className="off-cell">등원하지 않음</td>
+                    <td colSpan={3} className="off-cell">등원하지 않음{offReason ? ` · ${offReason}` : ''}</td>
                   ) : (
                     <>
                       <td>
