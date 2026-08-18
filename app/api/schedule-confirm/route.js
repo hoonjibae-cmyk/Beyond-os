@@ -69,9 +69,35 @@ export function normalizeWeekPattern(days = {}) {
         end: isValidTime(item.end) ? item.end : '',
         reason: String(item.reason || '').slice(0, 60),
       }));
-    out[dayKey] = { checkIn, checkOut, breaks };
+    // v41-199: 늦은 등원 / 이른 하원의 사유(일정 메모)를 학부모 화면까지 그대로 들고 갑니다.
+    // 여기서 지워 버리면 이미지에는 사유가 있는데 확인 링크에는 없는 상태가 됩니다.
+    out[dayKey] = { checkIn, checkOut, breaks, note: String(config.note || '').slice(0, 60) };
   }
   return out;
+}
+
+// v41-199: 요일별 기준 시간표(기본 시간표). '늦은 등원 / 이른 하원' 판정 기준입니다.
+// 기간 앞쪽에서 요일마다 대표 날짜를 하나씩 골라 그 날의 기본 시간표를 읽습니다.
+async function buildBaseByDay(supabase, startDate, endDate) {
+  const scheduleConfig = await getDefaultScheduleConfig(supabase);
+  const baseByDay = {};
+  let cursor = startDate;
+  let guard = 0;
+  while (cursor <= endDate && guard < 14 && Object.keys(baseByDay).length < 7) {
+    const dayKey = dayKeyOfDate(cursor);
+    if (!baseByDay[dayKey]) {
+      const resolved = resolveScheduleForDate(scheduleConfig, cursor);
+      baseByDay[dayKey] = {
+        dayType: resolved.dayType,
+        operating: Boolean(resolved.operating),
+        checkIn: clockOf(resolved.plannedCheckIn),
+        checkOut: clockOf(resolved.plannedCheckOut),
+      };
+    }
+    cursor = addDaysLocal(cursor, 1);
+    guard += 1;
+  }
+  return baseByDay;
 }
 
 const SPECIAL_TYPES = ['absent', 'away', 'start_from', 'unknown'];
@@ -316,26 +342,7 @@ async function buildRoutineFromSaved(supabase, body) {
 
   // v41-196: 요일별 기준 시간표(기본 시간표)를 함께 내려 줍니다.
   // 이미지에서 '늦은 등원 / 이른 하원'을 판정하고, 요일 유형으로 자율학습 시간을 고릅니다.
-  const scheduleConfig = await getDefaultScheduleConfig(supabase);
-  const baseByDay = {};
-  {
-    let cursor = startDate;
-    let guard = 0;
-    while (cursor <= endDate && guard < 14 && Object.keys(baseByDay).length < 7) {
-      const dayKey = dayKeyOfDate(cursor);
-      if (!baseByDay[dayKey]) {
-        const resolved = resolveScheduleForDate(scheduleConfig, cursor);
-        baseByDay[dayKey] = {
-          dayType: resolved.dayType,
-          operating: Boolean(resolved.operating),
-          checkIn: clockOf(resolved.plannedCheckIn),
-          checkOut: clockOf(resolved.plannedCheckOut),
-        };
-      }
-      cursor = addDaysLocal(cursor, 1);
-      guard += 1;
-    }
-  }
+  const baseByDay = await buildBaseByDay(supabase, startDate, endDate);
 
   const entries = students.map((student) => {
     const dayEntries = byStudent.get(String(student.id)) || {};
@@ -453,6 +460,17 @@ export async function POST(request) {
       const base = getPublicBaseUrl(request);
       const created = [];
 
+      // v41-199: 학부모 화면에서 '늦은 등원(기준 17:30)'처럼 기준을 함께 보여 주려면
+      // 요일별 기본 시간표가 필요합니다. 링크를 만들 때 함께 담아 둡니다.
+      // (설문 화면에서 만든 링크도 같은 값을 받습니다)
+      let snapshotBaseByDay = {};
+      try {
+        snapshotBaseByDay = await buildBaseByDay(supabase, startDate, endDate);
+      } catch {
+        // 기본 시간표를 못 읽어도 링크 생성은 계속합니다. 사유는 기준 없이 표시됩니다.
+        snapshotBaseByDay = {};
+      }
+
       // v41-197: 호출 쪽에서 이름을 안 보내도 목록에 '학생'으로 뜨지 않도록
       // 학생 이름을 여기서 채워 둡니다.
       const nameByStudentId = new Map();
@@ -471,6 +489,7 @@ export async function POST(request) {
           days: normalizeWeekPattern(entry.days || {}),
           special: normalizeSpecialItems(entry.special, { periodStart: startDate, periodEnd: endDate }),
           specialRaw: String(entry.specialRaw || '').slice(0, 500),
+          baseByDay: snapshotBaseByDay,
         };
 
         // 같은 학생·같은 기간 요청이 이미 있으면 시간표만 갱신하고 링크는 유지합니다.
@@ -580,7 +599,10 @@ export async function POST(request) {
           schedule_date: item.date,
           planned_check_in: item.checkIn || '09:00',
           planned_check_out: item.checkOut || '22:00',
-          schedule_note: '학부모 확인 시간표',
+          // v41-199: 학부모가 확인해 준 사유(타학원 등)가 있으면 그것을 일정 메모로 남깁니다.
+          // '학부모 확인 시간표'는 등록 출처일 뿐이라 사유 자리를 차지하면
+          // 다음에 시간표 이미지를 뽑을 때 늦은 등원 사유가 다시 비어 버립니다.
+          schedule_note: String(item.note || '').trim().slice(0, 100) || '학부모 확인 시간표',
           // v41-186: student_daily_schedules 에는 created_by 컬럼이 없습니다.
           // 반영한 사람은 아래 user_action_logs 와 schedule_confirmations.applied_by 에 남습니다.
         };

@@ -46,6 +46,12 @@ const styles = `
   tbody th{width:52px;font-weight:800;color:#1d1d1f}
   tr.is-off{background:#fafafc}
   .off-cell{color:#86868b;font-weight:600}
+  tr.has-shift>th,tr.has-shift>td{border-bottom:0;padding-bottom:2px}
+  .shift-row>th,.shift-row>td{padding-top:0}
+  .shift-note{display:inline-block;color:#b26a00;font-size:12px;font-weight:700;line-height:1.5}
+  .shift-edit{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .shift-edit>span{font-size:11.5px;font-weight:700;color:#6e6e73;white-space:nowrap}
+  .shift-edit input[type=text]{flex:1 1 200px;min-width:150px;font-size:12.5px;padding:6px 9px}
   .muted-cell{color:#86868b;font-style:normal}
   .attend-toggle{display:flex;align-items:center;gap:4px;margin-top:5px;font-size:11px;font-weight:700;color:#6e6e73}
   .break-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:5px}
@@ -151,6 +157,7 @@ export default async function ScheduleConfirmPage({ params }) {
             snapshotDays={snapshotDays}
             snapshotSpecial={snapshotSpecial}
             specialRaw={specialRaw}
+            baseByDay={row.snapshot?.baseByDay || {}}
             initialStatus={row.status}
             guardianHint={row.confirmed_by || ''}
           />

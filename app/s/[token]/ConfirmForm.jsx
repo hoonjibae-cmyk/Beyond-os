@@ -3,7 +3,7 @@
 // Beyond OS v41-151
 // 학부모가 자녀의 주간 시간표를 확인하고, 필요하면 그 자리에서 고쳐 제출하는 화면입니다.
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { formatSpecialDate, SPECIAL_TYPE_LABELS } from '../../../lib/specialScheduleParse';
 
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -18,7 +18,7 @@ const SPECIAL_CHOICES = [
 ];
 
 function emptyDay() {
-  return { checkIn: '09:00', checkOut: '22:00', breaks: [] };
+  return { checkIn: '09:00', checkOut: '22:00', breaks: [], note: '' };
 }
 
 function describeSpecial(item) {
@@ -35,8 +35,22 @@ function describeSpecial(item) {
   return when;
 }
 
+// v41-199: 기본 시간표보다 늦게 오거나 일찍 가는 요일은 그 사유를 함께 보여 줍니다.
+// 사유가 안 보이면 학부모가 "왜 20:30이지?" 하고 맞는지 판단할 수 없습니다.
+// 기준 시간표를 못 받은 예전 링크에서도 사유만은 그대로 보여 줍니다.
+function describeShift(day, base) {
+  if (!day || day.absent) return '';
+  const parts = [];
+  if (base?.checkIn && day.checkIn && day.checkIn > base.checkIn) parts.push(`늦은 등원 (기준 ${base.checkIn})`);
+  if (base?.checkOut && day.checkOut && day.checkOut < base.checkOut) parts.push(`이른 하원 (기준 ${base.checkOut})`);
+  const note = String(day.note || '').trim();
+  if (note) parts.push(note);
+  return parts.join(' · ');
+}
+
 export default function ConfirmForm({
   token, student, period, snapshotDays, snapshotSpecial, specialRaw, initialStatus, guardianHint,
+  baseByDay = {},
 }) {
   const [days, setDays] = useState(() => {
     const base = {};
@@ -191,8 +205,12 @@ export default function ConfirmForm({
               // v41-198: 매주 빠지는 요일은 days[dayKey] = { absent: true, absentReason } 로 옵니다.
               const attend = Boolean(day) && !day.absent;
               const offReason = day?.absent ? String(day.absentReason || '').trim() : '';
+              // v41-199: 늦은 등원 / 이른 하원 사유를 시각 바로 아래 줄에 붙입니다.
+              const shift = describeShift(day, baseByDay?.[dayKey]);
+              const shiftRow = attend && (editing || Boolean(shift));
               return (
-                <tr key={dayKey} className={attend ? '' : 'is-off'}>
+                <Fragment key={dayKey}>
+                <tr className={`${attend ? '' : 'is-off'}${shiftRow ? ' has-shift' : ''}`}>
                   <th scope="row">
                     {DAY_LABELS[dayKey]}
                     {editing ? (
@@ -238,6 +256,25 @@ export default function ConfirmForm({
                     </>
                   )}
                 </tr>
+                {shiftRow ? (
+                  <tr className="shift-row">
+                    <th scope="row" aria-hidden="true" />
+                    <td colSpan={3}>
+                      {editing ? (
+                        <label className="shift-edit">
+                          <span>등하원 사유</span>
+                          <input
+                            type="text"
+                            placeholder="예: 영어학원 · 수학과외 (없으면 비워 두세요)"
+                            value={day.note || ''}
+                            onChange={(e) => setDay(dayKey, { note: e.target.value })}
+                          />
+                        </label>
+                      ) : <span className="shift-note">{shift}</span>}
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>
