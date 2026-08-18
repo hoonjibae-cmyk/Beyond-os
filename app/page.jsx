@@ -11751,6 +11751,7 @@ function SchedulesTab(props) {
           endDate: data.endDate,
           entries: entries.map((entry) => ({
             studentId: entry.studentId,
+            studentName: entry.studentName,
             days: entry.days,
             special: entry.special,
             specialRaw: entry.specialRaw,

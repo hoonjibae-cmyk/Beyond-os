@@ -438,6 +438,17 @@ export async function POST(request) {
       const base = getPublicBaseUrl(request);
       const created = [];
 
+      // v41-197: 호출 쪽에서 이름을 안 보내도 목록에 '학생'으로 뜨지 않도록
+      // 학생 이름을 여기서 채워 둡니다.
+      const nameByStudentId = new Map();
+      {
+        const ids = entries.map((item) => String(item.studentId || '')).filter(Boolean);
+        if (ids.length) {
+          const { data: nameRows } = await supabase.from('students').select('id, name').in('id', ids);
+          for (const row of nameRows || []) nameByStudentId.set(String(row.id), row.name || '');
+        }
+      }
+
       for (const entry of entries) {
         const studentId = String(entry.studentId || '').trim();
         if (!studentId) continue;
@@ -488,7 +499,7 @@ export async function POST(request) {
         created.push({
           id: row.id,
           studentId,
-          studentName: entry.studentName || '',
+          studentName: entry.studentName || nameByStudentId.get(studentId) || '',
           token: row.token,
           url: base ? `${base}/s/${row.token}` : '',
           status: row.status,
