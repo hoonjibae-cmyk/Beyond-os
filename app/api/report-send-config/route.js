@@ -107,10 +107,13 @@ export async function GET(request) {
   const weeklyTemplate = envStatus(['KAKAO_TEMPLATE_CODE_WEEKLY']);
   const attendanceTemplate = envStatus(['KAKAO_TEMPLATE_CODE_ATTENDANCE', 'KAKAO_TEMPLATE_CODE_CHECKINOUT']);
   const parentConfirmationTemplate = envStatus(['KAKAO_TEMPLATE_CODE_PARENT_CONFIRMATION']);
+  // v41-203: 학생 시간표 확인 링크
+  const scheduleConfirmTemplate = envStatus(['KAKAO_TEMPLATE_CODE_SCHEDULE_CONFIRM']);
   const solapiDaily = getSolapiAdapterStatus('daily');
   const solapiWeekly = getSolapiAdapterStatus('weekly');
   const solapiAttendance = getSolapiAdapterStatus('attendance');
   const solapiParentConfirmation = getSolapiAdapterStatus('parent_confirmation');
+  const solapiScheduleConfirm = getSolapiAdapterStatus('schedule_confirm');
   const solapiReady = Boolean(
     solapiDaily.apiKeyConfigured
     && solapiDaily.apiSecretConfigured
@@ -228,6 +231,19 @@ export async function GET(request) {
       templateEnvName: parentConfirmationTemplate.envName,
       solapiTemplateConfigured: solapiParentConfirmation.templateConfigured,
       solapiTemplateEnvName: solapiParentConfirmation.templateEnvName,
+    },
+    scheduleConfirm: {
+      configured: Boolean(scheduleConfirmTemplate.configured || solapiScheduleConfirm.templateConfigured),
+      mode: providerMode === 'solapi' ? 'solapi_adapter' : scheduleConfirmTemplate.configured ? 'direct_template' : 'ready_only',
+      modeLabel: providerMode === 'solapi'
+        ? 'SOLAPI Adapter 경유 모드'
+        : scheduleConfirmTemplate.configured
+          ? 'Direct Kakao 시간표 확인 링크 템플릿 모드'
+          : '시간표 확인 링크 템플릿 미설정',
+      templateConfigured: scheduleConfirmTemplate.configured,
+      templateEnvName: scheduleConfirmTemplate.envName,
+      solapiTemplateConfigured: solapiScheduleConfirm.templateConfigured,
+      solapiTemplateEnvName: solapiScheduleConfirm.templateEnvName,
     },
     reportLinks,
     recipientPolicy,

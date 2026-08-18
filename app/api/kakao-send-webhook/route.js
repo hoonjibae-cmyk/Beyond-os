@@ -25,6 +25,7 @@ const TEMPLATE_CODE_WEEKLY = process.env.KAKAO_TEMPLATE_CODE_WEEKLY || '';
 const TEMPLATE_CODE_ATTENDANCE = process.env.KAKAO_TEMPLATE_CODE_ATTENDANCE || process.env.KAKAO_TEMPLATE_CODE_CHECKINOUT || '';
 const TEMPLATE_CODE_PARENT_CONFIRMATION = process.env.KAKAO_TEMPLATE_CODE_PARENT_CONFIRMATION || '';
 const TEMPLATE_CODE_NOTICE = process.env.KAKAO_TEMPLATE_CODE_NOTICE || '';
+const TEMPLATE_CODE_SCHEDULE_CONFIRM = process.env.KAKAO_TEMPLATE_CODE_SCHEDULE_CONFIRM || '';
 
 function boolEnv(name, defaultValue = false) {
   const raw = process.env[name];
@@ -295,6 +296,8 @@ function getTemplateCode(reportType, noticeCategory) {
   if (reportType === 'weekly') return TEMPLATE_CODE_WEEKLY;
   if (reportType === 'attendance') return TEMPLATE_CODE_ATTENDANCE;
   if (reportType === 'parent_confirmation') return TEMPLATE_CODE_PARENT_CONFIRMATION;
+  // v41-203: 학부모 시간표 확인 링크
+  if (reportType === 'schedule_confirm') return TEMPLATE_CODE_SCHEDULE_CONFIRM;
   if (reportType === 'notice') {
     const cat = getNoticeCategory(noticeCategory);
     for (const name of cat.templateCodeEnvs || []) {

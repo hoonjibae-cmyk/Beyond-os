@@ -1,4 +1,5 @@
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
+import { buildScheduleConfirmKakaoVariables, buildScheduleConfirmMessage } from '../../../lib/scheduleConfirmTemplate';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { writeUserActionLog } from '../../../lib/actionLog';
 
@@ -15,6 +16,8 @@ function normalizeReportType(value = 'daily') {
   if (value === 'weekly') return 'weekly';
   if (value === 'attendance') return 'attendance';
   if (value === 'parent_confirmation') return 'parent_confirmation';
+  // v41-203: 학부모 시간표 확인 링크
+  if (value === 'schedule_confirm') return 'schedule_confirm';
   return 'daily';
 }
 
@@ -22,6 +25,7 @@ function getConfig(reportType) {
   if (reportType === 'weekly') return envStatus(['WEEKLY_REPORT_SEND_WEBHOOK_URL', 'REPORT_SEND_WEBHOOK_URL', 'KAKAO_REPORT_WEBHOOK_URL', 'SOLAPI_TEMPLATE_ID_WEEKLY', 'KAKAO_TEMPLATE_CODE_WEEKLY']);
   if (reportType === 'attendance') return envStatus(['SOLAPI_TEMPLATE_ID_ATTENDANCE', 'SOLAPI_TEMPLATE_ID_CHECKINOUT', 'KAKAO_TEMPLATE_CODE_ATTENDANCE', 'KAKAO_TEMPLATE_CODE_CHECKINOUT']);
   if (reportType === 'parent_confirmation') return envStatus(['SOLAPI_TEMPLATE_ID_PARENT_CONFIRMATION', 'KAKAO_TEMPLATE_CODE_PARENT_CONFIRMATION']);
+  if (reportType === 'schedule_confirm') return envStatus(['SOLAPI_TEMPLATE_ID_SCHEDULE_CONFIRM', 'KAKAO_TEMPLATE_CODE_SCHEDULE_CONFIRM']);
   return envStatus(['REPORT_SEND_WEBHOOK_URL', 'KAKAO_REPORT_WEBHOOK_URL', 'SOLAPI_TEMPLATE_ID_DAILY', 'KAKAO_TEMPLATE_CODE_DAILY']);
 }
 
@@ -63,6 +67,38 @@ function makePayload(reportType, actorName) {
       requestedBy: actorName,
       requestedAt: new Date().toISOString(),
       note: '출결 알림톡 테스트 payload입니다. 실제 학부모에게 발송하지 않습니다.',
+    };
+  }
+
+  if (type === 'schedule_confirm') {
+    const period = '26.08.18~26.10.17';
+    const link = 'https://example.com/s/test-token';
+    return {
+      channel: 'kakao',
+      mode: 'test_payload_only',
+      reportType: 'schedule_confirm',
+      studentName: '테스트 학생',
+      studentId: 'test-student-id',
+      reportId: 'test-schedule-confirm-id',
+      idempotencyKey: 'test:schedule_confirm:test-student-id:01000000000',
+      startDate: '2026-08-18',
+      endDate: '2026-10-17',
+      reportLink: link,
+      recipients: [
+        { name: '모', relationship: '모', phone: '01000000000', isPrimary: true },
+      ],
+      recipientPhones: ['01000000000'],
+      messageText: buildScheduleConfirmMessage({ studentName: '테스트 학생', period, link }),
+      templateVariables: {
+        studentName: '테스트 학생',
+        period,
+        confirmLink: link,
+        reportLink: link,
+        kakaoVariables: buildScheduleConfirmKakaoVariables({ studentName: '테스트 학생', period, link }),
+      },
+      requestedBy: actorName,
+      requestedAt: new Date().toISOString(),
+      note: '학생 시간표 확인 링크 알림톡 테스트 payload입니다. 실제 학부모에게 발송하지 않습니다.',
     };
   }
 

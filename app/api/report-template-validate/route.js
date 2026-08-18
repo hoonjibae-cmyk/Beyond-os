@@ -31,6 +31,25 @@ function makeSamplePayload(reportType = 'daily') {
     };
   }
 
+  if (reportType === 'schedule_confirm') {
+    const period = '26.08.18~26.10.17';
+    const link = 'https://example.com/s/test-token';
+    return {
+      reportType: 'schedule_confirm',
+      studentName: '테스트 학생',
+      startDate: '2026-08-18',
+      endDate: '2026-10-17',
+      reportLink: link,
+      templateVariables: {
+        studentName: '테스트 학생',
+        period,
+        confirmLink: link,
+        reportLink: link,
+        kakaoVariables: { '#{학생명}': '테스트 학생', '#{기간}': period, '#{확인링크}': link },
+      },
+    };
+  }
+
   if (reportType === 'parent_confirmation') {
     return {
       reportType: 'parent_confirmation',
@@ -106,17 +125,17 @@ export async function POST(request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const reportType = body.reportType === 'weekly' ? 'weekly' : body.reportType === 'attendance' ? 'attendance' : body.reportType === 'parent_confirmation' ? 'parent_confirmation' : 'daily';
+    const reportType = body.reportType === 'weekly' ? 'weekly' : body.reportType === 'attendance' ? 'attendance' : body.reportType === 'parent_confirmation' ? 'parent_confirmation' : body.reportType === 'schedule_confirm' ? 'schedule_confirm' : 'daily';
     const payload = body.payload || makeSamplePayload(reportType);
     const result = validateKakaoTemplateVariables(payload, reportType);
 
     try {
       const supabase = getSupabaseAdmin();
       await writeUserActionLog(supabase, request, {
-        actionType: reportType === 'weekly' ? 'weekly_report.template_validate' : reportType === 'attendance' ? 'attendance_notification.template_validate' : reportType === 'parent_confirmation' ? 'parent_confirmation.template_validate' : 'daily_report.template_validate',
+        actionType: reportType === 'weekly' ? 'weekly_report.template_validate' : reportType === 'attendance' ? 'attendance_notification.template_validate' : reportType === 'parent_confirmation' ? 'parent_confirmation.template_validate' : reportType === 'schedule_confirm' ? 'schedule_confirm.template_validate' : 'daily_report.template_validate',
         targetType: 'kakao_template',
         targetId: reportType,
-        targetName: reportType === 'weekly' ? '위클리 템플릿 변수 검증' : reportType === 'attendance' ? '출결 알림 템플릿 변수 검증' : reportType === 'parent_confirmation' ? '학부모 확인 요청 템플릿 변수 검증' : '데일리 템플릿 변수 검증',
+        targetName: reportType === 'weekly' ? '위클리 템플릿 변수 검증' : reportType === 'attendance' ? '출결 알림 템플릿 변수 검증' : reportType === 'parent_confirmation' ? '학부모 확인 요청 템플릿 변수 검증' : reportType === 'schedule_confirm' ? '학생 시간표 확인 링크 템플릿 변수 검증' : '데일리 템플릿 변수 검증',
         payload: result,
       });
     } catch {

@@ -1,4 +1,5 @@
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
+import { buildScheduleConfirmKakaoVariables, buildScheduleConfirmMessage } from '../../../lib/scheduleConfirmTemplate';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getReportSendSettings, resolveRecipientTestMode } from '../../../lib/reportSendSettings';
@@ -9,6 +10,8 @@ function normalizeReportType(value = 'daily') {
   if (value === 'weekly') return 'weekly';
   if (value === 'attendance') return 'attendance';
   if (value === 'parent_confirmation') return 'parent_confirmation';
+  // v41-203: 학부모 시간표 확인 링크
+  if (value === 'schedule_confirm') return 'schedule_confirm';
   return 'daily';
 }
 
@@ -33,6 +36,7 @@ function getTemplateEnvName(reportType) {
   if (reportType === 'weekly') return process.env.SOLAPI_TEMPLATE_ID_WEEKLY ? 'SOLAPI_TEMPLATE_ID_WEEKLY' : process.env.KAKAO_TEMPLATE_CODE_WEEKLY ? 'KAKAO_TEMPLATE_CODE_WEEKLY' : 'SOLAPI_TEMPLATE_ID_WEEKLY';
   if (reportType === 'attendance') return process.env.SOLAPI_TEMPLATE_ID_ATTENDANCE ? 'SOLAPI_TEMPLATE_ID_ATTENDANCE' : process.env.KAKAO_TEMPLATE_CODE_ATTENDANCE ? 'KAKAO_TEMPLATE_CODE_ATTENDANCE' : 'SOLAPI_TEMPLATE_ID_ATTENDANCE';
   if (reportType === 'parent_confirmation') return process.env.SOLAPI_TEMPLATE_ID_PARENT_CONFIRMATION ? 'SOLAPI_TEMPLATE_ID_PARENT_CONFIRMATION' : process.env.KAKAO_TEMPLATE_CODE_PARENT_CONFIRMATION ? 'KAKAO_TEMPLATE_CODE_PARENT_CONFIRMATION' : 'SOLAPI_TEMPLATE_ID_PARENT_CONFIRMATION';
+  if (reportType === 'schedule_confirm') return process.env.SOLAPI_TEMPLATE_ID_SCHEDULE_CONFIRM ? 'SOLAPI_TEMPLATE_ID_SCHEDULE_CONFIRM' : process.env.KAKAO_TEMPLATE_CODE_SCHEDULE_CONFIRM ? 'KAKAO_TEMPLATE_CODE_SCHEDULE_CONFIRM' : 'SOLAPI_TEMPLATE_ID_SCHEDULE_CONFIRM';
   return process.env.SOLAPI_TEMPLATE_ID_DAILY ? 'SOLAPI_TEMPLATE_ID_DAILY' : process.env.KAKAO_TEMPLATE_CODE_DAILY ? 'KAKAO_TEMPLATE_CODE_DAILY' : 'SOLAPI_TEMPLATE_ID_DAILY';
 }
 
@@ -40,6 +44,7 @@ function isTemplateConfigured(reportType) {
   if (reportType === 'weekly') return Boolean(process.env.SOLAPI_TEMPLATE_ID_WEEKLY || process.env.KAKAO_TEMPLATE_CODE_WEEKLY);
   if (reportType === 'attendance') return Boolean(process.env.SOLAPI_TEMPLATE_ID_ATTENDANCE || process.env.SOLAPI_TEMPLATE_ID_CHECKINOUT || process.env.KAKAO_TEMPLATE_CODE_ATTENDANCE || process.env.KAKAO_TEMPLATE_CODE_CHECKINOUT);
   if (reportType === 'parent_confirmation') return Boolean(process.env.SOLAPI_TEMPLATE_ID_PARENT_CONFIRMATION || process.env.KAKAO_TEMPLATE_CODE_PARENT_CONFIRMATION);
+  if (reportType === 'schedule_confirm') return Boolean(process.env.SOLAPI_TEMPLATE_ID_SCHEDULE_CONFIRM || process.env.KAKAO_TEMPLATE_CODE_SCHEDULE_CONFIRM);
   return Boolean(process.env.SOLAPI_TEMPLATE_ID_DAILY || process.env.KAKAO_TEMPLATE_CODE_DAILY);
 }
 
@@ -120,6 +125,27 @@ function makePayload(reportType, actorName, recipientPhones) {
           '#{예정외출시간}': '13:00 ~ 15:00 (수학학원)',
           '#{현재상태}': '외출 후 미복귀',
         },
+      },
+    };
+  }
+
+  if (type === 'schedule_confirm') {
+    const period = '26.08.18~26.10.17';
+    const link = 'https://example.com/s/test-token';
+    return {
+      ...base,
+      reportId: `test-schedule-confirm-${now}`,
+      idempotencyKey: `template-test:schedule_confirm:${now}:${recipientPhones.join('-')}`,
+      startDate: '2026-08-18',
+      endDate: '2026-10-17',
+      reportLink: link,
+      messageText: buildScheduleConfirmMessage({ studentName: '테스트 학생', period, link }),
+      templateVariables: {
+        studentName: '테스트 학생',
+        period,
+        confirmLink: link,
+        reportLink: link,
+        kakaoVariables: buildScheduleConfirmKakaoVariables({ studentName: '테스트 학생', period, link }),
       },
     };
   }
