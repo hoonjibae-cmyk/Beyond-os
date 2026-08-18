@@ -19469,7 +19469,12 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
     try {
       setSending(true);
       const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, previewOnly: true }) });
-      setConfirm({ recipientCount: d.recipientCount, testMode: d.testMode, testModeSource: d.testModeSource, link: d.link, hasLink: d.hasLink, categoryLabel: d.categoryLabel, input: d.input });
+      setConfirm({
+        recipientCount: d.recipientCount, testMode: d.testMode, testModeSource: d.testModeSource,
+        link: d.link, hasLink: d.hasLink, categoryLabel: d.categoryLabel, input: d.input,
+        // v41-202: 어느 기수 학부모에게 가는지 확인창에 그대로 보여 줍니다.
+        cohortName: d.cohortName || '', scopeLabel: d.scopeLabel || '', cohortStudentCount: d.cohortStudentCount,
+      });
       setConfirmChecked(false);
     } catch (e) { setMessage(e.message); } finally { setSending(false); }
   }
@@ -19480,7 +19485,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
     try {
       setSending(true);
       const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, actualSend: true }) });
-      if (d.ok) setMessage(`공지 알림톡 발송 접수 완료 · 대상 ${d.recipientCount}명${d.testMode ? ' (테스트 수신번호 모드)' : ''}`);
+      if (d.ok) setMessage(`공지 알림톡 발송 접수 완료 · ${d.cohortName ? `${d.cohortName} ` : ''}대상 ${d.recipientCount}명${d.testMode ? ' (테스트 수신번호 모드)' : ''}`);
       else setMessage(`발송 실패: ${d.message || d.error || '알 수 없는 오류'}`);
       setConfirm(null); setConfirmChecked(false);
       await loadNotices();
@@ -19598,22 +19603,24 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
         </div>
       ) : null}
 
-      <h4>3) 학부모 전체 발송</h4>
+      <h4>3) 학부모 발송</h4>
+      <div className="hint">화면 상단 [기수 보기]에서 고른 기수의 수강생 학부모에게만 보냅니다. 아래 [발송 준비]를 누르면 어느 기수 몇 명인지 확인할 수 있습니다.</div>
       <div className="btn-row">
         <button className="primary" onClick={prepareSend} disabled={!form.id || sending}>{sending && !confirm ? '대상 확인 중...' : '발송 준비 (대상 확인)'}</button>
       </div>
 
       {confirm ? (
         <div className={`notice-confirm-panel call ${confirm.testMode ? 'warn' : 'field'}`} style={{ marginTop: 10 }}>
-          <b>{confirm.testMode ? '테스트 수신번호 모드로 발송' : '전체 학부모에게 실제 발송'}</b>
+          <b>{confirm.testMode ? '테스트 수신번호 모드로 발송' : `${confirm.cohortName ? `${confirm.cohortName} ` : '전체 '}학부모에게 실제 발송`}</b>
           {confirm.categoryLabel ? <p style={{ margin: '2px 0 4px' }}>유형: <b>{confirm.categoryLabel}</b></p> : null}
+          <p>발송 범위: <b>{confirm.scopeLabel || '활성 학생 전체'}</b>{typeof confirm.cohortStudentCount === 'number' ? ` (수강생 ${confirm.cohortStudentCount}명)` : ''}</p>
           <p>수신 대상 <b>{confirm.recipientCount}명</b> (활성 학생 · 데일리 리포트 수신 ON 보호자, 번호 중복 제거).</p>
           {confirm.testMode ? <p>현재 <b>테스트 수신번호 모드</b>입니다. 실제 학부모가 아니라 설정된 테스트 번호로만 발송됩니다. (실전 발송하려면 설정 › 리포트 발송 설정에서 테스트 모드를 끄세요.)</p> : null}
           {!confirm.hasLink ? <p style={{ color: 'var(--ap-attn-text,#c0392b)' }}>⚠️ {confirm.input === 'fields' ? '발송 항목(기간·사유·내용)이 비어 있습니다. 저장 후 다시 시도하세요.' : '링크가 없습니다. 본문 저장 또는 외부 URL을 확인하세요.'}</p> : null}
           {!confirm.testMode ? (
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0', fontWeight: 700 }}>
               <input type="checkbox" checked={confirmChecked} onChange={(e) => setConfirmChecked(e.target.checked)} />
-              실제 학부모 {confirm.recipientCount}명에게 발송하는 것을 확인합니다.
+              {confirm.cohortName ? `${confirm.cohortName} ` : ''}실제 학부모 {confirm.recipientCount}명에게 발송하는 것을 확인합니다.
             </label>
           ) : null}
           <div className="btn-row">

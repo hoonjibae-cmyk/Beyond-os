@@ -4,6 +4,7 @@ import { writeUserActionLog } from '../../../lib/actionLog';
 import { getReportSendSettings, resolveRecipientTestMode, getRecipientTestModeSource } from '../../../lib/reportSendSettings';
 import { getNoticeLink } from '../../../lib/noticeShare';
 import { getNoticeCategory, buildNoticeKakaoVariables } from '../../../lib/noticeTemplates';
+import { getKstDateString } from '../../../lib/date';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,12 +22,71 @@ function maskPhone(value) {
   return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
 }
 
+// v41-202: 공지는 지금 보고 있는 기수의 수강생 학부모에게만 보냅니다.
+// 화면의 [기수 보기]가 모든 요청에 x-beyond-cohort-id 를 실어 보냅니다.
+function getCohortIdFromRequest(request) {
+  try {
+    return String(request?.headers?.get?.('x-beyond-cohort-id') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+// 요청에 기수가 없으면(=전체 보기) 오늘이 속한 기수를, 그것도 없으면 가장 최근 기수를 씁니다.
+// 기수를 아직 하나도 만들지 않았다면 null 을 돌려주고 예전처럼 활성 학생 전원에게 보냅니다.
+async function resolveNoticeCohort(supabase, requested) {
+  let rows = [];
+  try {
+    const { data, error } = await supabase
+      .from('cohorts')
+      .select('id, name, start_date, end_date')
+      .order('start_date', { ascending: true });
+    if (error) throw error;
+    rows = data || [];
+  } catch {
+    return null;
+  }
+  if (!rows.length) return null;
+
+  const wanted = String(requested || '').trim();
+  const picked = wanted ? rows.find((row) => String(row.id) === wanted) : null;
+  if (picked) return { id: String(picked.id), name: picked.name || '' };
+
+  // 기간이 겹치면 나중에 시작한 기수를 씁니다. (cohorts 는 시작일 오름차순)
+  const today = getKstDateString();
+  const current = [...rows].reverse().find((row) => (
+    String(row.start_date || '').slice(0, 10) <= today && today <= String(row.end_date || '').slice(0, 10)
+  ));
+  if (current) return { id: String(current.id), name: current.name || '' };
+
+  const latest = rows[rows.length - 1];
+  return { id: String(latest.id), name: latest.name || '' };
+}
+
+// 기수 수강 명단(활성)의 학생 id.
+// 명단을 못 읽으면 null 을 돌려줍니다. 빈 배열(=명단 0명)과 구분해야 합니다.
+// 빈 명단을 '조건 없음'으로 흘려보내면 전 기수 학부모에게 발송됩니다.
+async function loadCohortStudentIds(supabase, cohortId) {
+  if (!cohortId) return null;
+  const { data, error } = await supabase
+    .from('cohort_students')
+    .select('student_id')
+    .eq('cohort_id', cohortId)
+    .eq('is_active', true);
+  if (error) throw error;
+  return [...new Set((data || []).map((row) => String(row.student_id)))];
+}
+
 // 활성 학생의 수신 동의(데일리 리포트 수신) 보호자 → 전화번호 기준 중복 제거
-async function collectRecipients(supabase) {
-  const { data: students, error } = await supabase
+// studentIds 가 배열이면 그 학생들로만 좁힙니다. (기수 수강 명단)
+async function collectRecipients(supabase, studentIds = null) {
+  if (Array.isArray(studentIds) && !studentIds.length) return [];
+  let query = supabase
     .from('students')
-    .select('name, status, student_guardians(*)')
+    .select('id, name, status, student_guardians(*)')
     .eq('status', 'active');
+  if (Array.isArray(studentIds)) query = query.in('id', studentIds);
+  const { data: students, error } = await query;
   if (error) throw error;
 
   const seen = new Set();
@@ -99,7 +159,11 @@ export async function POST(request) {
     if (noticeError) throw noticeError;
     if (!notice) return Response.json({ error: '공지를 찾을 수 없습니다.' }, { status: 404 });
 
-    const recipients = await collectRecipients(supabase);
+    // v41-202: 지금 보고 있는 기수의 수강생 학부모에게만 보냅니다.
+    const cohort = await resolveNoticeCohort(supabase, body.cohortId || getCohortIdFromRequest(request));
+    const cohortStudentIds = cohort ? await loadCohortStudentIds(supabase, cohort.id) : null;
+    const recipients = await collectRecipients(supabase, cohortStudentIds);
+    const scopeLabel = cohort ? `${cohort.name || '해당 기수'} 수강 명단` : '활성 학생 전체';
     const sendSettings = await getReportSendSettings(supabase).catch(() => ({}));
     const testMode = resolveRecipientTestMode(sendSettings?.settings || sendSettings || {}, String(process.env.KAKAO_RECIPIENT_TEST_MODE || '').toLowerCase() === 'true');
     const testModeSource = getRecipientTestModeSource(sendSettings?.settings || sendSettings || {});
@@ -120,11 +184,19 @@ export async function POST(request) {
         preview: true, recipientCount: recipients.length, testMode, testModeSource,
         category: cat.key, categoryLabel: cat.label, input: cat.input,
         link, hasLink: contentReady,
+        cohortId: cohort?.id || null,
+        cohortName: cohort?.name || '',
+        scopeLabel,
+        cohortStudentCount: Array.isArray(cohortStudentIds) ? cohortStudentIds.length : null,
       });
     }
 
     if (!recipients.length) {
-      return Response.json({ error: '수신 동의된 보호자 연락처가 없습니다. (활성 학생 · 데일리 리포트 수신 ON 기준)' }, { status: 400 });
+      return Response.json({
+        error: cohort
+          ? `${scopeLabel}에 수신 동의된 보호자 연락처가 없습니다. (활성 학생 · 데일리 리포트 수신 ON 기준) 기수 관리에서 수강 명단을 확인하세요.`
+          : '수신 동의된 보호자 연락처가 없습니다. (활성 학생 · 데일리 리포트 수신 ON 기준)',
+      }, { status: 400 });
     }
     if (!contentReady) {
       return Response.json({
@@ -153,7 +225,9 @@ export async function POST(request) {
         noticeData: templateData,
         kakaoVariables,
       },
-      idempotencyKey: `notice:${notice.id}:${actualSend ? 'live' : 'test'}:${recipients.length}`,
+      cohortId: cohort?.id || null,
+      cohortName: cohort?.name || '',
+      idempotencyKey: `notice:${notice.id}:${cohort?.id || 'all'}:${actualSend ? 'live' : 'test'}:${recipients.length}`,
     };
 
     const result = await callWebhook(payload);
@@ -172,6 +246,9 @@ export async function POST(request) {
           status: result.status,
           category: cat.key,
           categoryLabel: cat.label,
+          cohortId: cohort?.id || null,
+          cohortName: cohort?.name || '',
+          scopeLabel,
           recipients: recipientSnapshot,
         },
       }).eq('id', notice.id);
@@ -182,7 +259,11 @@ export async function POST(request) {
       targetType: 'notice',
       targetId: notice.id,
       targetName: notice.title,
-      payload: { category: cat.key, recipientCount: recipients.length, actualSend, testMode, ok: result.ok, status: result.status },
+      payload: {
+        category: cat.key, recipientCount: recipients.length, actualSend, testMode,
+        ok: result.ok, status: result.status,
+        cohortId: cohort?.id || null, cohortName: cohort?.name || '',
+      },
     });
 
     return Response.json({
@@ -192,6 +273,9 @@ export async function POST(request) {
       recipientCount: recipients.length,
       testMode,
       testModeSource,
+      cohortId: cohort?.id || null,
+      cohortName: cohort?.name || '',
+      scopeLabel,
       link,
       recipientStats: result.recipientStats,
       recipientPolicy: result.recipientPolicy,
