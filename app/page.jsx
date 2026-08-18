@@ -10650,9 +10650,16 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
 
   async function loadConfirmRows() {
     try {
+      // v41-206: 기수로 찾습니다. 날짜가 정확히 같은 건만 찾으면,
+      // 기수 기간을 손보거나 기간을 직접 지정해 만든 링크가 목록에서 사라집니다.
+      // (학생 시간표 화면의 알림 배지도 같은 기준이라 숫자가 어긋나지 않습니다)
       const params = new URLSearchParams();
-      if (range.start) params.set('start', range.start);
-      if (range.end) params.set('end', range.end);
+      if (cohortId) {
+        params.set('cohortId', cohortId);
+      } else {
+        if (range.start) params.set('start', range.start);
+        if (range.end) params.set('end', range.end);
+      }
       const data = await apiFetch(`/api/schedule-confirm?${params.toString()}`);
       setConfirmRows(data.rows || []);
     } catch {
@@ -10663,10 +10670,10 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
   // v41-205: 화면에 들어오면 바로 목록을 채웁니다.
   // 전에는 [목록 새로고침]을 눌러야만 보여서, 학부모가 제출해도 알 방법이 없었습니다.
   useEffect(() => {
-    if (!range.start || !range.end) return;
+    if (!cohortId && (!range.start || !range.end)) return;
     loadConfirmRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.start, range.end]);
+  }, [cohortId, range.start, range.end]);
 
   async function applyConfirmRow(row) {
     const label = row.status === 'change_requested' ? '학부모가 수정한 내용' : '확인된 시간표';
@@ -10940,16 +10947,34 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
       {mapping ? (
         <div className="schedule-import-step clean-panel">
           <strong>6. 학부모 최종 확인 (선택)</strong>
-          <span>해석된 주간 시간표와 특별 일정으로 학생별 확인 링크를 만들어 학부모에게 보냅니다. 학부모가 표를 보고 그대로 확인하거나 직접 고쳐 제출하면, 아래 목록에서 확인한 뒤 반영할 수 있습니다. 날짜를 읽지 못한 항목(⚠)은 학부모가 링크에서 날짜를 채워 넣을 수 있습니다.</span>
+          <span>해석된 주간 시간표와 특별 일정으로 학생별 확인 링크를 만듭니다. 만든 링크와 학부모 제출 내용은 아래 &lsquo;학부모 확인 · 제출 현황&rsquo;에서 봅니다. 날짜를 읽지 못한 항목(⚠)은 학부모가 링크에서 날짜를 채워 넣을 수 있습니다.</span>
           <div className="schedule-import-apply-row">
             <span>{selectedCohort ? `${selectedCohort.name} · ` : ''}대상 {ready.length}명 · 기간 {range.start} ~ {range.end}</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" className="secondary" onClick={loadConfirmRows} disabled={Boolean(confirmBusy)}>목록 새로고침</button>
               <button type="button" className="primary" onClick={createConfirmLinks} disabled={confirmBusy === 'create' || !ready.length}>
                 {confirmBusy === 'create' ? '생성 중...' : '학부모 확인 링크 만들기'}
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {/* v41-206: 학부모 제출 현황은 엑셀 업로드와 상관이 없습니다.
+          전에는 이 목록이 mapping(엑셀을 올려야 생기는 값) 안에 들어 있어서,
+          제출 4건이 있다는 알림을 보고 이 화면에 와도 목록을 찾을 수 없었습니다.
+          링크는 학생 시간표 화면에서도 만들므로 엑셀과 무관하게 항상 보여 줍니다. */}
+      <div className="schedule-import-step clean-panel">
+        <strong>학부모 확인 · 제출 현황</strong>
+        <span>
+          {selectedCohort ? `${selectedCohort.name} ` : ''}학생별 확인 링크와 학부모가 제출한 내용입니다.
+          제출 내용을 보고 [시간표에 반영]을 눌러야 실제 개인 시간표가 바뀝니다.
+        </span>
+        <div className="schedule-import-apply-row">
+          <span>{confirmRows.length ? `확인 링크 ${confirmRows.length}건` : '아직 만든 확인 링크가 없습니다.'}</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="secondary" onClick={loadConfirmRows} disabled={Boolean(confirmBusy)}>목록 새로고침</button>
+          </div>
+        </div>
 
           {confirmRows.length ? (
             <>
@@ -11018,9 +11043,12 @@ function ScheduleImportTab({ students = [], apiFetch, setMessage }) {
                 })}
               </div>
             </>
-          ) : <div className="today-comment-empty">아직 만든 확인 링크가 없습니다.</div>}
-        </div>
-      ) : null}
+          ) : (
+            <div className="today-comment-empty">
+              아직 만든 확인 링크가 없습니다. 학생 시간표 화면의 [학부모 시간표 확정 · 이미지]에서 만들 수 있습니다.
+            </div>
+          )}
+      </div>
 
       {result ? (
         <div className="schedule-import-result clean-panel">
