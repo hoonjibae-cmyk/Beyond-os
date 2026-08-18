@@ -2056,6 +2056,15 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
     // 모든 알림(미입실·출결상태·외출 예정·복귀 확인)을 자동으로 내립니다.
     if (session?.seat_status === 'absent') continue;
 
+    // v41-207: 결석으로 등록한 날은 시간표 기반 알림을 모두 내립니다.
+    //
+    // v41-153 은 "결석인데 좌석에 앉아 있으면 확인이 필요하다"며 출결상태 알림만 남겨 두었는데,
+    // createPresenceMismatchAlert 는 앉아 있는 상태(occupied)에서 애초에 null 을 돌려줍니다.
+    // 그래서 실제로 남은 것은 미입실·퇴실·외출 세 가지뿐이었고, 셋 다 결석 예정일에는 정상입니다.
+    // 결석 처리를 해도 planned_check_in/out 은 그대로 남기 때문에(schedules 라우트의 upsert)
+    // 결석 예정인 학생이 잠깐 들러 공부하고 간 경우까지 '출결상태 확인 필요'로 떴습니다.
+    if (schedule.planned_absent) continue;
+
     const presenceMismatch = createPresenceMismatchAlert({
       schedule,
       session,
@@ -2064,14 +2073,6 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
       nowMinutes: now,
       defaultSchedule,
     });
-
-    // v41-153: 개별 일정으로 결석이 등록된 날은 시간표 기반 알림
-    // (등원 확인·조기 하원·외출 예정·복귀 확인)을 띄우지 않습니다.
-    // 다만 결석인데 좌석에 앉아 있으면 확인이 필요하므로 출결상태 알림만 남깁니다.
-    if (schedule.planned_absent) {
-      if (presenceMismatch) alerts.push(presenceMismatch);
-      continue;
-    }
     // v41-118: 같은 학생에게 '복귀 확인 필요'(return_check)가 함께 뜨는 경우,
     // 더 구체적인 복귀 알림만 남기고 일반 '출결상태 확인 필요'는 중복이므로 억제합니다.
     // (외출/퇴실 상태일 때만 — 미입실 상태의 mismatch는 복귀 알림과 성격이 달라 유지)
