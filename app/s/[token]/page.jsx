@@ -17,6 +17,19 @@ async function loadConfirmation(token) {
       .eq('token', token)
       .maybeSingle();
     if (error || !data) return null;
+
+    // v41-201: 안내 문구에 기수 이름을 넣습니다. ('비욘드2기 주간 시간표')
+    // 임베드로 한 번에 읽지 않고 따로 읽습니다. 기수 이름을 못 읽더라도
+    // 링크 자체는 열려야 하기 때문입니다.
+    if (data.cohort_id) {
+      try {
+        const { data: cohortRow } = await supabase
+          .from('cohorts').select('name').eq('id', data.cohort_id).maybeSingle();
+        data.cohortName = cohortRow?.name || '';
+      } catch {
+        data.cohortName = '';
+      }
+    }
     return data;
   } catch {
     return null;
@@ -149,7 +162,8 @@ export default async function ScheduleConfirmPage({ params }) {
               {student.school || student.grade ? ' · ' : ''}
               {row.start_date} ~ {row.end_date}
               <br />
-              설문에 적어주신 내용을 아래와 같이 정리했습니다. 주간 시간표와 특별 일정을 함께 확인해 주세요.
+              학생이 직접 설문을 통해 작성한 {row.cohortName ? `${row.cohortName} ` : ''}주간 시간표를 아래와 같이 정리했습니다.
+              주간 시간표와 특별 일정을 함께 확인해 주세요.
               수정이 필요하면 직접 고쳐서 제출하실 수 있습니다.
             </p>
           </header>
