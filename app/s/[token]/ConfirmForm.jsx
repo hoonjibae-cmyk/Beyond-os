@@ -5,6 +5,7 @@
 
 import { Fragment, useMemo, useState } from 'react';
 import { formatSpecialDate, SPECIAL_TYPE_LABELS } from '../../../lib/specialScheduleParse';
+import { getSelfStudyWindow, describeSelfStudyWindows } from '../../../lib/selfStudyHours';
 
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const DAY_LABELS = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
@@ -207,6 +208,12 @@ export default function ConfirmForm({
               const offReason = day?.absent ? String(day.absentReason || '').trim() : '';
               // v41-199: 늦은 등원 / 이른 하원 사유를 시각 바로 아래 줄에 붙입니다.
               const shift = describeShift(day, baseByDay?.[dayKey]);
+              // v41-200: 그 요일의 자율학습 시간. 요일 유형을 모르는 예전 링크에서는
+              // 줄마다 붙이지 않고 표 아래 안내만 보여 줍니다.
+              const dayBase = baseByDay?.[dayKey];
+              const selfWindow = dayBase?.dayType && dayBase.operating !== false
+                ? getSelfStudyWindow(dayBase.dayType)
+                : null;
               const shiftRow = attend && (editing || Boolean(shift));
               return (
                 <Fragment key={dayKey}>
@@ -233,6 +240,15 @@ export default function ConfirmForm({
                         {editing
                           ? <input type="time" value={day.checkOut || ''} onChange={(e) => setDay(dayKey, { checkOut: e.target.value })} />
                           : (day.checkOut || '-')}
+                        {/* v41-200: 하원 시각만 보이면 그 때 문을 닫는 것으로 읽힙니다.
+                            이어지는 자율학습 시간을 바로 아래에 붙여 줍니다. */}
+                        {selfWindow ? (
+                          <span className="self-note">
+                            {/* 이른 하원처럼 하원과 자율학습 사이가 떨어져 있으면 '이어서'라고 하지 않습니다. */}
+                            {day.checkOut && selfWindow.start <= day.checkOut ? '이어서 ' : ''}
+                            자율학습 {selfWindow.start}~{selfWindow.end}
+                          </span>
+                        ) : null}
                       </td>
                       <td>
                         {(day.breaks || []).length === 0 && !editing ? <em className="muted-cell">없음</em> : null}
@@ -279,6 +295,17 @@ export default function ConfirmForm({
             })}
           </tbody>
         </table>
+
+        {/* v41-200: 자율학습 안내. 위 표의 하원 시각은 관리시간이 끝나는 시각일 뿐이라,
+            그 뒤로도 학습실이 열려 있다는 것을 함께 알려 드립니다. */}
+        <div className="self-study-box">
+          <strong>자율학습</strong>
+          <span>
+            {describeSelfStudyWindows()}
+            {' — 이 시간은 미리 시간표를 정하지 않고 자유롭게 오갈 수 있습니다. '}
+            위 표의 하원 시각은 관리시간이 끝나는 시각입니다.
+          </span>
+        </div>
       </div>
 
       {special.length || editing ? (

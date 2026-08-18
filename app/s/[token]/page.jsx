@@ -52,6 +52,10 @@ const styles = `
   .shift-edit{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .shift-edit>span{font-size:11.5px;font-weight:700;color:#6e6e73;white-space:nowrap}
   .shift-edit input[type=text]{flex:1 1 200px;min-width:150px;font-size:12.5px;padding:6px 9px}
+  .self-note{display:block;margin-top:3px;color:#2f6b3a;font-size:11.5px;font-weight:700;line-height:1.45}
+  .self-study-box{margin-top:14px;background:#f3f9f4;border-radius:12px;padding:11px 13px}
+  .self-study-box strong{display:block;font-size:12.5px;font-weight:800;color:#2f6b3a}
+  .self-study-box span{display:block;margin-top:3px;font-size:12px;color:#3f6b47;line-height:1.6}
   .muted-cell{color:#86868b;font-style:normal}
   .attend-toggle{display:flex;align-items:center;gap:4px;margin-top:5px;font-size:11px;font-weight:700;color:#6e6e73}
   .break-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:5px}
