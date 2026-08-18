@@ -19235,6 +19235,36 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-confirm-links-list b{ min-width:72px; font-size:12.5px; font-weight:700; color:#1d1d1f; }
 .schedule-confirm-links-list a{ flex:1; font-size:12px; color:#0071e3; word-break:break-all; }
 .schedule-confirm-links-list button{ flex:none; padding:4px 10px; font-size:11.5px; }
+/* v41-205: 학부모 제출 알림 배지 · 제출 내용 보기 */
+.confirm-alert-bar{ margin:0 0 12px; padding:11px 14px; border:1px solid #f2d79a; border-radius:14px; background:#fffdf6; }
+.confirm-alert-bar b{ display:block; font-size:13px; font-weight:800; color:#8a6a12; }
+.confirm-alert-bar span{ display:block; margin-top:4px; font-size:12px; color:#8a6a12; line-height:1.6; }
+.confirm-summary{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:10px 0 0;
+  padding:9px 13px; border-radius:12px; background:#f5f5f7; font-size:12.5px; color:#6e6e73; font-weight:600; }
+.confirm-summary b{ color:#1d1d1f; font-weight:800; }
+.confirm-summary em{ flex:1; min-width:180px; font-style:normal; text-align:right; font-size:12px; color:#86868b; }
+.confirm-summary.has-action{ background:#fffdf6; border:1px solid #f2d79a; }
+.confirm-summary.has-action em{ color:#8a6a12; font-weight:800; }
+.confirm-row.needs-apply{ border-color:#f2d79a; background:#fffdf6; }
+.confirm-row-summary{ font-size:12px; font-weight:700; color:#0058b8; }
+.confirm-detail{ margin:8px 0 0; }
+.confirm-detail summary{ cursor:pointer; font-size:12px; font-weight:800; color:#0071e3; }
+.confirm-detail-table{ width:100%; border-collapse:collapse; margin-top:8px; font-size:12.5px; }
+.confirm-detail-table th,.confirm-detail-table td{ border-bottom:1px solid #f0f0f2; padding:6px 8px;
+  text-align:left; vertical-align:top; }
+.confirm-detail-table thead th{ font-size:11.5px; color:#6e6e73; font-weight:700; background:#fafafc; }
+.confirm-detail-table tbody th{ width:40px; font-weight:800; color:#1d1d1f; }
+.confirm-detail-table td.was{ color:#a1a1a6; }
+/* 취소선은 실제로 바뀐 줄에만 긋습니다. 안 바뀐 줄까지 그으면 지워진 것처럼 보입니다. */
+.confirm-detail-table tr.is-changed td.was{ color:#86868b; text-decoration:line-through; }
+.confirm-detail-table tr.is-changed td{ background:#fffdf6; font-weight:700; }
+.confirm-changed-tag{ margin-left:6px; font-style:normal; font-size:10.5px; font-weight:800; color:#8a6a12;
+  background:#fdf3d8; border-radius:999px; padding:2px 7px; }
+.confirm-detail-special{ margin-top:9px; font-size:12.5px; color:#1d1d1f; }
+.confirm-detail-special strong{ display:block; font-size:12px; font-weight:800; color:#6e6e73; }
+.confirm-detail-special ul{ margin:5px 0 0; padding-left:18px; line-height:1.7; }
+.confirm-detail-special span{ color:#86868b; }
+
 /* v41-204: 학부모 확정 도구는 기수 세팅 때만 쓰므로 접어 둡니다. */
 .schedule-setup-tools{ margin:0 0 14px; border:1px solid #e3e3e6; border-radius:14px; background:#fff; overflow:hidden; }
 .schedule-setup-tools.is-open{ border-color:#cfe0f7; }
@@ -21657,7 +21687,8 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-import-base-row input { min-height: 32px; border: 1px solid #d8d2c6; border-radius: 8px; padding: 0 7px; font-size: 12px; font-family: inherit; }
 
 /* v41-151: 학부모 시간표 확인 관리 목록 */
-.confirm-row-list { display: grid; gap: 8px; max-height: 400px; overflow-y: auto; }
+/* v41-205: 제출 내용을 펼쳐 볼 수 있게 되면서 400px 로는 한 건도 다 안 보입니다. */
+.confirm-row-list { display: grid; gap: 8px; max-height: min(70vh, 900px); overflow-y: auto; }
 .confirm-row { border: 1px solid #e2ded6; border-radius: 14px; background: #fff; padding: 11px 13px; display: grid; gap: 6px; }
 .confirm-row.status-change_requested { border-color: #f0dcb4; background: #fffbf2; }
 .confirm-row.status-confirmed { border-color: #cfe8d8; background: #f7fdf9; }

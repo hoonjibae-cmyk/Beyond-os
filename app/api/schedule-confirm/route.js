@@ -383,6 +383,8 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('start');
     const endDate = searchParams.get('end');
+    // v41-205: 기수로도 좁힐 수 있게 했습니다. 학생 시간표 화면의 알림 배지가 씁니다.
+    const cohortId = String(searchParams.get('cohortId') || request.headers.get('x-beyond-cohort-id') || '').trim();
 
     let query = supabase
       .from('schedule_confirmations')
@@ -391,6 +393,7 @@ export async function GET(request) {
       .limit(300);
     if (isValidDate(startDate)) query = query.eq('start_date', startDate);
     if (isValidDate(endDate)) query = query.eq('end_date', endDate);
+    if (cohortId) query = query.eq('cohort_id', cohortId);
 
     const { data, error } = await query;
     if (error) throw error;
@@ -410,6 +413,8 @@ export async function GET(request) {
         confirmed: rows.filter((row) => row.status === 'confirmed').length,
         changeRequested: rows.filter((row) => row.status === 'change_requested').length,
         applied: rows.filter((row) => row.applied_at).length,
+        // v41-205: 학부모가 제출했지만 아직 시간표에 반영하지 않은 건. 관리자가 손대야 하는 숫자입니다.
+        needsApply: rows.filter((row) => row.status !== 'pending' && !row.applied_at).length,
       },
       dayLabels: DAY_LABELS,
     });
