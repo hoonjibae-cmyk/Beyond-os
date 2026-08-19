@@ -354,7 +354,8 @@ export async function POST(request) {
         cycle,
         recentRows: cycle.cycleRows.slice().reverse(),
         actorName,
-        rewardGuide: body.rewardGuide,
+        // v41-214: 지급 안내 문구는 승인받은 알림톡 템플릿의 고정 문구입니다.
+        // 호출 쪽에서 바꿔 보내면 승인 내용과 달라져 발송이 막힙니다.
       });
     }
 
