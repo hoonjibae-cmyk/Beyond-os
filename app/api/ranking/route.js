@@ -86,14 +86,20 @@ export async function GET(request) {
     const sessionIds = (sessions || []).map((session) => session.id);
     let events = [];
 
-    if (sessionIds.length) {
+    // v41-210: 세션 id 를 한 번에 in(...) 으로 넘기면 조회 주소가 너무 길어져
+    // 게이트웨이가 400(Bad Request)으로 끊습니다.
+    // 월간(최근 30일 × 26명 = 780건)이면 주소만 28KB가 넘습니다. 나눠서 조회합니다.
+    const EVENT_ID_CHUNK = 120;
+    for (let index = 0; index < sessionIds.length; index += EVENT_ID_CHUNK) {
+      const part = sessionIds.slice(index, index + EVENT_ID_CHUNK);
+      if (!part.length) continue;
       const { data: eventRows, error: eventsError } = await supabase
         .from('attendance_events')
         .select('*')
-        .in('session_id', sessionIds);
+        .in('session_id', part);
 
       if (eventsError) throw eventsError;
-      events = eventRows || [];
+      events.push(...(eventRows || []));
     }
 
     const eventsBySession = {};

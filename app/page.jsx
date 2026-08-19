@@ -16179,16 +16179,21 @@ function BroadcastRankingBoard({ apiFetch, setMessage, cohortScopeId = '' }) {
       // v41-172: 게시용도 헤더 [기수 보기]를 따릅니다.
       // (기수를 골라도 전체 학생이 TV에 뜨던 문제)
       const scope = cohortScopeId ? `&cohortId=${encodeURIComponent(cohortScopeId)}&keepRange=1` : '';
-      const [yesterday, week, month] = await Promise.all([
+      // v41-210: 한 칸이 실패해도 나머지는 띄웁니다.
+      // Promise.all 이라 월간 조회 하나가 실패하면 TV 화면 전체가 비어 있었습니다.
+      const [yesterday, week, month] = await Promise.allSettled([
         apiFetch(`/api/ranking?start=${yday}&end=${yday}${scope}`),
         apiFetch(`/api/ranking?start=${week0}&end=${today}${scope}`),
         apiFetch(`/api/ranking?start=${month0}&end=${today}${scope}`),
       ]);
+      const rowsOf = (result) => (result.status === 'fulfilled' ? (result.value?.ranking || []) : []);
       setData({
-        yesterday: { rows: yesterday.ranking || [], label: `${fmt(yday)} (어제)` },
-        week: { rows: week.ranking || [], label: `${fmt(week0)} ~ ${fmt(today)}` },
-        month: { rows: month.ranking || [], label: `${fmt(month0)} ~ ${fmt(today)}` },
+        yesterday: { rows: rowsOf(yesterday), label: `${fmt(yday)} (어제)` },
+        week: { rows: rowsOf(week), label: `${fmt(week0)} ~ ${fmt(today)}` },
+        month: { rows: rowsOf(month), label: `${fmt(month0)} ~ ${fmt(today)}` },
       });
+      const failed = [yesterday, week, month].find((result) => result.status === 'rejected');
+      if (failed) setMessage?.(failed.reason?.message || '일부 기간의 랭킹을 불러오지 못했습니다.');
     } catch (error) {
       setMessage?.(error.message || '게시용 랭킹 데이터를 불러오지 못했습니다.');
     } finally {

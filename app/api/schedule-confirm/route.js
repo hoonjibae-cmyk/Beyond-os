@@ -309,11 +309,15 @@ async function buildRoutineFromSaved(supabase, body) {
 
   const scheduleIds = (scheduleRows || []).map((row) => row.id);
   const breaksBySchedule = {};
-  for (let index = 0; index < scheduleIds.length; index += 300) {
-    const part = scheduleIds.slice(index, index + 300);
+  // v41-210: 300개씩 묶으면 조회 주소가 11KB를 넘어 게이트웨이가 400으로 끊습니다.
+  // 여기서는 오류를 무시하고 있어서, 끊기면 외출 정보가 조용히 빠진 채로 이미지가 만들어집니다.
+  const BREAK_ID_CHUNK = 120;
+  for (let index = 0; index < scheduleIds.length; index += BREAK_ID_CHUNK) {
+    const part = scheduleIds.slice(index, index + BREAK_ID_CHUNK);
     if (!part.length) continue;
-    const { data: breakRows } = await supabase
+    const { data: breakRows, error: breakError } = await supabase
       .from('student_schedule_breaks').select('*').in('schedule_id', part);
+    if (breakError) throw breakError;
     for (const item of breakRows || []) {
       if (!breaksBySchedule[item.schedule_id]) breaksBySchedule[item.schedule_id] = [];
       breaksBySchedule[item.schedule_id].push(item);
