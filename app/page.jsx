@@ -16128,18 +16128,7 @@ function buildBroadcastBoards({ yesterday, week, month }, { singlePage = false }
       period: month.label,
       ...rankTop(month.rows, { sortBy: (r) => r.averageStudyMinutes, filter: (r) => r.attendanceDays > 0 && r.averageStudyMinutes > 0, value: (r) => `${formatMinutes(r.averageStudyMinutes)}/일` }),
     },
-    {
-      key: 'focus-week', badge: '최근 7일', accent: 'cyan',
-      title: '주간 자리지킴이', emoji: '🧘', unitLabel: '외출 누적 (적을수록 상위)',
-      period: week.label,
-      ...rankTop(week.rows, { sortBy: (r) => r.awayMinutes, dir: 'asc', filter: attended, value: (r) => (r.awayMinutes > 0 ? `외출 ${formatMinutes(r.awayMinutes)}` : '외출 0분') }),
-    },
-    {
-      key: 'focus-month', badge: '최근 30일', accent: 'rose',
-      title: '월간 몰입 챔피언', emoji: '🛡️', unitLabel: '외출 누적 (적을수록 상위)',
-      period: month.label,
-      ...rankTop(month.rows, { sortBy: (r) => r.awayMinutes, dir: 'asc', filter: attended, value: (r) => (r.awayMinutes > 0 ? `외출 ${formatMinutes(r.awayMinutes)}` : '외출 0분') }),
-    },
+    // v41-212: '주간 자리지킴이' · '월간 몰입 챔피언'(외출 누적이 적은 순)은 게시용에서 뺐습니다.
   ].flatMap(paginateBoard);
 }
 
