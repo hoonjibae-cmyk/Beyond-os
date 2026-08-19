@@ -406,6 +406,15 @@ function getTemplateVariables(report = {}) {
   return payload.templateVariables || {};
 }
 
+// v41-208: 하원 전 학생의 '지금 상태'.
+// 외출 중인데 '학습중'이라고 적으면 학부모가 자리에 있는 것으로 읽습니다.
+// (좌석 화면에는 '외출 중'으로 뜨는데 리포트만 다르게 보이던 문제)
+function getInProgressLabel(session = {}) {
+  if (session.seat_status === 'away') return '외출 중';
+  if (session.seat_status === 'not_arrived') return '입실 전';
+  return '학습중';
+}
+
 function getDailyAttendanceTimeline(session = {}, events = []) {
   if (session.seat_status === 'absent') return `입실: - - 하원: ${formatIssueWithReason('결석', getEventReason(events, 'absent', '결석'))}`;
 
@@ -413,7 +422,7 @@ function getDailyAttendanceTimeline(session = {}, events = []) {
   let checkOutLabel = '입실 전';
 
   if (session.check_out_at) checkOutLabel = formatTime(session.check_out_at);
-  else if (session.check_in_at) checkOutLabel = '학습중';
+  else if (session.check_in_at) checkOutLabel = getInProgressLabel(session);
 
   return `입실: ${checkInLabel} - 하원: ${checkOutLabel}`;
 }
@@ -555,8 +564,9 @@ function buildWeeklyRowsFromSessions(sessions = [], eventsBySession = {}, schedu
     const flags = [];
     if (session.seat_status === 'absent') flags.push(formatIssueWithReason('결석', getEventReason(eventsBySession[session.id] || [], 'absent', '결석')));
     else if (!session.check_in_at) flags.push('미등원');
-    if (session.seat_status === 'away') flags.push('외출중');
-    if (session.check_in_at && !session.check_out_at) flags.push('학습중');
+    // v41-208: 외출 중이면 '학습중'을 함께 붙이지 않습니다. (같은 줄에 두 상태가 겹쳐 보였습니다)
+    if (session.seat_status === 'away') flags.push('외출 중');
+    else if (session.check_in_at && !session.check_out_at) flags.push('학습중');
     if (session.check_in_at && pureStudyMinutes > 0 && pureStudyMinutes < 300) flags.push('순공부족');
     if (!flags.length) flags.push('정상');
 
@@ -564,7 +574,7 @@ function buildWeeklyRowsFromSessions(sessions = [], eventsBySession = {}, schedu
       id: session.id,
       date: session.session_date,
       checkInTime: formatTime(session.check_in_at),
-      checkOutTime: session.check_out_at ? formatTime(session.check_out_at) : (session.check_in_at ? '학습중' : '-'),
+      checkOutTime: session.check_out_at ? formatTime(session.check_out_at) : (session.check_in_at ? getInProgressLabel(session) : '-'),
       pureStudyMinutes,
       awayMinutes,
       awayCount: Number(session.away_count || 0) || (awayMinutes > 0 ? 1 : 0),
@@ -635,7 +645,7 @@ function getDailyStayDisplay(session = {}) {
 
 function getDailyCheckOutDisplay(session = {}) {
   if (session.check_out_at) return formatTime(session.check_out_at);
-  if (session.check_in_at) return '학습중';
+  if (session.check_in_at) return getInProgressLabel(session);
   return '-';
 }
 
