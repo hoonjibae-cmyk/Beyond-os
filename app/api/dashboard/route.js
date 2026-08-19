@@ -345,17 +345,28 @@ export async function GET(request) {
         usedDateSpecificSchedule = false;
       }
 
-      if (!usedDateSpecificSchedule) {
+      // v41-209: 오늘이 어느 기수도 아니면 요일별 멘토링 차시를 아예 보지 않습니다.
+      // (기수가 하나도 없는 초기 환경에서는 예전처럼 기수 구분 없이 동작합니다)
+      const skipWeeklyMentoring = cohortRows.length > 0 && !todayCohort;
+
+      if (!usedDateSpecificSchedule && !skipWeeklyMentoring) {
         const kstDay = getKstDayOfWeek(today);
 
         // v41-31.2: 좌석배치도 멘토링 예정 표시가 누락되지 않도록
         // 오늘 요일의 활성 차시를 먼저 조회한 뒤 배정값에 수동으로 slot 정보를 붙입니다.
         // Supabase nested select 관계명이 환경에 따라 흔들려도 dashboard cue가 비는 것을 방지합니다.
-        const { data: todaySlots, error: todaySlotsError } = await supabase
+        //
+        // v41-209: 오늘이 속한 기수의 차시만 봅니다.
+        // mentoring_slots 는 v41-178 부터 기수별로 나뉘는데(기존 설정은 전부 1기로 이동),
+        // 여기서는 is_active 와 요일만 보고 있어서 1기 기간이 끝난 뒤에도
+        // 1기 차시가 요일만 맞으면 좌석배치도에 계속 [멘토링 예정]으로 떴습니다.
+        let slotQuery = supabase
           .from('mentoring_slots')
           .select('*')
           .eq('is_active', true)
           .eq('day_of_week', kstDay);
+        if (todayCohort) slotQuery = slotQuery.eq('cohort_id', todayCohort.id);
+        const { data: todaySlots, error: todaySlotsError } = await slotQuery;
 
         if (!todaySlotsError && (todaySlots || []).length) {
           const slotMap = Object.fromEntries((todaySlots || []).map((slot) => [String(slot.id), slot]));
