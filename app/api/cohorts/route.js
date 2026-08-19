@@ -7,6 +7,7 @@
 // 학생 원본(students)은 건드리지 않습니다. 기수별 "수강 명단"만 다룹니다.
 
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { selectInChunks, runInChunks } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse, requireTabPermission, getAuthorizedUser } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
@@ -223,19 +224,53 @@ export async function POST(request) {
         if (error) throw error;
       }
 
+      // v41-213: 비활성 학생을 명단에 넣어도 학생 상태는 그대로여서,
+      // 좌석에는 배정되는데 다른 화면에는 한 곳도 나오지 않았습니다.
+      // (대시보드가 status='active' 인 학생만 내려주고, 그 목록이 모든 메뉴의 기준입니다)
+      // 명단에 넣었다는 것은 이번 기수를 다닌다는 뜻이므로 여기서 함께 활성으로 되돌립니다.
+      const reactivated = [];
+      const pausedInRoster = [];
+      if (studentIds.length) {
+        const rosterStudents = await selectInChunks(studentIds, (part) => supabase
+          .from('students').select('id, name, status').in('id', part));
+        const toActivate = rosterStudents.filter((row) => row.status === 'inactive');
+        for (const row of rosterStudents) {
+          if (row.status === 'paused') pausedInRoster.push(row.name || '학생');
+        }
+        if (toActivate.length) {
+          await runInChunks(toActivate.map((row) => row.id), (part) => supabase
+            .from('students').update({ status: 'active' }).in('id', part));
+          reactivated.push(...toActivate.map((row) => row.name || '학생'));
+        }
+      }
+
       await writeUserActionLog(supabase, request, {
         actionType: 'cohort.roster_save',
         targetType: 'cohort',
         targetId: cohortId,
-        payload: { total: studentIds.length, added: toAdd.length, removed: toRemove.length },
+        payload: {
+          total: studentIds.length,
+          added: toAdd.length,
+          removed: toRemove.length,
+          reactivated,
+          pausedInRoster,
+        },
       }).catch(() => {});
+
+      const notes = [];
+      if (reactivated.length) notes.push(`비활성이던 ${reactivated.join(', ')} 학생을 활성으로 되돌렸습니다.`);
+      // 휴원은 일부러 잡아 둔 상태일 수 있어 건드리지 않고 알리기만 합니다.
+      if (pausedInRoster.length) notes.push(`휴원 상태인 ${pausedInRoster.join(', ')} 학생은 그대로 두었습니다. 이 학생은 다른 화면에 나오지 않습니다.`);
 
       return Response.json({
         ok: true,
         total: studentIds.length,
         added: toAdd.length,
         removed: toRemove.length,
-        message: `명단을 저장했습니다. 총 ${studentIds.length}명 (추가 ${toAdd.length} · 제외 ${toRemove.length})`,
+        reactivated,
+        pausedInRoster,
+        message: `명단을 저장했습니다. 총 ${studentIds.length}명 (추가 ${toAdd.length} · 제외 ${toRemove.length})`
+          + (notes.length ? ` — ${notes.join(' ')}` : ''),
       });
     }
 

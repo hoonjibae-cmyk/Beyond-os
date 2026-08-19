@@ -6047,6 +6047,8 @@ export default function Page() {
             <SettingsTab
               settingsView={settingsView}
               setSettingsView={setSettingsView}
+              // v41-213: 기수 명단이 바뀌면 화면 위 [기수 보기]와 각 메뉴의 학생 목록을 함께 새로 받습니다.
+              onCohortDataChanged={async () => { await loadCohortOptions(); await loadDashboard(); }}
               reloadStudents={loadSettingsStudents}
               students={settingsStudents?.length ? settingsStudents : students}
               scopedStudents={scopeStudentList(settingsStudents?.length ? settingsStudents : students)}
@@ -10027,7 +10029,7 @@ function CohortSeatPlanPanel({ cohortId, cohortName, apiFetch, setMessage }) {
   );
 }
 
-function CohortSettingsTab({ apiFetch, setMessage }) {
+function CohortSettingsTab({ apiFetch, setMessage, onCohortDataChanged }) {
   const today = getKstDateString();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -10115,6 +10117,21 @@ function CohortSettingsTab({ apiFetch, setMessage }) {
     return map;
   }, [data?.rosters]);
 
+  // v41-213: 명단에 넣어도 비활성 학생은 다른 화면에 나오지 않습니다.
+  // 저장하면 활성으로 되돌리지만, 누르기 전에 미리 알려 줍니다.
+  const rosterStatusNote = useMemo(() => {
+    const byId = new Map(students.map((student) => [String(student.id), student]));
+    const inactive = [];
+    const paused = [];
+    for (const id of rosterDraft || []) {
+      const student = byId.get(String(id));
+      if (!student) continue;
+      if (student.status === 'inactive') inactive.push(student.name || '학생');
+      else if (student.status === 'paused') paused.push(student.name || '학생');
+    }
+    return { inactive, paused };
+  }, [students, rosterDraft]);
+
   const visibleStudents = useMemo(() => {
     const keyword = rosterSearch.trim().toLowerCase();
     return students
@@ -10157,6 +10174,9 @@ function CohortSettingsTab({ apiFetch, setMessage }) {
       setMessage?.(result.message || '저장 완료');
       if (result.warning) setNotice(result.warning);
       await load(result.cohort?.id || selectedId);
+      // v41-213: 화면 위 [기수 보기]와 각 메뉴의 학생 목록은 로그인할 때 한 번 받아 둔
+      // 기수 명단을 씁니다. 여기서 명단을 바꿔도 새로고침 전까지 반영되지 않았습니다.
+      await onCohortDataChanged?.();
       return result;
     } catch (error) {
       setMessage?.(error?.message || '저장 실패');
@@ -10373,6 +10393,20 @@ function CohortSettingsTab({ apiFetch, setMessage }) {
                 })}
                 {!visibleStudents.length ? <div className="today-comment-empty">검색 결과가 없습니다.</div> : null}
               </div>
+
+              {rosterStatusNote.inactive.length || rosterStatusNote.paused.length ? (
+                <div className="template-validation-list failed" style={{ marginTop: 10 }}>
+                  <strong>명단에 활성이 아닌 학생이 있습니다</strong>
+                  <span>
+                    {rosterStatusNote.inactive.length
+                      ? `비활성: ${rosterStatusNote.inactive.join(', ')} — 명단을 저장하면 활성으로 되돌립니다. `
+                      : ''}
+                    {rosterStatusNote.paused.length
+                      ? `휴원: ${rosterStatusNote.paused.join(', ')} — 그대로 두므로 좌석 외 다른 화면에는 나오지 않습니다. 학생 관리에서 상태를 바꿔 주세요.`
+                      : ''}
+                  </span>
+                </div>
+              ) : null}
 
               <div className="cohort-roster-actions">
                 <span>{rosterDirty ? '저장하지 않은 변경이 있습니다.' : '저장된 명단과 같습니다.'}</span>
@@ -19856,6 +19890,7 @@ function SettingsTab({
   settingsView, setSettingsView, students, scopedStudents = students, cohortName = '', seatsForDisplay, openStudentEditor, reloadStudents, diagnostics, loading, runCheck, cleanup,
   operatingRules, rulesDraft, setRulesDraft, saveOperatingRules, rulesLoading, defaultSchedule, defaultScheduleConfig, defaultScheduleConfigDraft, setDefaultScheduleConfigDraft, saveDefaultSchedule, defaultScheduleLoading, bulkGenerateSchedules, scheduleCoverage, apiFetch, setMessage, currentUser, canUseUserManagement, sendConfig, loadSendConfig, onMentoringChanged,
   cohortOptions = [], cohortScheduleConfigs = {}, defaultScheduleEditCohortId = '', selectDefaultScheduleTarget, resetCohortDefaultSchedule, cohortStudentIds = null, settingsCohortScopeId = '',
+  onCohortDataChanged,
 }) {
   useEffect(() => {
     if (settingsView === 'users' && !canUseUserManagement) setSettingsView('students');
@@ -19884,7 +19919,7 @@ function SettingsTab({
       ) : null}
 
       {settingsView === 'cohorts' ? (
-        <CohortSettingsTab apiFetch={apiFetch} setMessage={setMessage} />
+        <CohortSettingsTab apiFetch={apiFetch} setMessage={setMessage} onCohortDataChanged={onCohortDataChanged} />
       ) : null}
 
       {settingsView === 'scheduleImport' ? (
