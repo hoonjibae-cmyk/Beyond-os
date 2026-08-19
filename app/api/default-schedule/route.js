@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { runInChunks } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import {
   DEFAULT_SCHEDULE_SETTING_KEY,
@@ -89,13 +90,12 @@ async function clearSchedulesOnClosedDates(supabase, { previousValue, cohortId }
   if (rowsError) throw rowsError;
   if (!rows?.length) return { dates: targetDates, deleted: 0 };
 
+  // v41-211: 휴무일 × 학생 수만큼 나오므로 나눠서 지웁니다.
   const ids = rows.map((row) => row.id);
-  const { error: breaksError } = await supabase
-    .from('student_schedule_breaks').delete().in('schedule_id', ids);
-  if (breaksError) throw breaksError;
-  const { error: deleteError } = await supabase
-    .from('student_daily_schedules').delete().in('id', ids);
-  if (deleteError) throw deleteError;
+  await runInChunks(ids, (part) => supabase
+    .from('student_schedule_breaks').delete().in('schedule_id', part));
+  await runInChunks(ids, (part) => supabase
+    .from('student_daily_schedules').delete().in('id', part));
 
   // 그 시간표를 근거로 만들어진 '[예약결석]' 세션도 함께 정리합니다.
   for (const row of rows) {

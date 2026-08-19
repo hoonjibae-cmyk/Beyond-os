@@ -5,6 +5,7 @@
 // (파일을 서버로 올리지 않으므로 Vercel 요청 본문 한도에 걸리지 않습니다.)
 
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { runInChunks } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse, requireTabPermission, getAuthorizedUser } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
@@ -397,7 +398,9 @@ export async function POST(request) {
         const scheduleIds = [...new Set([...breakRows.map((row) => row.schedule_id), ...absentScheduleIds])];
         if (scheduleIds.length) {
           // 같은 시간표에 기존 외출이 있으면 지우고 새로 넣습니다.
-          await supabase.from('student_schedule_breaks').delete().in('schedule_id', scheduleIds);
+          // v41-211: 기수 전체 기간 × 학생이면 수백 건이라 나눠서 지웁니다.
+      await runInChunks(scheduleIds, (part) => supabase
+        .from('student_schedule_breaks').delete().in('schedule_id', part));
         }
         if (breakRows.length) {
           for (const group of chunk(breakRows, CHUNK_SIZE)) {

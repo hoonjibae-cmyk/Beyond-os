@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
@@ -121,6 +122,13 @@ function makeIsoStart(date) {
 
 function makeIsoEnd(date) {
   return new Date(`${date}T23:59:59+09:00`).toISOString();
+}
+
+// v41-211: safeSelect 와 같지만 id 목록을 나눠서 조회합니다.
+// (한 번에 넘기면 주소가 길어져 400 으로 끊깁니다 — lib/supabaseChunk.js 참고)
+async function safeSelectChunks(label, values, run) {
+  const { rows, error } = await selectInChunksSafe(values, run);
+  return { rows, warning: error ? `${label}: ${error.message || '조회 실패'}` : null };
 }
 
 async function safeSelect(label, fn, fallback = []) {
@@ -382,26 +390,27 @@ export async function GET(request) {
     let reports = [];
 
     if (sessionIds.length) {
-      const eventResult = await safeSelect('출결 이벤트', () => supabase
+      // v41-211: 긴 기간을 보면 세션 id 가 수백 개라 조회 주소 길이 한계에 걸립니다.
+      const eventResult = await safeSelectChunks('출결 이벤트', sessionIds, (part) => supabase
         .from('attendance_events')
         .select('*')
-        .in('session_id', sessionIds)
+        .in('session_id', part)
         .order('event_at', { ascending: true }));
       events = eventResult.rows;
       if (eventResult.warning) warnings.push(eventResult.warning);
 
-      const checkResult = await safeSelect('순찰 체크', () => supabase
+      const checkResult = await safeSelectChunks('순찰 체크', sessionIds, (part) => supabase
         .from('study_checks')
         .select('*')
-        .in('session_id', sessionIds)
+        .in('session_id', part)
         .order('checked_at', { ascending: true }));
       checks = checkResult.rows;
       if (checkResult.warning) warnings.push(checkResult.warning);
 
-      const reportResult = await safeSelect('데일리 리포트', () => supabase
+      const reportResult = await safeSelectChunks('데일리 리포트', sessionIds, (part) => supabase
         .from('daily_reports')
         .select('*')
-        .in('session_id', sessionIds));
+        .in('session_id', part));
       reports = reportResult.rows;
       if (reportResult.warning) warnings.push(reportResult.warning);
     }

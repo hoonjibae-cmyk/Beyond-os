@@ -9,6 +9,7 @@
 //   - 최근 차시별 학습 기록(순찰 체크)
 
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes, formatMinutes } from '../../../lib/date';
 import { resolvePointCycle, resolvePenaltyStages } from '../../../lib/studentPointCycle';
@@ -66,6 +67,13 @@ function safeText(value, limit = 400) {
 }
 
 // 테이블/컬럼이 아직 없는 환경에서도 나머지 정보는 그대로 보여줍니다.
+// v41-211: safeSelect 와 같지만 id 목록을 나눠서 조회합니다.
+// (한 번에 넘기면 주소가 길어져 400 으로 끊깁니다 — lib/supabaseChunk.js 참고)
+async function safeSelectChunks(label, values, run) {
+  const { rows, error } = await selectInChunksSafe(values, run);
+  return { rows, warning: error ? `${label} 조회 실패: ${error?.message || error}` : '' };
+}
+
 async function safeSelect(label, runner) {
   try {
     const { data, error } = await runner();
@@ -264,18 +272,19 @@ export async function GET(request) {
     let studyChecks = [];
     let dailyReports = [];
     if (recentSessionIds.length) {
-      const awayEventResult = await safeSelect('외출 이벤트', () => supabase
+      // v41-211: 최근 구간이 길면 세션 id 가 수백 개라 조회 주소 길이 한계에 걸립니다.
+      const awayEventResult = await safeSelectChunks('외출 이벤트', recentSessionIds, (part) => supabase
         .from('attendance_events')
         .select('session_id,event_type')
-        .in('session_id', recentSessionIds)
+        .in('session_id', part)
         .eq('event_type', 'away'));
       if (awayEventResult.warning) warnings.push(awayEventResult.warning);
       flags.awayCount = awayEventResult.rows.length;
 
-      const checkResult = await safeSelect('차시별 학습 기록', () => supabase
+      const checkResult = await safeSelectChunks('차시별 학습 기록', recentSessionIds, (part) => supabase
         .from('study_checks')
         .select('session_id,subject,study_status,study_content,checked_at,created_at')
-        .in('session_id', recentSessionIds)
+        .in('session_id', part)
         .order('checked_at', { ascending: false })
         .limit(400));
       if (checkResult.warning) warnings.push(checkResult.warning);
@@ -283,10 +292,10 @@ export async function GET(request) {
 
       // mentor_comment_by / mentor_comment_at 컬럼은 v41-129 SQL 실행 이후에만 존재하므로
       // 컬럼을 지정하지 않고 전체를 읽어 없는 환경에서도 코칭 이력이 비지 않도록 합니다.
-      const reportResult = await safeSelect('데일리 리포트', () => supabase
+      const reportResult = await safeSelectChunks('데일리 리포트', recentSessionIds, (part) => supabase
         .from('daily_reports')
         .select('*')
-        .in('session_id', recentSessionIds));
+        .in('session_id', part));
       if (reportResult.warning) warnings.push(reportResult.warning);
       dailyReports = reportResult.rows;
     }

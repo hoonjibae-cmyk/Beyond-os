@@ -1,13 +1,14 @@
 {
   "name": "beyond-os-v41-166-roster-layout",
-  "version": "0.41.210",
+  "version": "0.41.211",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint:refs": "eslint --quiet ./app ./lib",
-    "check:columns": "node scripts/check-columns.mjs"
+    "check:columns": "node scripts/check-columns.mjs",
+    "check:chunks": "node scripts/check-in-chunks.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.108.2",

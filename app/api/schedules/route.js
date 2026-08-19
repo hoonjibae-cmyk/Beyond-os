@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { selectInChunks, runInChunks } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
@@ -386,13 +387,12 @@ export async function GET(request) {
     const ids = (schedules || []).map((schedule) => schedule.id);
     let breaks = [];
     if (ids.length > 0) {
-      const { data: breakRows, error: breaksError } = await supabase
+      // v41-211: 기간이 길면 시간표 id 가 수백 개라 조회 주소 길이 한계에 걸립니다.
+      breaks = await selectInChunks(ids, (part) => supabase
         .from('student_schedule_breaks')
         .select('*')
-        .in('schedule_id', ids)
-        .order('leave_start', { ascending: true });
-      if (breaksError) throw breaksError;
-      breaks = breakRows || [];
+        .in('schedule_id', part)
+        .order('leave_start', { ascending: true }));
     }
     return Response.json({ start, end, schedules: schedules || [], breaks });
   } catch (error) {
@@ -595,14 +595,10 @@ async function cleanupSchedulesOutsideCohorts(supabase, request, body) {
 
   if (dryRun || !targets.length) return Response.json({ ...result, deleted: 0 });
 
+  // v41-211: 200개씩이면 주소가 7KB를 넘어 아슬아슬합니다. 공용 기준(120)으로 맞춥니다.
   const ids = targets.map((row) => row.id);
-  for (let index = 0; index < ids.length; index += 200) {
-    const chunk = ids.slice(index, index + 200);
-    const { error: breaksError } = await supabase.from('student_schedule_breaks').delete().in('schedule_id', chunk);
-    if (breaksError) throw breaksError;
-    const { error: deleteError } = await supabase.from('student_daily_schedules').delete().in('id', chunk);
-    if (deleteError) throw deleteError;
-  }
+  await runInChunks(ids, (part) => supabase.from('student_schedule_breaks').delete().in('schedule_id', part));
+  await runInChunks(ids, (part) => supabase.from('student_daily_schedules').delete().in('id', part));
 
   // 그 시간표를 근거로 만들어진 '[예약결석]' 세션도 함께 정리합니다.
   for (const row of targets) {
@@ -706,13 +702,8 @@ async function cleanupSchedulesOnClosedDates(supabase, request, body) {
   if (dryRun || !rows?.length) return Response.json({ ...summary, deleted: 0 });
 
   const ids = rows.map((row) => row.id);
-  for (let index = 0; index < ids.length; index += 200) {
-    const part = ids.slice(index, index + 200);
-    const { error: breaksError } = await supabase.from('student_schedule_breaks').delete().in('schedule_id', part);
-    if (breaksError) throw breaksError;
-    const { error: deleteError } = await supabase.from('student_daily_schedules').delete().in('id', part);
-    if (deleteError) throw deleteError;
-  }
+  await runInChunks(ids, (part) => supabase.from('student_schedule_breaks').delete().in('schedule_id', part));
+  await runInChunks(ids, (part) => supabase.from('student_daily_schedules').delete().in('id', part));
   for (const row of rows) {
     if (row.planned_absent === false) continue;
     await rollbackPlannedAbsentSession(supabase, {
@@ -791,18 +782,12 @@ export async function DELETE(request) {
       });
     }
 
+    // v41-211: '전체 기간 삭제'는 한 학생만으로도 수백 건이 됩니다.
     const scheduleIds = schedules.map((schedule) => schedule.id);
-    const { error: breaksError } = await supabase
-      .from('student_schedule_breaks')
-      .delete()
-      .in('schedule_id', scheduleIds);
-    if (breaksError) throw breaksError;
-
-    const { error: deleteError } = await supabase
-      .from('student_daily_schedules')
-      .delete()
-      .in('id', scheduleIds);
-    if (deleteError) throw deleteError;
+    await runInChunks(scheduleIds, (part) => supabase
+      .from('student_schedule_breaks').delete().in('schedule_id', part));
+    await runInChunks(scheduleIds, (part) => supabase
+      .from('student_daily_schedules').delete().in('id', part));
 
     const deletedDates = schedules.map((schedule) => schedule.schedule_date).sort();
 

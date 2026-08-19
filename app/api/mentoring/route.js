@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { selectInChunks } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
@@ -439,13 +440,12 @@ async function getScheduleConflictsForPairs(supabase, pairs = []) {
   const scheduleIds = (schedules || []).map((schedule) => schedule.id).filter(Boolean);
   let breaks = [];
   if (scheduleIds.length) {
-    const { data: breakRows, error: breaksError } = await supabase
+    // v41-211: 학생 수 × 날짜 수만큼 나오므로 나눠서 조회합니다.
+    breaks = await selectInChunks(scheduleIds, (part) => supabase
       .from('student_schedule_breaks')
       .select('*')
-      .in('schedule_id', scheduleIds)
-      .order('leave_start', { ascending: true });
-    if (breaksError) throw breaksError;
-    breaks = breakRows || [];
+      .in('schedule_id', part)
+      .order('leave_start', { ascending: true }));
   }
   const breaksBySchedule = {};
   for (const item of breaks) {
@@ -1299,13 +1299,12 @@ async function validateAssignmentScheduleConflicts(supabase, { studentIds = [], 
   const scheduleIds = (schedules || []).map((schedule) => schedule.id).filter(Boolean);
   let breaks = [];
   if (scheduleIds.length) {
-    const { data: breakRows, error: breaksError } = await supabase
+    // v41-211: 학생 수 × 날짜 수만큼 나오므로 나눠서 조회합니다.
+    breaks = await selectInChunks(scheduleIds, (part) => supabase
       .from('student_schedule_breaks')
       .select('*')
-      .in('schedule_id', scheduleIds)
-      .order('leave_start', { ascending: true });
-    if (breaksError) throw breaksError;
-    breaks = breakRows || [];
+      .in('schedule_id', part)
+      .order('leave_start', { ascending: true }));
   }
   const breaksBySchedule = {};
   for (const item of breaks) {

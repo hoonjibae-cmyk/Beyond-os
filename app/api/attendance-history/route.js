@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { selectInChunks, selectInChunksSafe } from '../../../lib/supabaseChunk';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
@@ -128,19 +129,18 @@ export async function GET(request) {
     }
 
     if (sessionIds.length) {
-      const { data: eventRows, error: eventsError } = await supabase
+      // v41-211: 전체 학생 · 긴 기간이면 세션 id 가 수백 개라 주소 길이 한계에 걸립니다.
+      events = await selectInChunks(sessionIds, (part) => supabase
         .from('attendance_events')
         .select('*')
-        .in('session_id', sessionIds)
-        .order('event_at', { ascending: true });
-      if (eventsError) throw eventsError;
-      events = eventRows || [];
+        .in('session_id', part)
+        .order('event_at', { ascending: true }));
 
-      const { data: reportRows, error: reportsError } = await supabase
+      const reportResult = await selectInChunksSafe(sessionIds, (part) => supabase
         .from('daily_reports')
         .select('*')
-        .in('session_id', sessionIds);
-      if (!reportsError) reports = reportRows || [];
+        .in('session_id', part));
+      reports = reportResult.rows;
     }
 
     const eventsBySession = {};

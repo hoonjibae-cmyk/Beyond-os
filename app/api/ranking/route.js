@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { selectInChunks } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
@@ -87,20 +88,11 @@ export async function GET(request) {
     let events = [];
 
     // v41-210: 세션 id 를 한 번에 in(...) 으로 넘기면 조회 주소가 너무 길어져
-    // 게이트웨이가 400(Bad Request)으로 끊습니다.
-    // 월간(최근 30일 × 26명 = 780건)이면 주소만 28KB가 넘습니다. 나눠서 조회합니다.
-    const EVENT_ID_CHUNK = 120;
-    for (let index = 0; index < sessionIds.length; index += EVENT_ID_CHUNK) {
-      const part = sessionIds.slice(index, index + EVENT_ID_CHUNK);
-      if (!part.length) continue;
-      const { data: eventRows, error: eventsError } = await supabase
-        .from('attendance_events')
-        .select('*')
-        .in('session_id', part);
-
-      if (eventsError) throw eventsError;
-      events.push(...(eventRows || []));
-    }
+    // 게이트웨이가 400(Bad Request)으로 끊습니다. (30일 × 26명 = 780건 → 28KB)
+    events = await selectInChunks(sessionIds, (part) => supabase
+      .from('attendance_events')
+      .select('*')
+      .in('session_id', part));
 
     const eventsBySession = {};
     for (const event of events || []) {

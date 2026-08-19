@@ -8,6 +8,7 @@
 // 관리자가 화면에서 확인한 뒤 [반영]을 눌러야 개인 시간표가 바뀝니다.
 
 import crypto from 'crypto';
+import { runInChunks, selectInChunks } from '../../../lib/supabaseChunk';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse, requireTabPermission, getAuthorizedUser } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
@@ -309,19 +310,13 @@ async function buildRoutineFromSaved(supabase, body) {
 
   const scheduleIds = (scheduleRows || []).map((row) => row.id);
   const breaksBySchedule = {};
-  // v41-210: 300개씩 묶으면 조회 주소가 11KB를 넘어 게이트웨이가 400으로 끊습니다.
-  // 여기서는 오류를 무시하고 있어서, 끊기면 외출 정보가 조용히 빠진 채로 이미지가 만들어집니다.
-  const BREAK_ID_CHUNK = 120;
-  for (let index = 0; index < scheduleIds.length; index += BREAK_ID_CHUNK) {
-    const part = scheduleIds.slice(index, index + BREAK_ID_CHUNK);
-    if (!part.length) continue;
-    const { data: breakRows, error: breakError } = await supabase
-      .from('student_schedule_breaks').select('*').in('schedule_id', part);
-    if (breakError) throw breakError;
-    for (const item of breakRows || []) {
-      if (!breaksBySchedule[item.schedule_id]) breaksBySchedule[item.schedule_id] = [];
-      breaksBySchedule[item.schedule_id].push(item);
-    }
+  // v41-210: 한 번에 넘기면 조회 주소가 길어져 400 으로 끊깁니다.
+  // 전에는 오류를 확인하지 않아, 끊기면 외출 정보가 조용히 빠진 채로 이미지가 만들어졌습니다.
+  const breakRows = await selectInChunks(scheduleIds, (part) => supabase
+    .from('student_schedule_breaks').select('*').in('schedule_id', part));
+  for (const item of breakRows) {
+    if (!breaksBySchedule[item.schedule_id]) breaksBySchedule[item.schedule_id] = [];
+    breaksBySchedule[item.schedule_id].push(item);
   }
 
   const byStudent = new Map();
@@ -658,7 +653,8 @@ export async function POST(request) {
         }
         const touchedIds = dates.map((item) => idByDate[item.date]).filter(Boolean);
         if (touchedIds.length) {
-          await supabase.from('student_schedule_breaks').delete().in('schedule_id', touchedIds);
+          await runInChunks(touchedIds, (part) => supabase
+          .from('student_schedule_breaks').delete().in('schedule_id', part));
         }
         if (breakRows.length) {
           for (const group of chunk(breakRows, 300)) {
