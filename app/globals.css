@@ -43,11 +43,12 @@ button { cursor: pointer; }
 
 .app {
   display: grid;
-  /* 대화면 정리: 가운데 작업영역을 상한선까지만 넓히고 전체를 중앙 정렬합니다.
-     (minmax의 min을 0으로 두어 1261~1360px 구간의 가로 넘침/우측 패널 잘림도 방지) */
+  /* v41-218: 다른 메뉴(report-mode)와 같은 폭 구성으로 통일 — 사이드바를 왼쪽 끝에 붙이고
+     가운데 작업영역이 남는 폭을 전부 씁니다. (전에는 1200px 상한 + 전체 중앙 정렬이라
+     대시보드만 좌우에 빈 여백이 생기고 사이드바 위치까지 달라 보였습니다)
+     minmax의 min을 0으로 두어 1261~1360px 구간의 가로 넘침/우측 패널 잘림을 방지합니다. */
   /* 우측 패널을 360~420px 범위로 유연화해 좁은 모니터에서 가운데 작업영역(좌석배치도)에 폭을 더 내줍니다. */
-  grid-template-columns: 220px minmax(0, 1200px) minmax(360px, 420px);
-  justify-content: center;
+  grid-template-columns: 220px minmax(0, 1fr) minmax(360px, 420px);
   min-height: 100vh;
 }
 .sidebar {
@@ -120,7 +121,6 @@ h1 { margin: 0; font-size: 28px; letter-spacing: -0.6px; }
   grid-template-columns: repeat(6, minmax(100px, 1fr));
   gap: 10px;
   margin-bottom: 18px;
-  max-width: 980px;
 }
 .summary-card, .content-card {
   background: white;
@@ -155,7 +155,6 @@ h1 { margin: 0; font-size: 28px; letter-spacing: -0.6px; }
   border: 1px solid #e2ded6;
   border-radius: 24px;
   padding: 22px;
-  max-width: 980px;
   box-shadow: 0 16px 40px rgba(0,0,0,.08);
 }
 .map-head {
@@ -183,7 +182,6 @@ h1 { margin: 0; font-size: 28px; letter-spacing: -0.6px; }
 .seat-map {
   position: relative;
   width: 100%;
-  max-width: 920px;
   min-width: 760px;
   height: 600px;
   background:
@@ -398,8 +396,6 @@ textarea { min-height: 78px; resize: vertical; }
   }
   .main { padding: 22px; }
   .panel { border-left: 0; border-top: 1px solid #3b362e; max-height: none; }
-  .map-shell { max-width: none; }
-  .seat-map { max-width: none; }
 }
 @media (max-width: 760px) {
   .main { padding: 16px; }
@@ -436,7 +432,6 @@ textarea { min-height: 78px; resize: vertical; }
   border-radius: 18px;
   padding: 14px;
   margin-bottom: 18px;
-  max-width: 980px;
 }
 .alert-center h2 { margin: 0 0 10px; font-size: 18px; }
 .alert-list { display: grid; gap: 8px; }
@@ -13370,7 +13365,6 @@ textarea {
 
 /* v41-11 dashboard seat map / realtime status UI */
 .dashboard-summary-v4111 {
-  max-width: 1120px;
   grid-template-columns: repeat(6, minmax(105px, 1fr));
 }
 .dashboard-summary-v4111 .summary-card {
@@ -13386,7 +13380,6 @@ textarea {
   display: grid;
   grid-template-columns: minmax(280px, 1.1fr) minmax(280px, .9fr);
   gap: 12px;
-  max-width: 1120px;
   margin: -4px 0 16px;
 }
 .dashboard-insight-card {
@@ -13496,7 +13489,6 @@ textarea {
 }
 .focus-row span { font-weight: 950; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .focus-row em { font-style: normal; font-size: 12px; font-weight: 900; color: #7a756b; white-space: nowrap; }
-.dashboard-map-shell-v4111 { max-width: 1120px; }
 .dashboard-map-head-v4111 { align-items: flex-start; }
 .map-subtitle { margin-top: 4px; color: #7a756b; font-size: 12px; font-weight: 800; }
 .dashboard-seat-controls {
@@ -13669,8 +13661,6 @@ textarea {
 
 /* v41-12: 순찰 퀵체크 / 학습상태 입력 속도 개선 */
 .quick-patrol-console {
-  max-width: 1120px;
-  /* 다른 대시보드 카드(좌석맵·요약·실시간·알림센터)와 동일하게 좌측 정렬 (중앙 정렬 시 살짝 어긋나 보임) */
   margin: 0 0 16px;
   border: 1px solid #e2ded6;
   border-radius: 22px;
@@ -19125,9 +19115,9 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .event-dot.deviation{ background:#5b9bf3; }
 /* ─── v41-52: 대시보드 알림센터/HOLD 폭·크기 정리 + 애플 토글/요약노트 ─── */
 /* 1) 알림센터 폭을 좌석맵과 동일하게(1120px) */
-.alert-center{ max-width:1120px !important; }
+
 /* 2) 쉬는 시간 HOLD: 알림센터와 같은 톤/글씨, 높이 축소, 접기 지원 */
-.kiosk-hold-panel{ max-width:1120px !important; padding:14px 16px !important; border:1px solid #ead08c !important; background:#fff7dc !important; box-shadow:none !important; }
+.kiosk-hold-panel{ padding:14px 16px !important; border:1px solid #ead08c !important; background:#fff7dc !important; box-shadow:none !important; }
 .kiosk-hold-head h3{ font-size:18px !important; }
 .kiosk-hold-head h3 b{ min-width:24px !important; height:24px !important; font-size:12px !important; }
 .kiosk-hold-head p{ font-size:12px !important; }
