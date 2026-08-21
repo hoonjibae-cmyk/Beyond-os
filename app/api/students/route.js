@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { normalizeProductTier } from '../../../lib/productTier';
+import { normalizeAudioPolicy } from '../../../lib/audioPolicy';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
@@ -183,6 +184,8 @@ export async function POST(request) {
       ranking_opt_in: Boolean(body.rankingOptIn),
       // v41-167: 신청 상품 카테고리. 비우면 미분류로 두어 기존 화면 그대로 보입니다.
       product_tier: normalizeProductTier(body.productTier) || null,
+      // v41-216: 음악 청취 허용 범위. 비우면 미정으로 둡니다.
+      audio_policy: normalizeAudioPolicy(body.audioPolicy) || null,
     };
 
     let savedStudent;

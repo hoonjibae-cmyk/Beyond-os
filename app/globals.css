@@ -19235,6 +19235,19 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-confirm-links-list b{ min-width:72px; font-size:12.5px; font-weight:700; color:#1d1d1f; }
 .schedule-confirm-links-list a{ flex:1; font-size:12px; color:#0071e3; word-break:break-all; }
 .schedule-confirm-links-list button{ flex:none; padding:4px 10px; font-size:11.5px; }
+/* v41-216: 학생별 음악 청취 허용 범위 */
+.audio-policy-row{ margin:12px 0 0; padding:10px 12px; border-radius:12px; border:1px solid #e3e3e6; background:#fafafc; }
+.audio-policy-row .audio-policy-title{ display:block; font-size:11.5px; font-weight:700; color:#86868b; }
+.audio-policy-row strong{ display:block; margin-top:3px; font-size:14px; font-weight:800; color:#1d1d1f; }
+.audio-policy-row em{ display:block; margin-top:3px; font-style:normal; font-size:11.5px; line-height:1.5; color:#6e6e73; }
+/* 제한이 셀수록 강하게 — 순찰 중 한눈에 구분되어야 합니다. */
+.audio-policy-row.tone-block{ border-color:#f0b7b3; background:#fdeeee; }
+.audio-policy-row.tone-block strong{ color:#a33a3a; }
+.audio-policy-row.tone-limit{ border-color:#f2d79a; background:#fffdf6; }
+.audio-policy-row.tone-limit strong{ color:#8a6a12; }
+.audio-policy-row.tone-allow{ border-color:#bfe3c8; background:#f3f9f4; }
+.audio-policy-row.tone-allow strong{ color:#2f6b3a; }
+
 /* v41-215: 학부모 확정 현황 — 반영할 게 없어도 늘 보이는 요약 칸 */
 .confirm-status-bar{ margin:0 0 12px; padding:11px 14px; border:1px solid #e3e3e6; border-radius:14px; background:#fff; }
 .confirm-status-bar.has-action{ border-color:#f2d79a; background:#fffdf6; }

@@ -7,6 +7,7 @@ import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPat
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
 import { BRAND_NAME } from '../lib/brand';
 import { PRODUCT_TIERS, getProductTierLabel, getProductTier } from '../lib/productTier';
+import { AUDIO_POLICIES, getAudioPolicy, getAudioPolicyLabel } from '../lib/audioPolicy';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
@@ -3738,6 +3739,8 @@ export default function Page() {
       grade: student.grade || '',
       parentPhone: student.parent_phone || '',
       studentPhone: student.student_phone || '',
+      // v41-216: 좌석 패널의 학생 기본정보에 음악 청취 허용 범위를 함께 보여 줍니다.
+      audioPolicy: student.audio_policy || '',
       studyStatus: latestStudyCheck?.study_status || '인강',
       subject: latestStudyCheck?.subject || '수학',
       studyContent: '',
@@ -5388,6 +5391,7 @@ export default function Page() {
         seatNo: student.default_seat_no || '',
         nickname: student.nickname || '',
         productTier: student.product_tier || '',
+        audioPolicy: student.audio_policy || '',
         rankingOptIn: Boolean(student.ranking_opt_in),
         guardians: normalizeGuardiansForEditor(student),
       });
@@ -5405,6 +5409,7 @@ export default function Page() {
       seatNo: '',
       nickname: '',
       productTier: '',
+      audioPolicy: '',
       rankingOptIn: false,
       guardians: normalizeGuardiansForEditor({}),
     });
@@ -6154,6 +6159,16 @@ export default function Page() {
                 <div className="info-item"><span>학년</span><strong>{form.grade || '-'}</strong></div>
                 <div className="info-item"><span>학생 연락처</span><strong>{form.studentPhone || '-'}</strong></div>
               </div>
+
+              {/* v41-216: 음악 청취 허용 범위. 순찰 중 바로 판단할 수 있어야 하므로 눈에 띄게 둡니다.
+                  학부모가 아직 정하지 않았으면(미정) 줄 자체를 그리지 않습니다. */}
+              {getAudioPolicy(form.audioPolicy) ? (
+                <div className={`audio-policy-row tone-${getAudioPolicy(form.audioPolicy).tone}`}>
+                  <span className="audio-policy-title">음악 청취</span>
+                  <strong>{getAudioPolicyLabel(form.audioPolicy)}</strong>
+                  <em>{getAudioPolicy(form.audioPolicy).detail}</em>
+                </div>
+              ) : null}
 
               <div className="panel-guardian-list">
                 <span className="panel-guardian-title">보호자 연락처</span>
@@ -11496,6 +11511,20 @@ function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, save
                 <div className="hint">
                   {getProductTier(editor.productTier)?.detail
                     || '1기 학생처럼 분류가 없으면 비워 두세요. 화면에 아무 표시도 하지 않습니다.'}
+                </div>
+              </div>
+              {/* v41-216: 음악 청취 허용 범위. 학부모가 정한 값을 그대로 옮겨 적습니다. */}
+              <div className="field">
+                <label>음악 청취</label>
+                <select value={editor.audioPolicy || ''} onChange={(e) => setEditor({ ...editor, audioPolicy: e.target.value })}>
+                  <option value="">미정 (표시 안 함)</option>
+                  {AUDIO_POLICIES.map((policy) => (
+                    <option key={policy.key} value={policy.key}>{policy.label}</option>
+                  ))}
+                </select>
+                <div className="hint">
+                  {getAudioPolicy(editor.audioPolicy)?.detail
+                    || '학부모가 아직 정하지 않았으면 비워 두세요. 화면에 아무 표시도 하지 않습니다.'}
                 </div>
               </div>
               <div className="field">
