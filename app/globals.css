@@ -19238,6 +19238,9 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .audio-policy-row.tone-allow{ border-color:#bfe3c8; background:#f3f9f4; }
 .audio-policy-row.tone-allow strong{ color:#2f6b3a; }
 
+/* v41-219: 학생 시간표 메뉴 상단의 화면 전환 탭 (설정의 탭 바와 같은 모양, 단독 배치라 아래 여백만 추가) */
+.schedule-menu-tabs{ margin-bottom:14px; }
+
 /* v41-215: 학부모 확정 현황 — 반영할 게 없어도 늘 보이는 요약 칸 */
 .confirm-status-bar{ margin:0 0 12px; padding:11px 14px; border:1px solid #e3e3e6; border-radius:14px; background:#fff; }
 .confirm-status-bar.has-action{ border-color:#f2d79a; background:#fffdf6; }
