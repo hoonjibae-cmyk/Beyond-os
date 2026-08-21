@@ -12137,12 +12137,19 @@ function SchedulesTab(props) {
       .filter(Boolean);
 
     // 늦은 등원 / 이른 하원 → '부재' 구간(연한 파랑)
+    //
+    // v41-221: 뒤에 붙이던 '· 기본 등원 HH:MM' / '· 기본 하원 HH:MM' 을 뺐습니다.
+    // 부재 구간의 범위가 곧 기본 시각부터(늦은 등원) 또는 기본 시각까지(이른 하원)라
+    // 같은 숫자를 한 줄에 두 번 적고 있었습니다.
+    //   전: 17:30~21:00 · 기본 등원 17:30   후: 17:30~21:00
+    //   전: 22:10~22:30 · 기본 하원 22:30   후: 22:10~22:30
+    // 정보 손실 없이 줄만 짧아집니다.
     const absenceBlocks = [];
     if (start !== null && baseInMin !== null && start > baseInMin) {
-      absenceBlocks.push({ id: `absence-in-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: baseInMin, endMinute: start, title: formatAbsenceLabel('in', schedule.schedule_note), detail: `${minutesToTime(baseInMin)}~${minutesToTime(start)} · 기본 등원 ${minutesToTime(baseInMin)}`, schedule });
+      absenceBlocks.push({ id: `absence-in-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: baseInMin, endMinute: start, title: formatAbsenceLabel('in', schedule.schedule_note), detail: `${minutesToTime(baseInMin)}~${minutesToTime(start)}`, schedule });
     }
     if (end !== null && baseOutMin !== null && end < baseOutMin) {
-      absenceBlocks.push({ id: `absence-out-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: end, endMinute: baseOutMin, title: formatAbsenceLabel('out', schedule.schedule_note), detail: `${minutesToTime(end)}~${minutesToTime(baseOutMin)} · 기본 하원 ${minutesToTime(baseOutMin)}`, schedule });
+      absenceBlocks.push({ id: `absence-out-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: end, endMinute: baseOutMin, title: formatAbsenceLabel('out', schedule.schedule_note), detail: `${minutesToTime(end)}~${minutesToTime(baseOutMin)}`, schedule });
     }
 
     blocks.push(...periodBlocks, ...breakBlocks, ...absenceBlocks);
