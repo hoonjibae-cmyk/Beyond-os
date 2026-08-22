@@ -6,6 +6,7 @@ import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 import { resolvePointCycle } from '../../../lib/studentPointCycle';
 import { normalizeMentorCommentTarget } from '../../../lib/mentorCommentTarget';
 import { normalizePlannerImageTarget } from '../../../lib/plannerImageTarget';
+import { getWeeklyInterviewTitle } from '../../../lib/weeklyInterview';
 import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 
 export const dynamic = 'force-dynamic';
@@ -1244,9 +1245,11 @@ export default async function PublicReportPage({ params }) {
             </Card>
           ) : null}
 
-          {/* v41-126: '주간 총평'은 주간면담 내용과 내용이 겹쳐 주간면담 내용으로 통합했습니다. */}
+          {/* v41-126: '주간 총평'은 주간면담 내용과 내용이 겹쳐 주간면담 내용으로 통합했습니다.
+              v41-225: 그래서 상담 내용을 안 쓴 주에는 자동 요약이 '주간면담 내용'이라는
+              제목으로 나갔습니다. 실제 면담 기록이 아니므로 제목을 나눕니다. */}
           {report.director_interview ? (
-            <Card title="주간면담 내용">
+            <Card title={getWeeklyInterviewTitle({ interview: report.director_interview, finalComment: report.final_weekly_comment })}>
               <p>{report.director_interview}</p>
             </Card>
           ) : null}

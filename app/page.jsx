@@ -10,6 +10,7 @@ import { PRODUCT_TIERS, getProductTierLabel, getProductTier } from '../lib/produ
 import { AUDIO_POLICIES, getAudioPolicy, getAudioPolicyLabel } from '../lib/audioPolicy';
 import { MENTOR_COMMENT_TARGETS, DEFAULT_MENTOR_COMMENT_TARGET, getMentorCommentTarget, normalizeMentorCommentTarget } from '../lib/mentorCommentTarget';
 import { PLANNER_IMAGE_TARGETS, DEFAULT_PLANNER_IMAGE_TARGET, getPlannerImageTarget, normalizePlannerImageTarget } from '../lib/plannerImageTarget';
+import { getWeeklyInterviewTitle } from '../lib/weeklyInterview';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
@@ -14062,10 +14063,13 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
     // v41-156: 주간면담 내용이 비어 있으면 "입력되지 않았습니다" 문구를 내보내지 않고
     // '주간면담 내용' 항목 자체를 리포트에서 뺍니다.
     const interview = String(directorInterview || '').trim();
-    const interviewBlock = interview ? `\n\n주간면담 내용\n${interview}` : '';
+    // v41-225: 자동 생성 문장이 그대로 들어 있는 주는 '주간 Summary'로 내보냅니다.
+    // 학부모 화면과 같은 기준을 써서 미리보기와 실제 리포트가 어긋나지 않게 합니다.
+    const interviewTitle = getWeeklyInterviewTitle({ interview, finalComment: finalWeeklyComment });
+    const interviewBlock = interview ? `\n\n${interviewTitle}\n${interview}` : '';
 
     return `[비욘드 주간 리포트]\n\n학생: ${selectedStudent.name}\n기간: ${start} ~ ${end}\n\n이번 주 학습 요약\n- 등원일수: ${weeklyStats.attendanceDays}일\n- 총 순공시간: ${formatMinutes(weeklyStats.totalStudy)}\n- 일평균 순공시간: ${formatMinutes(weeklyStats.averageStudy)}\n- 외출: ${weeklyStats.totalAwayCount}회 / 총 ${formatMinutes(weeklyStats.totalAwayMinutes)}\n- 주요 확인사항: ${weeklyStats.issueSummary}\n- 상벌점: ${weeklyPointSummary.label}${interviewBlock}\n\n${BRAND_NAME}`;
-  }, [selectedStudent, start, end, weeklyStats, weeklyPointSummary, directorInterview]);
+  }, [selectedStudent, start, end, weeklyStats, weeklyPointSummary, directorInterview, finalWeeklyComment]);
 
   useEffect(() => {
     loadWeeklyStatus(start, end);

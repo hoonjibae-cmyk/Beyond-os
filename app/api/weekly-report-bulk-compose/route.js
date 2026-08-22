@@ -6,6 +6,7 @@ import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 import { BRAND_NAME } from '../../../lib/brand';
+import { getWeeklyInterviewTitle } from '../../../lib/weeklyInterview';
 
 export const dynamic = 'force-dynamic';
 
@@ -230,7 +231,13 @@ function buildReportText({ student = {}, startDate, endDate, summary = {}, inter
   const interviewText = String(interview || '').trim()
     || String(finalComment || '').trim()
     || createWeeklyComment(student, summary);
-  const interviewBlock = interviewText ? `\n\n주간면담 내용\n${interviewText}` : '';
+  // v41-225: 사람이 쓴 면담 기록일 때만 '주간면담 내용'입니다.
+  // 자동 생성 문장이 대신 들어간 주는 '주간 Summary'로 내보냅니다.
+  const interviewTitle = getWeeklyInterviewTitle({
+    interview: interviewText,
+    finalComment: String(finalComment || '').trim() || createWeeklyComment(student, summary),
+  });
+  const interviewBlock = interviewText ? `\n\n${interviewTitle}\n${interviewText}` : '';
   return `[비욘드 주간 리포트]\n\n학생: ${student.name || '-'}\n기간: ${startDate} ~ ${endDate}\n\n이번 주 학습 요약\n- 등원일수: ${summary.attendanceDays || 0}일\n- 총 순공시간: ${formatMinutesKo(summary.totalStudyMinutes || 0)}\n- 일평균 순공시간: ${formatMinutesKo(summary.averageStudyMinutes || 0)}\n- 외출: ${summary.awayCount || 0}회 / 총 ${formatMinutesKo(summary.awayMinutes || 0)}\n- 주요 확인사항: ${summary.issueSummary || '특이사항 없음'}\n- 상벌점: ${summary.pointSummary?.label || '상벌점 기록 없음'}${interviewBlock}\n\n${BRAND_NAME}`;
 }
 
