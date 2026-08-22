@@ -3749,6 +3749,8 @@ export default function Page() {
       studentPhone: student.student_phone || '',
       // v41-216: 좌석 패널의 학생 기본정보에 음악 청취 허용 범위를 함께 보여 줍니다.
       audioPolicy: student.audio_policy || '',
+      // v41-223: 신청 상품(Lite/Plus/Premium). 멘토링·수행평가 대상인지 바로 알 수 있어야 합니다.
+      productTier: student.product_tier || '',
       studyStatus: latestStudyCheck?.study_status || '인강',
       subject: latestStudyCheck?.subject || '수학',
       studyContent: '',
@@ -6175,6 +6177,16 @@ export default function Page() {
                 <div className="info-item"><span>학교</span><strong>{form.school || '-'}</strong></div>
                 <div className="info-item"><span>학년</span><strong>{form.grade || '-'}</strong></div>
                 <div className="info-item"><span>학생 연락처</span><strong>{form.studentPhone || '-'}</strong></div>
+                {/* v41-223: 신청 상품. 값이 없는 학생(1기 등)은 '-' 로 두어 칸 배치가 흐트러지지 않게 합니다. */}
+                <div className="info-item product-tier-info-item">
+                  <span>신청 상품</span>
+                  {getProductTier(form.productTier) ? (
+                    <strong>
+                      <ProductTierBadge tier={form.productTier} size="mini" />
+                      <i>{getProductTier(form.productTier).summary}</i>
+                    </strong>
+                  ) : <strong>-</strong>}
+                </div>
               </div>
 
               {/* v41-216: 음악 청취 허용 범위. 순찰 중 바로 판단할 수 있어야 하므로 눈에 띄게 둡니다.

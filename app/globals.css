@@ -19225,6 +19225,15 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-confirm-links-list b{ min-width:72px; font-size:12.5px; font-weight:700; color:#1d1d1f; }
 .schedule-confirm-links-list a{ flex:1; font-size:12px; color:#0071e3; word-break:break-all; }
 .schedule-confirm-links-list button{ flex:none; padding:4px 10px; font-size:11.5px; }
+/* v41-223: 좌석 패널 학생 기본정보의 [신청 상품] 칸
+   학생 연락처 옆 빈 자리에 놓습니다. compact-student-info-grid 의
+   :last-child 전체폭 규칙이 이 칸에 걸리면 아래 줄로 밀려나므로 되돌립니다. */
+.compact-student-info-grid .info-item.product-tier-info-item{ grid-column: auto; }
+.product-tier-info-item strong{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+/* 배지가 칸의 첫 요소라 왼쪽 여백이 필요 없습니다. */
+.product-tier-info-item .product-tier-badge{ margin-left:0 !important; }
+.product-tier-info-item strong i{ font-style:normal; font-size:11.5px; font-weight:700; color:#86868b; }
+
 /* v41-216: 학생별 음악 청취 허용 범위 */
 .audio-policy-row{ margin:12px 0 0; padding:10px 12px; border-radius:12px; border:1px solid #e3e3e6; background:#fafafc; }
 .audio-policy-row .audio-policy-title{ display:block; font-size:11.5px; font-weight:700; color:#86868b; }
