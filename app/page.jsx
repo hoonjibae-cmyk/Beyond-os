@@ -3344,9 +3344,19 @@ export default function Page() {
     }
   }
 
-  async function compressImageFile(file) {
+  // v41-226: 업로드 전에 사진을 돌려서 저장합니다.
+  //
+  // 왜 업로드 시점인가
+  //   여기서 한 번 돌려 두면 데일리 리포트 · 위클리 리포트 · 관리 화면이
+  //   모두 바로 선 사진을 씁니다. 보는 쪽에서 돌리면 그 화면에서만 바로
+  //   서고 학부모에게는 여전히 누워서 나갑니다.
+  //
+  // 회전이 0 이고 파일도 작으면 원본을 그대로 올립니다. (기존 동작)
+  async function compressImageFile(file, rotation = 0) {
     if (!file || !file.type?.startsWith('image/')) return file;
-    if (file.size <= 2.8 * 1024 * 1024) return file;
+    const deg = ((Number(rotation) || 0) % 360 + 360) % 360;
+    const needsResize = file.size > 2.8 * 1024 * 1024;
+    if (!deg && !needsResize) return file;
 
     return new Promise((resolve) => {
       const img = new Image();
@@ -3354,29 +3364,38 @@ export default function Page() {
       img.onload = () => {
         URL.revokeObjectURL(url);
         const maxSize = 1600;
-        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const scale = needsResize ? Math.min(1, maxSize / Math.max(img.width, img.height)) : 1;
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+        // 90°/270° 로 돌리면 가로세로가 바뀝니다.
+        const swap = deg === 90 || deg === 270;
         const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.width = swap ? height : width;
+        canvas.height = swap ? width : height;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        // 캔버스 한가운데를 기준으로 돌린 뒤, 그림도 가운데 맞춰 그립니다.
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        if (deg) ctx.rotate((deg * Math.PI) / 180);
+        ctx.drawImage(img, -width / 2, -height / 2, width, height);
         canvas.toBlob((blob) => {
           if (!blob) return resolve(file);
-          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '_compressed.jpg', { type: 'image/jpeg' }));
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '_upload.jpg', { type: 'image/jpeg' }));
         }, 'image/jpeg', 0.78);
       };
+      // 사진을 못 읽으면 원본을 그대로 올립니다. 업로드 자체가 막히면 안 됩니다.
       img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
       img.src = url;
     });
   }
 
-  async function uploadPlannerFile({ studentId, date, file, memo }) {
+  async function uploadPlannerFile({ studentId, date, file, memo, rotation = 0 }) {
     if (!studentId) return alert('학생을 선택하세요.');
     if (!file) return alert('업로드할 플래너 사진을 선택하세요.');
 
     try {
       setMessage('플래너 업로드 중...');
-      const uploadFile = await compressImageFile(file);
+      // v41-226: 화면에서 돌려 둔 각도를 사진에 그대로 구워서 올립니다.
+      const uploadFile = await compressImageFile(file, rotation);
       const formData = new FormData();
       formData.append('studentId', studentId);
       formData.append('plannerDate', date);
@@ -12326,6 +12345,27 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
   const [studentId, setStudentId] = useState('');
   const [memo, setMemo] = useState('');
   const [file, setFile] = useState(null);
+  // v41-226: 업로드 전에 사진을 돌려 볼 수 있게 합니다. 저장할 때 이 각도가 사진에 구워집니다.
+  const [rotation, setRotation] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  // 미리보기 주소는 다 쓰면 반드시 반납해야 합니다. (안 하면 브라우저 메모리에 남습니다)
+  useEffect(() => {
+    if (!file) { setPreviewUrl(''); return undefined; }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  // 사진을 새로 고르면 각도는 처음으로 되돌립니다.
+  function pickFile(next) {
+    setFile(next || null);
+    setRotation(0);
+  }
+
+  function turn(step) {
+    setRotation((prev) => (((prev + step) % 360) + 360) % 360);
+  }
 
   // v41-171: 업로드 집계는 지금 보고 있는 기수 학생 기준으로만 셉니다.
   // (플래너는 날짜 기준으로 내려와 다른 기수 학생이 섞이면 '미제출' 수가 어긋납니다)
@@ -12337,10 +12377,11 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
   }
 
   async function submitUpload() {
-    const saved = await uploadPlannerFile({ studentId, date: plannerDate, file, memo });
+    const saved = await uploadPlannerFile({ studentId, date: plannerDate, file, memo, rotation });
     if (saved) {
       setMemo('');
       setFile(null);
+      setRotation(0);
       const input = document.getElementById('planner-file-input');
       if (input) input.value = '';
       const cameraInput = document.getElementById('planner-camera-input');
@@ -12379,13 +12420,30 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
           </div>
           <div className="field">
             <label>플래너 사진 가져오기</label>
-            <input id="planner-file-input" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <input id="planner-file-input" type="file" accept="image/*" onChange={(e) => pickFile(e.target.files?.[0])} />
           </div>
           <div className="field">
             <label>기기에서 바로 촬영</label>
-            <input id="planner-camera-input" type="file" accept="image/*" capture="environment" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <input id="planner-camera-input" type="file" accept="image/*" capture="environment" onChange={(e) => pickFile(e.target.files?.[0])} />
           </div>
           {file ? <div className="selected-file-name">선택된 파일: {file.name}</div> : null}
+          {/* v41-226: 누워서 찍힌 사진을 올리기 전에 바로 세웁니다.
+              여기서 돌려 두면 학부모 리포트에도 바로 선 사진이 나갑니다. */}
+          {previewUrl ? (
+            <div className="field planner-rotate-field">
+              <label>사진 방향 확인</label>
+              <div className={`planner-preview rot-${rotation}`}>
+                <img src={previewUrl} alt="업로드할 플래너 미리보기" style={{ transform: `rotate(${rotation}deg)` }} />
+              </div>
+              <div className="planner-rotate-actions">
+                <button type="button" className="secondary section-action" onClick={() => turn(-90)}>↺ 왼쪽으로 90°</button>
+                <button type="button" className="secondary section-action" onClick={() => turn(90)}>↻ 오른쪽으로 90°</button>
+                {rotation ? <button type="button" className="secondary section-action" onClick={() => setRotation(0)}>원래대로</button> : null}
+                <span className="planner-rotate-state">{rotation ? `${rotation}° 회전` : '회전 없음'}</span>
+              </div>
+              <div className="hint">보이는 그대로 저장됩니다. 데일리·위클리 리포트와 관리 화면 모두에 적용됩니다.</div>
+            </div>
+          ) : null}
           <div className="field">
             <label>메모</label>
             <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="예: 플래너 작성 상태 양호" />
