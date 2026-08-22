@@ -5,6 +5,7 @@ import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 import { resolvePointCycle } from '../../../lib/studentPointCycle';
 import { normalizeMentorCommentTarget } from '../../../lib/mentorCommentTarget';
+import { normalizePlannerImageTarget } from '../../../lib/plannerImageTarget';
 import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 
 export const dynamic = 'force-dynamic';
@@ -55,7 +56,8 @@ async function getOperatingRules(supabase) {
 // 만들어진 리포트는 옛 값을 그대로 들고 있습니다. 판정 기준은 그게 맞지만
 // (그날 기준으로 판정한 결과라야 하므로), '어디에 싣는가'는 지금 운영 방식이라
 // 바꾸는 즉시 모든 리포트에 반영되어야 합니다.
-async function getMentorCommentTargetSetting(supabase) {
+// v41-224: 플래너 사진 위치도 같은 설정에서 함께 읽습니다. (조회 한 번)
+async function getReportPlacementSettings(supabase) {
   try {
     const { data, error } = await supabase
       .from('system_settings')
@@ -63,10 +65,58 @@ async function getMentorCommentTargetSetting(supabase) {
       .eq('setting_key', 'operating_rules')
       .maybeSingle();
     if (error) throw error;
-    return normalizeMentorCommentTarget(data?.setting_value?.mentorCommentTarget);
+    return {
+      mentorCommentTarget: normalizeMentorCommentTarget(data?.setting_value?.mentorCommentTarget),
+      plannerImageTarget: normalizePlannerImageTarget(data?.setting_value?.plannerImageTarget),
+    };
   } catch {
-    // 설정을 못 읽으면 기존 동작(데일리)으로 둡니다.
-    return normalizeMentorCommentTarget('');
+    // 설정을 못 읽으면 둘 다 기존 동작(데일리)으로 둡니다.
+    return {
+      mentorCommentTarget: normalizeMentorCommentTarget(''),
+      plannerImageTarget: normalizePlannerImageTarget(''),
+    };
+  }
+}
+
+// v41-224: 위클리에 실을 그 주의 플래너 사진. 날짜순으로 모읍니다.
+//
+// 서명 URL 은 유효기간이 있어 저장해 두면 지난 리포트에서 깨집니다.
+// (v41-110 에서 데일리가 같은 문제를 겪었습니다) 그래서 열람할 때마다
+// 새로 발급합니다. 한 주면 최대 7장이라 한 번에 묶어 발급합니다.
+async function getWeeklyPlannerImages(supabase, studentId, startDate, endDate) {
+  try {
+    if (!studentId || !startDate || !endDate) return [];
+    const { data: rows, error } = await supabase
+      .from('planner_photos')
+      .select('planner_date,file_path,photo_url')
+      .eq('student_id', studentId)
+      .gte('planner_date', startDate)
+      .lte('planner_date', endDate)
+      .order('planner_date', { ascending: true });
+    if (error) throw error;
+
+    const items = (rows || [])
+      .map((row) => ({ date: row.planner_date, path: row.file_path || row.photo_url }))
+      .filter((item) => item.date && item.path);
+    if (!items.length) return [];
+
+    const { data: signed } = await supabase.storage
+      .from('planner-photos')
+      .createSignedUrls(items.map((item) => item.path), 60 * 60);
+
+    const urlByPath = {};
+    for (const entry of signed || []) {
+      if (entry?.path && entry?.signedUrl) urlByPath[entry.path] = entry.signedUrl;
+    }
+    return items
+      .map((item) => ({ date: item.date, url: urlByPath[item.path] || '' }))
+      .filter((item) => item.url)
+      // 위 조회에도 order 가 있지만, 순서를 조회에만 맡기면 조회문을 손대는 순간
+      // 조용히 뒤섞입니다. 학부모가 보는 날짜 순서라 여기서 한 번 더 맞춥니다.
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  } catch {
+    // 사진을 못 읽어도 나머지 리포트는 그대로 보여야 합니다.
+    return [];
   }
 }
 
@@ -963,9 +1013,9 @@ async function loadReport(token) {
     }
     const operatingRules = safePayload(report)?.dailyIssueRules || await getOperatingRules(supabase);
     const defaultSchedule = resolveScheduleForDate(scheduleConfig, reportDate);
-    // v41-222: 코멘트를 위클리로 보내는 설정이면 데일리에는 코멘트 칸을 그리지 않습니다.
-    const mentorCommentTarget = await getMentorCommentTargetSetting(supabase);
-    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, checks, scheduleBreaks, pointRows, dailyPointRows, pointCycle, schedule, operatingRules, defaultSchedule, mentorCommentTarget };
+    // v41-222/224: 위클리로 보내는 설정이면 데일리에는 그 칸을 그리지 않습니다.
+    const { mentorCommentTarget, plannerImageTarget } = await getReportPlacementSettings(supabase);
+    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, checks, scheduleBreaks, pointRows, dailyPointRows, pointCycle, schedule, operatingRules, defaultSchedule, mentorCommentTarget, plannerImageTarget };
   }
 
   if (link.report_type === 'weekly') {
@@ -1006,7 +1056,7 @@ async function loadReport(token) {
     }
 
     // v41-222: 코멘트를 위클리로 보내는 설정이면 그 주 코멘트를 날짜와 함께 모읍니다.
-    const mentorCommentTarget = await getMentorCommentTargetSetting(supabase);
+    const { mentorCommentTarget, plannerImageTarget } = await getReportPlacementSettings(supabase);
     let weeklyMentorComments = [];
     if (mentorCommentTarget === 'weekly' && sessionIds.length) {
       const dateBySession = {};
@@ -1025,7 +1075,12 @@ async function loadReport(token) {
         .sort((a, b) => String(a.date).localeCompare(String(b.date)));
     }
 
-    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, scheduleConfig, mentorCommentTarget, weeklyMentorComments };
+    // v41-224: 플래너 사진도 위클리로 보내는 설정이면 그 주 것을 모읍니다.
+    const weeklyPlannerImages = plannerImageTarget === 'weekly'
+      ? await getWeeklyPlannerImages(supabase, report.student_id, report.start_date, report.end_date)
+      : [];
+
+    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, scheduleConfig, mentorCommentTarget, weeklyMentorComments, plannerImageTarget, weeklyPlannerImages };
   }
 
   return { error: 'unknown-type' };
@@ -1040,7 +1095,7 @@ export default async function PublicReportPage({ params }) {
     return <ErrorPage title="리포트를 열 수 없습니다" message="링크가 만료되었거나 더 이상 사용 가능한 리포트가 아닙니다." />;
   }
 
-  const { reportType, report, session, student, link, planner, events = [], checks = [], scheduleBreaks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], pointCycle = null, schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null, mentorCommentTarget = 'daily', weeklyMentorComments = [] } = data;
+  const { reportType, report, session, student, link, planner, events = [], checks = [], scheduleBreaks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], pointCycle = null, schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null, mentorCommentTarget = 'daily', weeklyMentorComments = [], plannerImageTarget = 'daily', weeklyPlannerImages = [] } = data;
   const studyWindows = defaultSchedule?.studyWindows;
   const variables = getTemplateVariables(report);
   const isWeekly = reportType === 'weekly';
@@ -1054,7 +1109,8 @@ export default async function PublicReportPage({ params }) {
   const weeklyRows = getWeeklySummaryRows(report, weeklySummary);
   const savedWeeklyDetailRows = getWeeklyDetailRows(weeklySummary);
   const weeklyDetailRows = savedWeeklyDetailRows.length ? savedWeeklyDetailRows : liveWeeklyRows;
-  const dailyPlannerUrl = !isWeekly ? getPlannerUrl(report, planner || {}) : '';
+  // v41-224: 위클리로 보내는 설정이면 데일리에는 플래너 칸을 그리지 않습니다.
+  const dailyPlannerUrl = (!isWeekly && plannerImageTarget === 'daily') ? getPlannerUrl(report, planner || {}) : '';
   const dailyLearningText = !isWeekly ? extractDailyLearningText(report.report_text) : '';
   // v41-108: 실시간 순찰 체크를 우선 사용하고, 없을 때만 저장된 리포트 텍스트 스냅샷으로 폴백합니다.
   const liveDailyPeriods = !isWeekly ? buildDailyLearningPeriodsFromChecks(checks, defaultSchedule) : [];
@@ -1152,6 +1208,20 @@ export default async function PublicReportPage({ params }) {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </Card>
+          ) : null}
+
+          {/* v41-224: 플래너 사진을 위클리에 싣는 설정일 때만 나옵니다. */}
+          {weeklyPlannerImages.length ? (
+            <Card title="플래너 이미지" className="planner-card weekly-planner-card">
+              <div className="weekly-planner-list">
+                {weeklyPlannerImages.map((item) => (
+                  <figure key={item.date} className="weekly-planner-item">
+                    <figcaption>{formatDate(item.date)}</figcaption>
+                    <img src={item.url} alt={`${student?.name || '학생'} ${item.date} 플래너 이미지`} />
+                  </figure>
+                ))}
               </div>
             </Card>
           ) : null}
@@ -1656,6 +1726,20 @@ const styles = `
   }
   .weekly-detail-table tr:last-child td {
     border-bottom: 0;
+  }
+  /* v41-224: 위클리에 싣는 플래너 사진 — 한 주에 여러 장이 날짜순으로 쌓입니다. */
+  .weekly-planner-list {
+    display: grid;
+    gap: 16px;
+  }
+  .weekly-planner-item {
+    margin: 0;
+  }
+  .weekly-planner-item figcaption {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #1d1d1f;
   }
   .planner-card img {
     display: block;

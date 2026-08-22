@@ -9,6 +9,7 @@ import { BRAND_NAME } from '../lib/brand';
 import { PRODUCT_TIERS, getProductTierLabel, getProductTier } from '../lib/productTier';
 import { AUDIO_POLICIES, getAudioPolicy, getAudioPolicyLabel } from '../lib/audioPolicy';
 import { MENTOR_COMMENT_TARGETS, DEFAULT_MENTOR_COMMENT_TARGET, getMentorCommentTarget, normalizeMentorCommentTarget } from '../lib/mentorCommentTarget';
+import { PLANNER_IMAGE_TARGETS, DEFAULT_PLANNER_IMAGE_TARGET, getPlannerImageTarget, normalizePlannerImageTarget } from '../lib/plannerImageTarget';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
@@ -920,6 +921,8 @@ const DEFAULT_OPERATING_RULES = {
   attentionKeywords: ['수면', '비학습', '주의', '집중', '졸', '태도', '휴대폰', '잡담'],
   // v41-222: 학습멘토 코멘트를 데일리 / 위클리 중 어느 리포트에 실을지
   mentorCommentTarget: DEFAULT_MENTOR_COMMENT_TARGET,
+  // v41-224: 데일리 플래너 사진을 데일리 / 위클리 중 어느 리포트에 실을지
+  plannerImageTarget: DEFAULT_PLANNER_IMAGE_TARGET,
 };
 
 const GUARDIAN_RELATIONSHIP_OPTIONS = ['모', '부', '조부모', '기타'];
@@ -952,6 +955,7 @@ function normalizeOperatingRules(value = {}) {
     attentionKeywords: keywords.map((item) => String(item || '').trim()).filter(Boolean),
     // v41-222: 값이 없거나 이상하면 기존 동작(데일리)으로 떨어집니다.
     mentorCommentTarget: normalizeMentorCommentTarget(merged.mentorCommentTarget),
+    plannerImageTarget: normalizePlannerImageTarget(merged.plannerImageTarget),
   };
 }
 
@@ -23227,31 +23231,51 @@ function OperatingRulesTab({ operatingRules, rulesDraft, setRulesDraft, saveOper
         </div>
       </div>
 
-      {/* v41-222: 판정 기준이 아니라 리포트 구성이라 따로 묶었습니다. */}
+      {/* v41-222: 판정 기준이 아니라 리포트 구성이라 따로 묶었습니다.
+          v41-224: 플래너 사진도 같은 성격이라 이 묶음 안에 나란히 두었습니다. */}
       <div className="send-payload-preview mentor-target-block">
         <div className="send-payload-head">
           <div>
-            <h3>학습멘토 코멘트를 실을 리포트</h3>
-            <p>코멘트를 적는 자리(학습 관리 화면의 [오늘 학습멘토 코멘트])는 그대로입니다. 그 내용이 학부모에게 어느 리포트로 나가는지만 정합니다.</p>
+            <h3>리포트에 싣는 내용</h3>
+            <p>내용을 적고 올리는 자리는 그대로입니다. 그 내용이 학부모에게 어느 리포트로 나가는지만 정합니다. 바꾸면 이미 발송된 링크도 다음 열람부터 바로 반영되고, 리포트를 다시 만들 필요가 없습니다.</p>
           </div>
         </div>
-        <div className="field">
-          <label>싣는 곳</label>
-          <select
-            value={draft.mentorCommentTarget}
-            onChange={(e) => setRulesDraft({ ...draft, mentorCommentTarget: e.target.value })}
-          >
-            {MENTOR_COMMENT_TARGETS.map((target) => (
-              <option key={target.key} value={target.key}>{target.label}</option>
-            ))}
-          </select>
-          <div className="hint">{getMentorCommentTarget(draft.mentorCommentTarget).detail}</div>
+        <div className="rules-grid">
+          <div className="field">
+            <label>학습멘토 코멘트</label>
+            <select
+              value={draft.mentorCommentTarget}
+              onChange={(e) => setRulesDraft({ ...draft, mentorCommentTarget: e.target.value })}
+            >
+              {MENTOR_COMMENT_TARGETS.map((target) => (
+                <option key={target.key} value={target.key}>{target.label}</option>
+              ))}
+            </select>
+            <div className="hint">{getMentorCommentTarget(draft.mentorCommentTarget).detail}</div>
+          </div>
+          <div className="field">
+            <label>데일리 플래너 사진</label>
+            <select
+              value={draft.plannerImageTarget}
+              onChange={(e) => setRulesDraft({ ...draft, plannerImageTarget: e.target.value })}
+            >
+              {PLANNER_IMAGE_TARGETS.map((target) => (
+                <option key={target.key} value={target.key}>{target.label}</option>
+              ))}
+            </select>
+            <div className="hint">{getPlannerImageTarget(draft.plannerImageTarget).detail}</div>
+          </div>
         </div>
         {draft.mentorCommentTarget === 'weekly' ? (
           <div className="hint mentor-target-note">
-            위클리 리포트에 그 주(월~일) 코멘트를 날짜와 함께 모아 싣습니다.
+            학습멘토 코멘트는 그 주(월~일) 것을 날짜와 함께 모아 위클리에 싣습니다.
             센터장이 쓰는 [주간면담 내용]과는 다른 칸으로 따로 나갑니다.
-            이미 발송된 리포트의 내용은 바뀌지 않고, 앞으로 열람하는 리포트부터 적용됩니다.
+          </div>
+        ) : null}
+        {draft.plannerImageTarget === 'weekly' ? (
+          <div className="hint mentor-target-note">
+            플래너 사진은 그 주(월~일) 것을 날짜와 함께 모아 위클리에 싣습니다.
+            한 주에 여러 장이면 날짜순으로 모두 나갑니다.
           </div>
         ) : null}
       </div>
