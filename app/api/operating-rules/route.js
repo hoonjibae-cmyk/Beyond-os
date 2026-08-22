@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
+import { DEFAULT_MENTOR_COMMENT_TARGET, normalizeMentorCommentTarget } from '../../../lib/mentorCommentTarget';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,8 @@ const DEFAULT_RULES = {
   excessiveAwayCount: 2,
   excessiveAwayMinutes: 60,
   attentionKeywords: ['수면', '비학습', '주의', '집중', '졸', '태도', '휴대폰', '잡담'],
+  // v41-222: 학습멘토 코멘트를 데일리 / 위클리 중 어느 리포트에 실을지
+  mentorCommentTarget: DEFAULT_MENTOR_COMMENT_TARGET,
 };
 
 function normalizeRules(value = {}) {
@@ -31,6 +34,8 @@ function normalizeRules(value = {}) {
     excessiveAwayCount: toNumber(merged.excessiveAwayCount, DEFAULT_RULES.excessiveAwayCount),
     excessiveAwayMinutes: toNumber(merged.excessiveAwayMinutes, DEFAULT_RULES.excessiveAwayMinutes),
     attentionKeywords: keywords.map((item) => String(item || '').trim()).filter(Boolean),
+    // v41-222: 값이 없거나 이상하면 기존 동작(데일리)으로 떨어집니다.
+    mentorCommentTarget: normalizeMentorCommentTarget(merged.mentorCommentTarget),
   };
 }
 

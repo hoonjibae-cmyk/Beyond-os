@@ -4,6 +4,8 @@ import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 import { resolvePointCycle } from '../../../lib/studentPointCycle';
+import { normalizeMentorCommentTarget } from '../../../lib/mentorCommentTarget';
+import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +45,28 @@ async function getOperatingRules(supabase) {
     return normalizeOperatingRules(data?.setting_value || DEFAULT_OPERATING_RULES);
   } catch {
     return normalizeOperatingRules(DEFAULT_OPERATING_RULES);
+  }
+}
+
+// v41-222: 학습멘토 코멘트를 어느 리포트에 실을지는 '지금' 설정을 따릅니다.
+//
+// 아래 getOperatingRules 와 달리 리포트에 저장된 스냅샷(dailyIssueRules)을 쓰지
+// 않습니다. 스냅샷은 리포트를 만든 시점의 판정 기준이라, 설정을 바꿔도 과거에
+// 만들어진 리포트는 옛 값을 그대로 들고 있습니다. 판정 기준은 그게 맞지만
+// (그날 기준으로 판정한 결과라야 하므로), '어디에 싣는가'는 지금 운영 방식이라
+// 바꾸는 즉시 모든 리포트에 반영되어야 합니다.
+async function getMentorCommentTargetSetting(supabase) {
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', 'operating_rules')
+      .maybeSingle();
+    if (error) throw error;
+    return normalizeMentorCommentTarget(data?.setting_value?.mentorCommentTarget);
+  } catch {
+    // 설정을 못 읽으면 기존 동작(데일리)으로 둡니다.
+    return normalizeMentorCommentTarget('');
   }
 }
 
@@ -939,7 +963,9 @@ async function loadReport(token) {
     }
     const operatingRules = safePayload(report)?.dailyIssueRules || await getOperatingRules(supabase);
     const defaultSchedule = resolveScheduleForDate(scheduleConfig, reportDate);
-    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, checks, scheduleBreaks, pointRows, dailyPointRows, pointCycle, schedule, operatingRules, defaultSchedule };
+    // v41-222: 코멘트를 위클리로 보내는 설정이면 데일리에는 코멘트 칸을 그리지 않습니다.
+    const mentorCommentTarget = await getMentorCommentTargetSetting(supabase);
+    return { link, reportType: 'daily', report, session, student: session?.students || null, planner, events, checks, scheduleBreaks, pointRows, dailyPointRows, pointCycle, schedule, operatingRules, defaultSchedule, mentorCommentTarget };
   }
 
   if (link.report_type === 'weekly') {
@@ -979,7 +1005,27 @@ async function loadReport(token) {
       }
     }
 
-    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, scheduleConfig };
+    // v41-222: 코멘트를 위클리로 보내는 설정이면 그 주 코멘트를 날짜와 함께 모읍니다.
+    const mentorCommentTarget = await getMentorCommentTargetSetting(supabase);
+    let weeklyMentorComments = [];
+    if (mentorCommentTarget === 'weekly' && sessionIds.length) {
+      const dateBySession = {};
+      for (const item of weeklySessions || []) dateBySession[item.id] = item.session_date;
+      const { rows: reportRows } = await selectInChunksSafe(sessionIds, (part) => supabase
+        .from('daily_reports')
+        .select('session_id,mentor_comment,mentor_comment_by')
+        .in('session_id', part));
+      weeklyMentorComments = (reportRows || [])
+        .filter((row) => String(row.mentor_comment || '').trim())
+        .map((row) => ({
+          date: dateBySession[row.session_id] || '',
+          comment: String(row.mentor_comment).trim(),
+          by: row.mentor_comment_by || '',
+        }))
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    }
+
+    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, scheduleConfig, mentorCommentTarget, weeklyMentorComments };
   }
 
   return { error: 'unknown-type' };
@@ -994,7 +1040,7 @@ export default async function PublicReportPage({ params }) {
     return <ErrorPage title="리포트를 열 수 없습니다" message="링크가 만료되었거나 더 이상 사용 가능한 리포트가 아닙니다." />;
   }
 
-  const { reportType, report, session, student, link, planner, events = [], checks = [], scheduleBreaks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], pointCycle = null, schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null } = data;
+  const { reportType, report, session, student, link, planner, events = [], checks = [], scheduleBreaks = [], weeklySessions = [], weeklyEventsBySession = {}, pointRows = [], dailyPointRows = [], pointCycle = null, schedule = null, operatingRules = DEFAULT_OPERATING_RULES, defaultSchedule = null, scheduleConfig = null, mentorCommentTarget = 'daily', weeklyMentorComments = [] } = data;
   const studyWindows = defaultSchedule?.studyWindows;
   const variables = getTemplateVariables(report);
   const isWeekly = reportType === 'weekly';
@@ -1110,6 +1156,24 @@ export default async function PublicReportPage({ params }) {
             </Card>
           ) : null}
 
+          {/* v41-222: 학습멘토 코멘트를 위클리에 싣는 설정일 때만 나옵니다.
+              센터장이 쓰는 아래 [주간면담 내용]과는 다른 칸입니다. */}
+          {weeklyMentorComments.length ? (
+            <Card title="학습멘토 코멘트">
+              <div className="weekly-mentor-comments">
+                {weeklyMentorComments.map((item) => (
+                  <div key={`${item.date}-${item.comment.slice(0, 12)}`} className="weekly-mentor-comment">
+                    <div className="weekly-mentor-comment-head">
+                      <strong>{formatDate(item.date)}</strong>
+                      {item.by ? <em>{item.by}</em> : null}
+                    </div>
+                    <p>{item.comment}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
           {/* v41-126: '주간 총평'은 주간면담 내용과 내용이 겹쳐 주간면담 내용으로 통합했습니다. */}
           {report.director_interview ? (
             <Card title="주간면담 내용">
@@ -1175,7 +1239,8 @@ export default async function PublicReportPage({ params }) {
             )}
           </Card>
 
-          {report.mentor_comment ? (
+          {/* v41-222: 위클리로 보내는 설정이면 데일리에는 싣지 않습니다. */}
+          {mentorCommentTarget === 'daily' && report.mentor_comment ? (
             <Card title="학습멘토 코멘트">
               <p>{report.mentor_comment}</p>
             </Card>
@@ -1603,6 +1668,39 @@ const styles = `
   .point-summary-card {
     border-color: #a9cbf5;
     background: #eaf2fe;
+  }
+  /* v41-222: 위클리에 싣는 학습멘토 코멘트 — 날짜별로 여러 건이 쌓입니다. */
+  .weekly-mentor-comments {
+    display: grid;
+    gap: 10px;
+  }
+  .weekly-mentor-comment {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #f5f5f7;
+  }
+  .weekly-mentor-comment-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 5px;
+  }
+  .weekly-mentor-comment-head strong {
+    font-size: 13px;
+    font-weight: 800;
+    color: #1d1d1f;
+  }
+  .weekly-mentor-comment-head em {
+    font-style: normal;
+    font-size: 12px;
+    color: #6e6e73;
+  }
+  .weekly-mentor-comment p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #424245;
+    white-space: pre-wrap;
   }
   .point-summary-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
