@@ -7,6 +7,8 @@ import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 import { BRAND_NAME } from '../../../lib/brand';
 import { getWeeklyInterviewTitle } from '../../../lib/weeklyInterview';
+import { getCohortIdFromRequest, resolveScopeCohort, loadCohortStudentIds } from '../../../lib/cohortScope';
+import { getKstDateString } from '../../../lib/date';
 
 export const dynamic = 'force-dynamic';
 
@@ -482,8 +484,31 @@ export async function POST(request) {
       .order('name', { ascending: true });
     if (studentError) throw studentError;
 
+    // v41-227: 지금 보고 있는 기수의 수강 명단으로 좁힙니다.
+    //
+    // 기수가 바뀌어도 지난 기수 학생은 status 가 active 로 남아 있어서,
+    // status 만 보고 거르면 지난 기수까지 리포트가 만들어졌습니다.
+    // (실제로 2기 26명이어야 할 대상이 38명으로 잡혔습니다)
+    //
+    // 명단을 못 읽었거나 기수를 아직 만들지 않았으면 null 이 오고, 그때는
+    // 예전처럼 활성 학생 전원을 대상으로 둡니다. 빈 배열(명단 0명)과는
+    // 구분해야 합니다. 빈 배열을 '조건 없음'으로 흘리면 전 기수가 다시 섞입니다.
+    let cohortStudentIds = null;
+    let cohortName = '';
+    try {
+      const cohort = await resolveScopeCohort(supabase, getCohortIdFromRequest(request), getKstDateString());
+      if (cohort) {
+        cohortName = cohort.name || '';
+        cohortStudentIds = await loadCohortStudentIds(supabase, cohort.id);
+      }
+    } catch {
+      cohortStudentIds = null;
+    }
+    const inCohort = Array.isArray(cohortStudentIds) ? new Set(cohortStudentIds) : null;
+
     const candidates = (students || [])
       .filter((student) => student.status !== 'inactive')
+      .filter((student) => (inCohort ? inCohort.has(String(student.id)) : true))
       .filter((student) => mode === 'selected' ? selectedIds.includes(String(student.id)) : true);
 
     const { data: existingRows, error: existingError } = await supabase

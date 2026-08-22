@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { getCohortIdFromRequest, resolveScopeCohort, loadCohortStudentIds } from '../../../lib/cohortScope';
 import { requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getReportSendSettings, resolveRecipientTestMode, getRecipientTestModeSource } from '../../../lib/reportSendSettings';
@@ -23,58 +24,9 @@ function maskPhone(value) {
 }
 
 // v41-202: 공지는 지금 보고 있는 기수의 수강생 학부모에게만 보냅니다.
-// 화면의 [기수 보기]가 모든 요청에 x-beyond-cohort-id 를 실어 보냅니다.
-function getCohortIdFromRequest(request) {
-  try {
-    return String(request?.headers?.get?.('x-beyond-cohort-id') || '').trim();
-  } catch {
-    return '';
-  }
-}
-
-// 요청에 기수가 없으면(=전체 보기) 오늘이 속한 기수를, 그것도 없으면 가장 최근 기수를 씁니다.
-// 기수를 아직 하나도 만들지 않았다면 null 을 돌려주고 예전처럼 활성 학생 전원에게 보냅니다.
+// v41-227: 같은 처리가 위클리 발송에도 필요해져 lib/cohortScope.js 로 옮겼습니다.
 async function resolveNoticeCohort(supabase, requested) {
-  let rows = [];
-  try {
-    const { data, error } = await supabase
-      .from('cohorts')
-      .select('id, name, start_date, end_date')
-      .order('start_date', { ascending: true });
-    if (error) throw error;
-    rows = data || [];
-  } catch {
-    return null;
-  }
-  if (!rows.length) return null;
-
-  const wanted = String(requested || '').trim();
-  const picked = wanted ? rows.find((row) => String(row.id) === wanted) : null;
-  if (picked) return { id: String(picked.id), name: picked.name || '' };
-
-  // 기간이 겹치면 나중에 시작한 기수를 씁니다. (cohorts 는 시작일 오름차순)
-  const today = getKstDateString();
-  const current = [...rows].reverse().find((row) => (
-    String(row.start_date || '').slice(0, 10) <= today && today <= String(row.end_date || '').slice(0, 10)
-  ));
-  if (current) return { id: String(current.id), name: current.name || '' };
-
-  const latest = rows[rows.length - 1];
-  return { id: String(latest.id), name: latest.name || '' };
-}
-
-// 기수 수강 명단(활성)의 학생 id.
-// 명단을 못 읽으면 null 을 돌려줍니다. 빈 배열(=명단 0명)과 구분해야 합니다.
-// 빈 명단을 '조건 없음'으로 흘려보내면 전 기수 학부모에게 발송됩니다.
-async function loadCohortStudentIds(supabase, cohortId) {
-  if (!cohortId) return null;
-  const { data, error } = await supabase
-    .from('cohort_students')
-    .select('student_id')
-    .eq('cohort_id', cohortId)
-    .eq('is_active', true);
-  if (error) throw error;
-  return [...new Set((data || []).map((row) => String(row.student_id)))];
+  return resolveScopeCohort(supabase, requested, getKstDateString());
 }
 
 // 활성 학생의 수신 동의(데일리 리포트 수신) 보호자 → 전화번호 기준 중복 제거

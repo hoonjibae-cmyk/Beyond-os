@@ -14852,9 +14852,18 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
       const params = new URLSearchParams({ mode: 'history', start, end });
       const data = await apiFetch(`/api/weekly-report?${params.toString()}`);
       const reports = (data.reports || []).filter((report) => String(report.report_text || '').trim());
+      // v41-227: 지금 보고 있는 기수의 학생만 발송 대상에 올립니다.
+      //
+      // report.student 는 서버가 붙여 준 값이라 기수와 무관하게 들어옵니다.
+      // 그걸 먼저 쓰는 바람에 기수 범위(studentLookup)가 한 번도 적용되지
+      // 않았고, 지난 기수 학생까지 전부 대상이 됐습니다. (26명이어야 할
+      // 대상이 38명) 이제 기수 명단에 있는지를 따로 확인합니다.
+      // 전체 기수를 보고 있으면 studentLookup 에 전원이 들어 있어 예전과 같습니다.
       const targets = reports
-        .map((report) => ({ report, student: report.student || studentLookup[report.student_id] || null }))
-        .filter(({ student }) => student && student.status !== 'inactive' && getActiveGuardians(student, 'weekly').length);
+        .map((report) => ({ report, student: studentLookup[report.student_id] || report.student || null }))
+        .filter(({ report, student }) => studentLookup[report.student_id]
+          && student && student.status !== 'inactive'
+          && getActiveGuardians(student, 'weekly').length);
       if (!targets.length) {
         alert('이번 기간에 발송할 저장된 위클리 리포트가 없습니다. 먼저 "자동 구성"으로 리포트를 만든 뒤 다시 시도하세요.');
         return;
