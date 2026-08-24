@@ -1,5 +1,13 @@
 -- Beyond OS v41-178: 멘토링 설정을 기수별로 관리
--- Supabase SQL Editor에서 1회 실행하세요.
+-- Supabase SQL Editor에서 1회 실행하세요. (여러 번 실행해도 안전합니다)
+--
+-- v41-228 보강: 인덱스를 만들기 전에 중복 정리 단계를 넣었습니다.
+--   증상 - 멘토별 담당학생을 저장하면 이런 오류가 납니다.
+--          duplicate key value violates unique constraint
+--          "idx_mentoring_mentor_students_active_student"
+--   원인 - 저 인덱스는 기수 구분이 없는 옛 인덱스입니다. 1기에 이미 담당으로
+--          걸려 있는 학생을 2기 담당으로 저장하려 하면 막힙니다.
+--          이 SQL이 그 인덱스를 기수 단위로 바꿔 줍니다.
 --
 -- 기수가 바뀌면 멘토링 요일과 차시 구성이 통째로 달라집니다.
 -- 요일별 템플릿(mentoring_slots)과 멘토별 담당학생(mentoring_mentor_students)에
@@ -59,6 +67,26 @@ create index if not exists idx_mentoring_mentor_students_cohort
 
 -- 멘토별 담당학생도 기수마다 따로 잡히도록 합니다.
 drop index if exists idx_mentoring_mentor_students_unique;
+
+-- v41-228: 새 인덱스를 만들기 전에 중복 행을 먼저 정리합니다.
+-- 옛 인덱스가 이미 지워진 상태에서 이 SQL을 돌리면 그 사이에 중복이 생겼을 수
+-- 있고, 그러면 아래 unique index 생성이 실패하면서 스크립트가 중간에 멈춥니다.
+-- (컬럼만 생기고 인덱스는 없는 어중간한 상태가 바로 그렇게 만들어집니다)
+-- 같은 (기수, 멘토, 학생) 조합이 여러 줄이면 최신 한 줄만 남깁니다.
+with ranked as (
+  select
+    id,
+    row_number() over (
+      partition by cohort_id, mentor_id, student_id
+      order by is_active desc, updated_at desc nulls last, created_at desc nulls last, id
+    ) as rn
+  from mentoring_mentor_students
+  where mentor_id is not null and student_id is not null
+)
+delete from mentoring_mentor_students m
+using ranked r
+where m.id = r.id and r.rn > 1;
+
 create unique index if not exists idx_mentoring_mentor_students_unique_cohort
   on mentoring_mentor_students(cohort_id, mentor_id, student_id);
 
@@ -66,6 +94,25 @@ create unique index if not exists idx_mentoring_mentor_students_unique_cohort
 -- 1기와 2기를 모두 듣는 학생은 기수마다 담당멘토가 달라질 수 있으므로
 -- 이 제약도 기수 단위로 바꿉니다. (이걸 안 바꾸면 2기 담당학생 저장이 막힙니다)
 drop index if exists idx_mentoring_mentor_students_active_student;
+
+-- v41-228: 같은 이유로 활성 중복도 먼저 정리합니다.
+-- 한 기수 안에서 같은 학생이 여러 멘토에게 활성으로 걸려 있으면 최신 한 건만
+-- 남기고 나머지는 비활성으로 내립니다. (지우지 않고 기록은 남깁니다)
+with ranked_active as (
+  select
+    id,
+    row_number() over (
+      partition by cohort_id, student_id
+      order by updated_at desc nulls last, created_at desc nulls last, id
+    ) as rn
+  from mentoring_mentor_students
+  where is_active = true and student_id is not null
+)
+update mentoring_mentor_students m
+set is_active = false
+from ranked_active r
+where m.id = r.id and r.rn > 1;
+
 create unique index if not exists idx_mentoring_mentor_students_active_student_cohort
   on mentoring_mentor_students(cohort_id, student_id)
   where is_active = true;
