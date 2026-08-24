@@ -8691,6 +8691,34 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
     return map;
   }, [mentorStudentLinks]);
 
+  // v41-230: 학생카드에 적는 멘토는 [설정 · 담당학생]에서 정한 담당 멘토를 씁니다.
+  //
+  // 지금까지는 배정 행에 저장된 mentor_id(그 차시를 만들 때 고른 멘토)를 적었습니다.
+  // 담당학생 설정을 나중에 바꿔도 이미 만들어진 배정은 옛 멘토를 들고 있어서,
+  // 같은 학생이 시간표 카드에서는 조송희, 학습 관리에서는 도연수로 보였습니다.
+  // 담당 멘토가 한 곳에서만 정해지도록 카드도 설정을 따라갑니다.
+  const mentorNameById = useMemo(() => {
+    const map = {};
+    for (const mentor of mentors || []) map[String(mentor.id)] = mentor.mentor_name || '';
+    return map;
+  }, [mentors]);
+
+  // 담당 멘토가 지정되지 않은 학생은 예전처럼 배정에 적힌 멘토를 보여 줍니다.
+  function getCardMentor(assignment = {}) {
+    const studentId = String(assignment.student_id || assignment.students?.id || '');
+    const responsibleId = mentorIdByResponsibleStudent[studentId] || '';
+    const assignedId = String(assignment.mentor_id || '');
+    const assignedName = assignment.mentoring_mentors?.mentor_name || '';
+    if (!responsibleId) return { name: assignedName || '멘토 미지정', mismatchName: '' };
+    const responsibleName = mentorNameById[responsibleId] || assignedName || '멘토 미지정';
+    return {
+      name: responsibleName,
+      // 배정에 적힌 멘토가 담당 멘토와 다르면 숨기지 않고 함께 보여 줍니다.
+      // (그 차시를 실제로 누가 맡는지는 배정 쪽 값이라 정보를 잃으면 안 됩니다)
+      mismatchName: assignedId && assignedId !== responsibleId ? (assignedName || '다른 멘토') : '',
+    };
+  }
+
   const selectedMentorResponsibleIds = useMemo(() => {
     if (!assignForm.mentorId) return new Set();
     return new Set(mentorStudentIdsByMentor[String(assignForm.mentorId)] || []);
@@ -9663,7 +9691,7 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
               studentId: String(assignment.student_id || assignment.students?.id || ''),
               studentName: assignment.students?.name || '학생',
               mentorId: assignment.mentor_id || '',
-              mentorName: assignment.mentoring_mentors?.mentor_name || '멘토 미지정',
+              mentorName: getCardMentor(assignment).name,
               sequenceIndex,
             })).filter((item) => item.studentId);
             const hasSlotConflict = rows.some((item) => Boolean(displayConflictsByAssignmentId[String(item.id)] || (item.template_assignment_id ? displayConflictsByAssignmentId[String(item.template_assignment_id)] : null)));
@@ -9702,7 +9730,7 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
                       scheduleMode: isDateMode ? 'date' : 'template',
                       assignmentId: item.id,
                       mentorId: item.mentor_id || '',
-                      mentorName: item.mentoring_mentors?.mentor_name || '멘토 미지정',
+                      mentorName: getCardMentor(item).name,
                       studentId: String(item.student_id || item.students?.id || ''),
                       currentIndex: index,
                       studentSequence,
@@ -9721,7 +9749,15 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
                           {item.students?.name || '학생'}
                           <ProductTierBadge tier={productTierByStudentId[String(item.student_id || item.students?.id || '')]} size="mini" />
                         </b>
-                        <span>{item.mentoring_mentors?.mentor_name || '멘토 미지정'}{item.students?.school ? ` · ${item.students.school}` : ''}</span>
+                        <span>
+                          {getCardMentor(item).name}{item.students?.school ? ` · ${item.students.school}` : ''}
+                          {/* v41-230: 이 차시에 배정된 멘토가 담당 멘토와 다를 때만 덧붙입니다. */}
+                          {getCardMentor(item).mismatchName ? (
+                            <i className="mentoring-assignment-mentor-diff" title="담당학생 설정의 멘토와 이 차시에 배정된 멘토가 다릅니다.">
+                              차시 배정 {getCardMentor(item).mismatchName}
+                            </i>
+                          ) : null}
+                        </span>
                       </button>
                       <div className="mentoring-assignment-controls">
                         {isDateMode && dateOverrideActive ? (

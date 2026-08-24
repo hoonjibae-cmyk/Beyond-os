@@ -99,17 +99,39 @@ async function loadOperatingRules(supabase) {
 }
 
 // 담당 코치(멘토별 담당학생 설정)를 찾습니다. v41-31.4 SQL 미실행 환경에서는 null을 반환합니다.
-async function loadAssignedMentor(supabase, studentId) {
+//
+// v41-230: 보고 있는 기수의 담당 코치를 찾습니다.
+//   담당학생 설정은 v41-178 부터 기수마다 따로 잡힙니다. 그래서 1기와 2기를
+//   모두 듣는 학생은 활성 담당 연결이 두 줄 있을 수 있습니다. 기수를 안 보고
+//   updated_at 최신순으로 한 줄만 집으면, 2기 화면에서 1기 담당 코치가
+//   나올 수 있습니다.
+//   기수를 못 정했거나 그 기수에 담당이 없으면 예전처럼 최신 한 줄을 씁니다.
+async function loadAssignedMentor(supabase, studentId, cohortId = '') {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('mentoring_mentor_students')
       .select('id, note, mentoring_mentors(id, mentor_name)')
       .eq('student_id', studentId)
-      .eq('is_active', true)
+      .eq('is_active', true);
+    if (cohortId) query = query.eq('cohort_id', cohortId);
+    let { data, error } = await query
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw error;
+    // 그 기수에 담당 지정이 없으면 기수를 풀고 한 번 더 찾습니다.
+    if (!data && cohortId) {
+      const fallback = await supabase
+        .from('mentoring_mentor_students')
+        .select('id, note, mentoring_mentors(id, mentor_name)')
+        .eq('student_id', studentId)
+        .eq('is_active', true)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (fallback.error) throw fallback.error;
+      data = fallback.data;
+    }
     if (!data?.mentoring_mentors) return { mentor: null, warning: '' };
     return {
       mentor: {
@@ -212,7 +234,7 @@ export async function GET(request) {
       const value = String(date || '');
       return value >= cohortRange.start && value <= cohortRange.end;
     };
-    const { mentor: assignedMentor, warning: mentorWarning } = await loadAssignedMentor(supabase, studentId);
+    const { mentor: assignedMentor, warning: mentorWarning } = await loadAssignedMentor(supabase, studentId, cohort?.id || '');
     if (mentorWarning) warnings.push(mentorWarning);
 
     // 전체 누적 집계는 저장된 pure_study_minutes를 사용해 가볍게 계산합니다.
