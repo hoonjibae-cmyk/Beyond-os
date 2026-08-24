@@ -19545,13 +19545,24 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
     const studentIds = getMentorStudentDraftIds(mentorId);
     try {
       setLoading(true);
+      // v41-228: 기수를 본문에도 명시합니다.
+      // 읽기(loadMentoringSettings)는 v41-181 에서 이미 쿼리로 기수를 직접 보내도록
+      // 바꿨는데 쓰기는 헤더에만 의존하고 있었습니다. 둘이 다른 값을 보게 되면
+      // 다른 기수에 저장되고 화면에는 아무 변화가 없습니다.
       const data = await apiFetch('/api/mentoring', {
         method: 'POST',
-        body: JSON.stringify({ action: 'saveMentorStudents', mentorId, studentIds, scheduleDate: getKstDateString() }),
+        body: JSON.stringify({
+          action: 'saveMentorStudents',
+          mentorId,
+          studentIds,
+          scheduleDate: getKstDateString(),
+          ...(cohortScopeId ? { cohortId: String(cohortScopeId) } : {}),
+        }),
       });
       applyMentoringData(data);
       setMentorStudentDrafts((prev) => ({ ...prev, [String(mentorId)]: studentIds }));
-      setNotice(`담당학생 ${studentIds.length}명을 저장했습니다.`);
+      // 서버가 다시 읽어 확인한 실제 저장 인원수를 보여 줍니다.
+      setNotice(`담당학생 ${data?.result?.savedCount ?? studentIds.length}명을 저장했습니다.`);
       setMessage?.('멘토별 담당학생 설정을 저장했습니다.');
       await refreshAfterChange();
     } catch (error) {

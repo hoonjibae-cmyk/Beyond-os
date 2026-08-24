@@ -1106,14 +1106,62 @@ async function saveMentorStudents(supabase, body) {
     const { error: upsertError } = await supabase
       .from('mentoring_mentor_students')
       .upsert(rows, { onConflict: cohortId ? 'cohort_id,mentor_id,student_id' : 'mentor_id,student_id' });
-    if (upsertError) throw upsertError;
+    // v41-228: 실패 원인을 사람이 바로 알아볼 수 있게 바꿔서 올립니다.
+    //
+    // 이 저장은 v41-178 SQL 이 만든 두 인덱스에 기대고 있습니다.
+    //   (기수, 멘토, 학생)               ← onConflict 대상
+    //   (기수, 학생) where is_active     ← 예전엔 기수 없이 (학생) 하나였습니다
+    // SQL 을 아직 안 돌렸거나 중간에 끊겼으면 컬럼만 생기고 인덱스는 없을 수 있는데,
+    // 그러면 여기서 42P10(ON CONFLICT 대상 없음) 또는 23505(중복)로 막힙니다.
+    // 특히 지난 기수에도 담당으로 걸려 있던 학생이 통째로 막힙니다.
+    // 예전에는 이 오류가 그대로 올라가 화면에서 원인을 알 수 없었습니다.
+    if (upsertError) {
+      const code = String(upsertError.code || '');
+      if (code === '42P10' || code === '23505') {
+        const error = new Error(
+          '담당학생을 저장하지 못했습니다. 기수별 멘토링 설정을 위한 DB 인덱스가 아직 없습니다. '
+          + 'Supabase SQL Editor에서 beyond-os-supabase-mentoring-cohorts-v41-178.sql 을 실행한 뒤 다시 시도하세요. '
+          + `(원본 오류 ${code}: ${upsertError.message || ''})`
+        );
+        error.status = 409;
+        throw error;
+      }
+      throw upsertError;
+    }
+  }
+
+  // v41-228: 정말로 저장됐는지 다시 읽어 확인합니다.
+  //
+  // 지금까지는 쓰기가 오류 없이 끝나면 성공으로 보고 요청한 인원수를 그대로
+  // 돌려줬습니다. 그래서 실제로는 한 건도 안 들어간 경우에도 화면에는
+  // '담당학생 N명을 저장했습니다'가 뜨고, 목록만 조용히 0명이었습니다.
+  let savedCount = studentIds.length;
+  try {
+    const { data: savedRows, error: verifyError } = await withCohort(supabase
+      .from('mentoring_mentor_students')
+      .select('student_id')
+      .eq('mentor_id', mentorId)
+      .eq('is_active', true), cohortId);
+    if (verifyError) throw verifyError;
+    savedCount = new Set((savedRows || []).map((row) => String(row.student_id))).size;
+  } catch {
+    // 확인에 실패해도 저장 자체는 끝났으므로 요청 인원수를 그대로 둡니다.
+  }
+
+  if (savedCount !== studentIds.length) {
+    const error = new Error(
+      `담당학생 ${studentIds.length}명을 저장했는데 실제로는 ${savedCount}명만 남았습니다. `
+      + 'beyond-os-supabase-mentoring-cohorts-v41-178.sql 이 실행되었는지 확인해 주세요.'
+    );
+    error.status = 409;
+    throw error;
   }
 
   return {
     id: mentorId,
     mentorId,
     mentorName: mentor.mentor_name,
-    savedCount: studentIds.length,
+    savedCount,
     capacityTarget: mentor.capacity_target || 13,
   };
 }
