@@ -611,6 +611,30 @@ async function materializeDateSchedule(supabase, scheduleDateInput = getKstDateS
   // 이 비활성 행을 무시하고 다시 자동 복사하면 삭제가 안 된 것처럼 보이므로 전체 행을 기준으로 판단합니다.
   const existingByTemplateAssignment = new Map((existingDateAssignments || []).filter((item) => item.template_assignment_id).map((item) => [String(item.template_assignment_id), item]));
 
+  // v41-232: 같은 학생이 그 날짜에 이미 배정되어 있으면 템플릿을 다시 복사하지 않습니다.
+  //
+  // 지금까지는 template_assignment_id 로만 중복을 걸렀습니다. 그래서 그 배정이
+  // 템플릿에서 온 것이 아니면(날짜별 화면에서 직접 배정했거나, 다른 차시로 옮겨
+  // 왔거나) 못 알아보고 같은 학생을 한 번 더 넣었습니다. 그러면 DB 제약에 걸립니다.
+  //   idx_mentoring_date_assignments_slot_student_active_unique  (차시, 학생)
+  //   idx_mentoring_date_assignments_student_date_active_unique  (학생, 날짜)
+  //
+  // 게다가 아래 insert 는 한 번에 여러 줄을 넣기 때문에, 한 줄만 걸려도 그 날짜의
+  // 전개 전체가 실패합니다. 날짜별 화면은 차시 이동·저장 전에 매번 이 함수를
+  // 부르므로, 학생 한 명 때문에 그 날짜의 이동이 통째로 막혔습니다.
+  const existingSlotStudentKeys = new Set(
+    (existingDateAssignments || [])
+      .filter((item) => item.date_slot_id && item.student_id)
+      .map((item) => `${item.date_slot_id}:${item.student_id}`)
+  );
+  // 한 학생은 그 날짜에 한 차시만 배정됩니다. 다른 차시에 이미 활성으로 있으면
+  // (직접 배정했거나 옮겨 둔 경우) 템플릿 자리로 되돌리지 않습니다.
+  const activeStudentIdsOnDate = new Set(
+    (existingDateAssignments || [])
+      .filter((item) => item.is_active !== false && item.student_id)
+      .map((item) => String(item.student_id))
+  );
+
   const inserts = [];
   for (const assignment of weeklyAssignments || []) {
     if (assignment.students?.status === 'inactive') continue;
@@ -618,6 +642,12 @@ async function materializeDateSchedule(supabase, scheduleDateInput = getKstDateS
     if (existingByTemplateAssignment.has(String(assignment.id))) continue;
     const dateSlot = activeDateSlotByTemplate.get(String(assignment.slot_id));
     if (!dateSlot) continue;
+    if (existingSlotStudentKeys.has(`${dateSlot.id}:${assignment.student_id}`)) continue;
+    if (activeStudentIdsOnDate.has(String(assignment.student_id))) continue;
+    // 이번 호출 안에서도 같은 학생이 두 번 들어가지 않게 표시해 둡니다.
+    // (요일 템플릿에 같은 학생이 두 차시에 걸려 있는 경우)
+    existingSlotStudentKeys.add(`${dateSlot.id}:${assignment.student_id}`);
+    activeStudentIdsOnDate.add(String(assignment.student_id));
     inserts.push({
       schedule_date: scheduleDate,
       template_assignment_id: assignment.id,
