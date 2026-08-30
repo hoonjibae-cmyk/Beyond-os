@@ -1,6 +1,6 @@
 {
   "name": "beyond-os-v41-166-roster-layout",
-  "version": "0.41.232",
+  "version": "0.41.233",
   "private": true,
   "scripts": {
     "dev": "next dev",
