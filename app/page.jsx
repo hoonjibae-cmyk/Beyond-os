@@ -15341,7 +15341,12 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
                   <strong>{student.name}</strong>
                   <em className={`status-pill ${sendStatus.cls} weekly-send-chip name-send-chip`}>{sendStatus.label}</em>
                 </div>
-                <span>{[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}</span>
+                {/* v41-234: 학교·학년 옆에 신청 상품을 함께 보여 줍니다.
+                    상품이 없는 학생(1기 등)은 배지가 그려지지 않습니다. */}
+                <span className="weekly-student-meta-line">
+                  {[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}
+                  <ProductTierBadge tier={student.product_tier} size="mini" />
+                </span>
                 <div className="weekly-status-chip-row weekly-main-status-row">
                   <em className={`status-pill ${status.cls}`}>{status.label}</em>
                   {report?.director_interview ? <em className="status-pill done">면담 입력</em> : <em className="status-pill pending">면담 미입력</em>}
