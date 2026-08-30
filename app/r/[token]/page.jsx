@@ -7,6 +7,7 @@ import { resolvePointCycle } from '../../../lib/studentPointCycle';
 import { normalizeMentorCommentTarget } from '../../../lib/mentorCommentTarget';
 import { normalizePlannerImageTarget } from '../../../lib/plannerImageTarget';
 import { getWeeklyInterviewTitle } from '../../../lib/weeklyInterview';
+import { normalizePlannerRotation, isPlannerRotationSideways } from '../../../lib/plannerRotation';
 import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 
 export const dynamic = 'force-dynamic';
@@ -89,7 +90,7 @@ async function getWeeklyPlannerImages(supabase, studentId, startDate, endDate) {
     if (!studentId || !startDate || !endDate) return [];
     const { data: rows, error } = await supabase
       .from('planner_photos')
-      .select('planner_date,file_path,photo_url')
+      .select('planner_date,file_path,photo_url,rotation')
       .eq('student_id', studentId)
       .gte('planner_date', startDate)
       .lte('planner_date', endDate)
@@ -97,7 +98,12 @@ async function getWeeklyPlannerImages(supabase, studentId, startDate, endDate) {
     if (error) throw error;
 
     const items = (rows || [])
-      .map((row) => ({ date: row.planner_date, path: row.file_path || row.photo_url }))
+      .map((row) => ({
+        date: row.planner_date,
+        path: row.file_path || row.photo_url,
+        // v41-235: 저장된 각도를 함께 들고 갑니다.
+        rotation: normalizePlannerRotation(row.rotation),
+      }))
       .filter((item) => item.date && item.path);
     if (!items.length) return [];
 
@@ -110,7 +116,7 @@ async function getWeeklyPlannerImages(supabase, studentId, startDate, endDate) {
       if (entry?.path && entry?.signedUrl) urlByPath[entry.path] = entry.signedUrl;
     }
     return items
-      .map((item) => ({ date: item.date, url: urlByPath[item.path] || '' }))
+      .map((item) => ({ date: item.date, url: urlByPath[item.path] || '', rotation: item.rotation }))
       .filter((item) => item.url)
       // 위 조회에도 order 가 있지만, 순서를 조회에만 맡기면 조회문을 손대는 순간
       // 조용히 뒤섞입니다. 학부모가 보는 날짜 순서라 여기서 한 번 더 맞춥니다.
@@ -1112,6 +1118,7 @@ export default async function PublicReportPage({ params }) {
   const weeklyDetailRows = savedWeeklyDetailRows.length ? savedWeeklyDetailRows : liveWeeklyRows;
   // v41-224: 위클리로 보내는 설정이면 데일리에는 플래너 칸을 그리지 않습니다.
   const dailyPlannerUrl = (!isWeekly && plannerImageTarget === 'daily') ? getPlannerUrl(report, planner || {}) : '';
+  const dailyPlannerRotation = normalizePlannerRotation(planner?.rotation);
   const dailyLearningText = !isWeekly ? extractDailyLearningText(report.report_text) : '';
   // v41-108: 실시간 순찰 체크를 우선 사용하고, 없을 때만 저장된 리포트 텍스트 스냅샷으로 폴백합니다.
   const liveDailyPeriods = !isWeekly ? buildDailyLearningPeriodsFromChecks(checks, defaultSchedule) : [];
@@ -1220,7 +1227,13 @@ export default async function PublicReportPage({ params }) {
                 {weeklyPlannerImages.map((item) => (
                   <figure key={item.date} className="weekly-planner-item">
                     <figcaption>{formatDate(item.date)}</figcaption>
-                    <img src={item.url} alt={`${student?.name || '학생'} ${item.date} 플래너 이미지`} />
+                    <div className={`planner-image-frame${isPlannerRotationSideways(item.rotation) ? ' is-sideways' : ''}`}>
+                      <img
+                        src={item.url}
+                        alt={`${student?.name || '학생'} ${item.date} 플래너 이미지`}
+                        style={item.rotation ? { transform: `rotate(${item.rotation}deg)` } : undefined}
+                      />
+                    </div>
                   </figure>
                 ))}
               </div>
@@ -1321,7 +1334,17 @@ export default async function PublicReportPage({ params }) {
 
           {dailyPlannerUrl ? (
             <Card title="플래너 이미지" className="planner-card">
-              <img src={dailyPlannerUrl} alt={`${student?.name || '학생'} 플래너 이미지`} />
+              {/* v41-235: 저장된 각도로 돌려 보여 줍니다. 사진 파일은 그대로라
+                  이미 발송한 리포트도 각도를 고치면 다음에 열 때 반영됩니다.
+                  회전은 원래 자리를 그대로 차지하므로, 90°/270° 일 때는 정사각 틀
+                  안에 넣어야 카드를 넘지 않습니다. */}
+              <div className={`planner-image-frame${isPlannerRotationSideways(dailyPlannerRotation) ? ' is-sideways' : ''}`}>
+                <img
+                  src={dailyPlannerUrl}
+                  alt={`${student?.name || '학생'} 플래너 이미지`}
+                  style={dailyPlannerRotation ? { transform: `rotate(${dailyPlannerRotation}deg)` } : undefined}
+                />
+              </div>
             </Card>
           ) : null}
 
@@ -1729,6 +1752,24 @@ const styles = `
   }
   .weekly-detail-table tr:last-child td {
     border-bottom: 0;
+  }
+  /* v41-235: 저장된 각도로 돌려 그리는 틀.
+     CSS 회전은 원래 자리를 그대로 차지합니다. 그래서 90°/270° 로 돌리면
+     사진이 카드 위아래로 삐져나옵니다.
+     정사각 틀에 넣고 사진을 가로·세로 모두 틀 안으로 묶으면, 어느 각도로
+     돌려도 틀을 벗어나지 않습니다. (정사각형은 90° 돌려도 정사각형) */
+  .planner-image-frame {
+    display: grid;
+    place-items: center;
+  }
+  .planner-image-frame.is-sideways {
+    aspect-ratio: 1 / 1;
+    max-height: 720px;
+    overflow: hidden;
+  }
+  .planner-image-frame.is-sideways img {
+    max-width: 100%;
+    max-height: 100%;
   }
   /* v41-224: 위클리에 싣는 플래너 사진 — 한 주에 여러 장이 날짜순으로 쌓입니다. */
   .weekly-planner-list {

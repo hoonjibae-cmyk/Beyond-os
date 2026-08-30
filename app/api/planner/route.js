@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { normalizePlannerRotation } from '../../../lib/plannerRotation';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString } from '../../../lib/date';
@@ -112,6 +113,9 @@ export async function POST(request) {
     const studentId = String(form.get('studentId') || '');
     const plannerDate = String(form.get('plannerDate') || getKstDateString());
     const memo = String(form.get('memo') || '');
+    // v41-235: 업로드 화면에서 이미 사진을 돌려 저장하므로 보통 0 입니다.
+    // 사후 보정용으로 값을 받아 둘 수 있게 열어 둡니다.
+    const rotation = normalizePlannerRotation(form.get('rotation'));
     const uploadedBy = actorName;
     const file = form.get('file');
 
@@ -159,6 +163,7 @@ export async function POST(request) {
       file_name: safeName,
       photo_url: filePath,
       memo,
+      rotation,
       uploaded_by: uploadedBy,
       updated_at: new Date().toISOString(),
     };
@@ -222,5 +227,53 @@ export async function POST(request) {
       error: error.message || 'Unknown error',
       hint: 'ON CONFLICT를 쓰지 않는 v28 업로드 방식입니다. beyond_os_supabase_planner_v28_rebuild.sql 실행 여부와 planner_photos 컬럼 제약을 확인하세요.',
     }, { status: 500 });
+  }
+}
+
+// v41-235: 이미 올라간 사진의 방향만 고칩니다.
+//
+// 사진 파일은 그대로 두고 각도만 바꿉니다. 리포트는 열어 볼 때마다 이 값을
+// 보고 그리므로, 이미 발송한 리포트도 다음에 열면 바로 선 사진이 됩니다.
+export async function PATCH(request) {
+  if (!isAuthorized(request)) return unauthorizedResponse();
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const body = await request.json();
+    const plannerId = String(body.plannerId || body.id || '').trim();
+    if (!plannerId) {
+      return Response.json({ error: '방향을 고칠 플래너 사진을 선택하세요.' }, { status: 400 });
+    }
+    const rotation = normalizePlannerRotation(body.rotation);
+
+    const { data: saved, error } = await supabase
+      .from('planner_photos')
+      .update({ rotation, updated_at: new Date().toISOString() })
+      .eq('id', plannerId)
+      .select('*, students(*)')
+      .single();
+    if (error) {
+      // rotation 컬럼이 없으면 무엇을 해야 하는지 바로 알 수 있게 알려 줍니다.
+      const message = String(error.message || '');
+      if (/rotation/i.test(message)) {
+        return Response.json({
+          error: '플래너 사진 방향을 저장할 칸이 아직 없습니다. Supabase에서 beyond-os-supabase-planner-rotation-v41-235.sql 을 실행한 뒤 다시 시도하세요.',
+        }, { status: 409 });
+      }
+      throw error;
+    }
+
+    await writeUserActionLog(supabase, request, {
+      actionType: 'planner.rotate',
+      targetType: 'planner_photo',
+      targetId: plannerId,
+      targetName: saved?.students?.name || '',
+      payload: { rotation, plannerDate: saved?.planner_date || '' },
+    }).catch(() => {});
+
+    const [withUrl] = await withSignedUrls(supabase, [saved]);
+    return Response.json({ planner: withUrl });
+  } catch (error) {
+    return Response.json({ error: error.message || 'Unknown error' }, { status: 500 });
   }
 }

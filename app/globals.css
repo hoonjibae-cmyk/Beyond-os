@@ -19225,6 +19225,13 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-confirm-links-list b{ min-width:72px; font-size:12.5px; font-weight:700; color:#1d1d1f; }
 .schedule-confirm-links-list a{ flex:1; font-size:12px; color:#0071e3; word-break:break-all; }
 .schedule-confirm-links-list button{ flex:none; padding:4px 10px; font-size:11.5px; }
+/* v41-235: 플래너 표에서 이미 올라간 사진을 바로 돌리는 버튼 */
+.planner-photo-cell{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.planner-photo-rotate{ display:inline-flex; align-items:center; gap:4px; }
+.planner-photo-rotate button{ width:auto !important; min-width:0 !important;
+  padding:2px 8px !important; font-size:13px !important; line-height:1.2 !important; }
+.planner-photo-rotate-state{ font-style:normal; font-size:11px; font-weight:800; color:#8a6a12; }
+
 /* v41-234: 위클리 학생 카드의 학교·학년 줄에 신청 상품 배지를 붙입니다. */
 .weekly-student-meta-line{ display:flex !important; align-items:center; gap:2px; flex-wrap:wrap; min-width:0; }
 

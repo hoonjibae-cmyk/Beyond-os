@@ -11,6 +11,7 @@ import { AUDIO_POLICIES, getAudioPolicy, getAudioPolicyLabel } from '../lib/audi
 import { MENTOR_COMMENT_TARGETS, DEFAULT_MENTOR_COMMENT_TARGET, getMentorCommentTarget, normalizeMentorCommentTarget } from '../lib/mentorCommentTarget';
 import { PLANNER_IMAGE_TARGETS, DEFAULT_PLANNER_IMAGE_TARGET, getPlannerImageTarget, normalizePlannerImageTarget } from '../lib/plannerImageTarget';
 import { getWeeklyInterviewTitle } from '../lib/weeklyInterview';
+import { normalizePlannerRotation, turnPlannerRotation, isPlannerRotationSideways } from '../lib/plannerRotation';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
@@ -3388,6 +3389,24 @@ export default function Page() {
     });
   }
 
+  // v41-235: 이미 올라간 사진의 방향만 고칩니다. 파일은 그대로 두고 각도만 저장하므로
+  // 이미 발송한 리포트도 다음에 열면 바로 선 사진으로 보입니다.
+  async function rotatePlannerPhoto(plannerId, rotation) {
+    try {
+      setMessage('플래너 사진 방향 저장 중...');
+      const data = await apiFetch('/api/planner', {
+        method: 'PATCH',
+        body: JSON.stringify({ plannerId, rotation }),
+      });
+      await loadPlanners(plannerDate);
+      setMessage(rotation ? `사진을 ${rotation}° 돌려 저장했습니다.` : '사진 방향을 원래대로 되돌렸습니다.');
+      return data.planner || null;
+    } catch (error) {
+      setMessage(error.message || '플래너 사진 방향 저장 실패');
+      return null;
+    }
+  }
+
   async function uploadPlannerFile({ studentId, date, file, memo, rotation = 0 }) {
     if (!studentId) return alert('학생을 선택하세요.');
     if (!file) return alert('업로드할 플래너 사진을 선택하세요.');
@@ -5920,6 +5939,7 @@ export default function Page() {
             loadPlanners={loadPlanners}
             runPlannerDiagnostics={runPlannerDiagnostics}
             uploadPlannerFile={uploadPlannerFile}
+            rotatePlannerPhoto={rotatePlannerPhoto}
           />
         ) : null}
 
@@ -12377,7 +12397,7 @@ function SchedulesTab(props) {
 
 
 
-function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlanners, runPlannerDiagnostics, uploadPlannerFile }) {
+function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlanners, runPlannerDiagnostics, uploadPlannerFile, rotatePlannerPhoto }) {
   const [studentId, setStudentId] = useState('');
   const [memo, setMemo] = useState('');
   const [file, setFile] = useState(null);
@@ -12520,7 +12540,22 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
                     <td>{planner?.memo || '-'}</td>
                     <td>
                       {planner?.signedUrl ? (
-                        <a href={planner.signedUrl} target="_blank" rel="noreferrer">사진 보기</a>
+                        <div className="planner-photo-cell">
+                          <a href={planner.signedUrl} target="_blank" rel="noreferrer">사진 보기</a>
+                          {/* v41-235: 이미 올라간 사진이 누워 있으면 여기서 바로 세웁니다.
+                              다시 올릴 필요가 없고, 이미 발송한 리포트에도 반영됩니다. */}
+                          {rotatePlannerPhoto ? (
+                            <div className="planner-photo-rotate">
+                              <button type="button" className="secondary" title="왼쪽으로 90° 돌리기"
+                                onClick={() => rotatePlannerPhoto(planner.id, turnPlannerRotation(planner.rotation, -90))}>↺</button>
+                              <button type="button" className="secondary" title="오른쪽으로 90° 돌리기"
+                                onClick={() => rotatePlannerPhoto(planner.id, turnPlannerRotation(planner.rotation, 90))}>↻</button>
+                              {normalizePlannerRotation(planner.rotation) ? (
+                                <em className="planner-photo-rotate-state">{normalizePlannerRotation(planner.rotation)}°</em>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
                       ) : '-'}
                     </td>
                     <td><button onClick={() => setStudentId(student.id)}>선택</button></td>
