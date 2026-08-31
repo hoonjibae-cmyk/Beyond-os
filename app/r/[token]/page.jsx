@@ -9,6 +9,7 @@ import { normalizePlannerImageTarget } from '../../../lib/plannerImageTarget';
 import { getWeeklyInterviewTitle } from '../../../lib/weeklyInterview';
 import { normalizePlannerRotation, isPlannerRotationSideways } from '../../../lib/plannerRotation';
 import { normalizeCohort, resolveCohortForDate } from '../../../lib/cohorts';
+import { summarizeFocusRatings } from '../../../lib/focusRating';
 import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 
 export const dynamic = 'force-dynamic';
@@ -1000,7 +1001,7 @@ async function loadReport(token) {
     if (session?.id) {
       const { data: checkRows } = await supabase
         .from('study_checks')
-        .select('id,subject,study_status,study_content,checked_at')
+        .select('id,subject,study_status,study_content,checked_at,focus_rating')
         .eq('session_id', session.id)
         .order('checked_at', { ascending: true });
       checks = checkRows || [];
@@ -1175,6 +1176,8 @@ export default async function PublicReportPage({ params }) {
   });
   const dailyCheckSummary = !isWeekly ? getDailyCheckSummary(session || {}, variables, events, dailyPointRows, schedule, operatingRules, studyWindows) : '';
   const dailyPointSummary = !isWeekly ? summarizePointRows(pointRows) : { reward: 0, penalty: 0, net: 0, count: 0 };
+  // v41-238: 오늘의 집중도 = 순찰 체크 별점의 평균. 별점이 없으면 percent 가 null 입니다.
+  const dailyFocus = !isWeekly ? summarizeFocusRatings(checks) : { percent: null, average: null, count: 0 };
 
   return (
     <main className="public-report-page">
@@ -1308,6 +1311,16 @@ export default async function PublicReportPage({ params }) {
               <MetricCard label="총 체류" value={getDailyStayDisplay(session || {})} />
               <MetricCard label="순공시간" value={dailyPureStudyDisplay} tone="good" />
               <MetricCard label="학습상태 기록" value={`${dailyLearningPeriods.length || 0}회`} />
+              {/* v41-238: 순찰 때 매긴 집중도 별점의 평균입니다.
+                  별점을 하나도 안 매긴 날은 칸 자체를 그리지 않습니다.
+                  0% 로 적으면 '집중 안 함'으로 읽히기 때문입니다. */}
+              {dailyFocus.percent !== null ? (
+                <MetricCard
+                  label="오늘의 집중도"
+                  value={`${dailyFocus.percent}%`}
+                  tone={dailyFocus.percent >= 80 ? 'good' : dailyFocus.percent >= 60 ? '' : 'warn'}
+                />
+              ) : null}
             </div>
           </section>
 

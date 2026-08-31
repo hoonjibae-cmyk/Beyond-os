@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
+import { normalizeFocusRating } from '../../../lib/focusRating';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +58,8 @@ export async function POST(request) {
       study_status: body.studyStatus,
       subject: body.subject,
       study_content: body.studyContent || null,
+      // v41-238: 순찰 때 매기는 집중도 별점(1~5). 0이면 매기지 않은 것입니다.
+      focus_rating: normalizeFocusRating(body.focusRating),
       mentor_memo: null,
       checked_by: actorName,
     };

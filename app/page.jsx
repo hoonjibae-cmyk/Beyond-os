@@ -12,6 +12,7 @@ import { MENTOR_COMMENT_TARGETS, DEFAULT_MENTOR_COMMENT_TARGET, getMentorComment
 import { PLANNER_IMAGE_TARGETS, DEFAULT_PLANNER_IMAGE_TARGET, getPlannerImageTarget, normalizePlannerImageTarget } from '../lib/plannerImageTarget';
 import { getWeeklyInterviewTitle } from '../lib/weeklyInterview';
 import { normalizePlannerRotation, turnPlannerRotation, isPlannerRotationSideways } from '../lib/plannerRotation';
+import { FOCUS_MAX, FOCUS_LABELS, normalizeFocusRating, getFocusLabel, summarizeFocusRatings } from '../lib/focusRating';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
@@ -3797,6 +3798,8 @@ export default function Page() {
       studyStatus: latestStudyCheck?.study_status || '인강',
       subject: latestStudyCheck?.subject || '수학',
       studyContent: '',
+      // v41-238: 체크할 때마다 새로 매깁니다. 이전 값을 끌어오지 않습니다.
+      focusRating: 0,
       reportMentorComment: session ? (reportsBySession[session.id]?.mentor_comment || '') : '',
       reportText: '',
       reportPlannerImageUrl: '',
@@ -4516,10 +4519,12 @@ export default function Page() {
           studyStatus: form.studyStatus,
           subject: form.subject,
           studyContent: form.studyContent,
+          // v41-238: 순찰 때 매기는 집중도 별점
+          focusRating: normalizeFocusRating(form.focusRating),
           adminName: currentUser?.displayName || '관리자',
         }),
       });
-      setForm((prev) => ({ ...prev, studyContent: '' }));
+      setForm((prev) => ({ ...prev, studyContent: '', focusRating: 0 }));
       await loadDashboard({ silent: true, suppressChangeNotice: true });
       setMessage('순찰 체크 저장 완료');
     } catch (error) {
@@ -6353,6 +6358,30 @@ export default function Page() {
               {STUDY_STATUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
             </select>
             <div className="hint">비학습: 카톡/SNS, 유튜브, 게임, 웹툰 등 학습과 무관한 행동</div>
+          </div>
+          {/* v41-238: 순찰 중 한 번에 누를 수 있게 별표를 크게 둡니다.
+              같은 별을 다시 누르면 해제됩니다(= 매기지 않음). */}
+          <div className="field focus-rating-field">
+            <label>집중도</label>
+            <div className="focus-rating-row" role="group" aria-label="집중도 별점">
+              {Array.from({ length: FOCUS_MAX }, (_, index) => index + 1).map((score) => {
+                const active = normalizeFocusRating(form.focusRating) >= score;
+                return (
+                  <button
+                    key={score}
+                    type="button"
+                    className={`focus-star${active ? ' on' : ''}`}
+                    aria-label={`${score}점 ${FOCUS_LABELS[score]}`}
+                    aria-pressed={active}
+                    title={FOCUS_LABELS[score]}
+                    onClick={() => setForm({ ...form, focusRating: normalizeFocusRating(form.focusRating) === score ? 0 : score })}
+                  >★</button>
+                );
+              })}
+              <span className="focus-rating-label">
+                {getFocusLabel(form.focusRating) || '안 매김 (평균에서 빠집니다)'}
+              </span>
+            </div>
           </div>
           <div className="field"><label>학습 내용 및 특이사항</label><textarea value={form.studyContent} onChange={(e) => setForm({ ...form, studyContent: e.target.value })} placeholder="예: 수1 지수로그 문제풀이 중. 집중도 양호." /></div>
           <div className="btn-row"><button className="primary" onClick={saveCheck}>순찰 체크 저장</button></div>
