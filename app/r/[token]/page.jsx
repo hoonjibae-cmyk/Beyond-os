@@ -8,6 +8,7 @@ import { normalizeMentorCommentTarget } from '../../../lib/mentorCommentTarget';
 import { normalizePlannerImageTarget } from '../../../lib/plannerImageTarget';
 import { getWeeklyInterviewTitle } from '../../../lib/weeklyInterview';
 import { normalizePlannerRotation, isPlannerRotationSideways } from '../../../lib/plannerRotation';
+import { normalizeCohort, resolveCohortForDate } from '../../../lib/cohorts';
 import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 
 export const dynamic = 'force-dynamic';
@@ -903,7 +904,27 @@ async function getStudentPointRewardRows(supabase, studentId) {
   }
 }
 
-async function getStudentPointRows(supabase, studentId, endDate = null) {
+// v41-237: 리포트 날짜가 속한 기수의 시작일을 찾습니다.
+//
+// 학부모 리포트는 공개 링크라 화면의 [기수 보기] 값이 없습니다. 그래서 관리자
+// 화면(v41-236)처럼 헤더로 기수를 받을 수 없고, 리포트 날짜로 기수를 되짚습니다.
+// 어느 기수에도 속하지 않는 날짜(기수 사이의 공백 등)이거나 기수를 못 읽으면
+// null 을 돌려주고 예전처럼 전체를 셉니다.
+async function getCohortStartForDate(supabase, dateString) {
+  if (!dateString) return null;
+  try {
+    const { data, error } = await supabase
+      .from('cohorts')
+      .select('id, name, start_date, end_date, sort_order, is_active');
+    if (error) throw error;
+    const cohort = resolveCohortForDate((data || []).map(normalizeCohort), dateString);
+    return cohort?.startDate || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getStudentPointRows(supabase, studentId, endDate = null, startDate = null) {
   if (!studentId) return [];
   try {
     let query = supabase
@@ -915,6 +936,8 @@ async function getStudentPointRows(supabase, studentId, endDate = null) {
       .order('created_at', { ascending: false });
 
     if (endDate) query = query.lte('point_date', endDate);
+    // v41-237: 지난 기수 기록이 이번 기수 리포트에 얹히지 않게 합니다.
+    if (startDate) query = query.gte('point_date', startDate);
 
     const { data, error } = await query;
     if (error) throw error;
@@ -986,7 +1009,11 @@ async function loadReport(token) {
     const planner = await getPlannerImage(supabase, session);
     const reportDate = session?.session_date || report.report_date || null;
     const pointStudentId = session?.student_id || report.student_id;
-    const allPointRows = await getStudentPointRows(supabase, pointStudentId, reportDate);
+    // v41-237: 기수 경계를 먼저 자르고, 그 안에서 상품 지급 사이클을 적용합니다.
+    //   기수 → 지난 기수 벌점이 이번 기수 리포트에 얹히지 않게
+    //   상품 지급 → '상품 받은 뒤 얼마나 모았나'라는 기존 표기를 그대로 유지
+    const pointCohortStart = await getCohortStartForDate(supabase, reportDate);
+    const allPointRows = await getStudentPointRows(supabase, pointStudentId, reportDate, pointCohortStart);
     const pointRewardRows = await getStudentPointRewardRows(supabase, pointStudentId);
     // v41-137: 상품 지급 시점 이후의 기록만 '누적'으로 집계합니다. (원본 기록은 그대로 보관)
     const pointCycle = resolvePointCycle(allPointRows, pointRewardRows, {
@@ -1386,7 +1413,8 @@ export default async function PublicReportPage({ params }) {
                     </li>
                   ))}
                 </ul>
-                <p>상품 지급 후에는 상벌점이 0점부터 다시 누적됩니다.</p>
+                {/* v41-237: 기수 경계도 함께 적용되므로 문구에 함께 밝힙니다. */}
+                <p>상품 지급 후에는 상벌점이 0점부터 다시 누적됩니다. 기수가 바뀌어도 처음부터 다시 시작합니다.</p>
               </div>
             ) : null}
           </Card>
