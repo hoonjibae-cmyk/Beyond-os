@@ -387,7 +387,10 @@ export async function GET(request) {
       .order('created_at', { ascending: false })
       .limit(200));
     if (pointsResult.warning) warnings.push(pointsResult.warning);
-    const pointRows = pointsResult.rows;
+    // v41-236: 상벌점도 보고 있는 기수 기간만 셉니다.
+    // 상벌점 관리 화면(student-point-rewards)과 같은 기준이라야 두 화면 숫자가
+    // 맞습니다. 기수를 못 정한 경우에는 예전처럼 전체를 씁니다.
+    const pointRows = pointsResult.rows.filter((row) => inCohortRange(row.point_date));
 
     // v41-137: 상품 지급으로 리셋된 이후의 '현재 사이클' 기준으로 누적 점수를 계산합니다.
     const rewardHistoryResult = await safeSelect('상품 지급 이력', () => supabase

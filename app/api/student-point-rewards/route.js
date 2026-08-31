@@ -11,6 +11,8 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse, requireTabPermission, getAuthorizedUser } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { sendPointNotification } from '../../../lib/pointNotifications';
+import { getCohortIdFromRequest, resolveScopeCohort } from '../../../lib/cohortScope';
+import { getKstDateString } from '../../../lib/date';
 import {
   POINT_REWARD_THRESHOLD,
   PENALTY_STAGES,
@@ -26,19 +28,47 @@ export const dynamic = 'force-dynamic';
 const MISSING_TABLE_HINT = 'beyond-os-supabase-student-point-rewards-v41-137.sql 실행 여부를 확인하세요.';
 const PENALTY_TABLE_HINT = 'beyond-os-supabase-student-penalty-actions-v41-156.sql 실행 여부를 확인하세요.';
 
+// v41-236: 상벌점은 기수별로 따로 셉니다.
+//
+// 지금까지는 학생의 모든 기록을 합산해서, 2기 학생 화면에 1기 벌점이 그대로
+// 얹혀 있었습니다. 기수가 바뀌면 상벌점도 처음부터 시작해야 합니다.
+//
+// 기수를 못 찾으면 null 을 돌려주고 예전처럼 전체를 셉니다.
+// (기수를 아직 만들지 않은 환경에서 화면이 비지 않게)
+async function resolvePointCohortRange(supabase, request) {
+  try {
+    const cohort = await resolveScopeCohort(supabase, getCohortIdFromRequest(request), getKstDateString());
+    if (!cohort?.id) return null;
+    const { data, error } = await supabase
+      .from('cohorts')
+      .select('id, name, start_date, end_date')
+      .eq('id', cohort.id)
+      .maybeSingle();
+    if (error) throw error;
+    const start = String(data?.start_date || '').slice(0, 10);
+    const end = String(data?.end_date || '').slice(0, 10);
+    if (!start || !end) return null;
+    return { id: String(data.id), name: data.name || '', start, end };
+  } catch {
+    return null;
+  }
+}
+
 function isMissingTableError(error) {
   const message = String(error?.message || '').toLowerCase();
   return error?.code === '42P01' || message.includes('student_point_rewards') || message.includes('does not exist') || message.includes('schema cache');
 }
 
 // v41-156: 벌점 단계 조치 기록. 테이블이 없어도 상품 지급 기능은 그대로 동작해야 합니다.
-async function loadPenaltyActionRows(supabase, studentId) {
+async function loadPenaltyActionRows(supabase, studentId, range = null) {
   try {
     let query = supabase
       .from('student_penalty_actions')
       .select('*')
       .order('created_at', { ascending: true });
     if (studentId) query = query.eq('student_id', String(studentId));
+    // 조치 기록에는 날짜 컬럼이 없어 생성 시각으로 자릅니다.
+    if (range) query = query.gte('created_at', `${range.start}T00:00:00+09:00`).lte('created_at', `${range.end}T23:59:59+09:00`);
     const { data, error } = await query;
     if (error) throw error;
     return { rows: data || [], warning: '' };
@@ -51,25 +81,27 @@ async function loadPenaltyActionRows(supabase, studentId) {
   }
 }
 
-async function loadPointRows(supabase, studentId) {
+async function loadPointRows(supabase, studentId, range = null) {
   let query = supabase
     .from('student_points')
     .select('id,student_id,point_date,point_type,points,reason,memo,created_by,created_at')
     .eq('is_deleted', false)
     .order('created_at', { ascending: true });
   if (studentId) query = query.eq('student_id', String(studentId));
+  if (range) query = query.gte('point_date', range.start).lte('point_date', range.end);
   const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }
 
-async function loadRewardRows(supabase, studentId) {
+async function loadRewardRows(supabase, studentId, range = null) {
   try {
     let query = supabase
       .from('student_point_rewards')
       .select('*')
       .order('created_at', { ascending: true });
     if (studentId) query = query.eq('student_id', String(studentId));
+    if (range) query = query.gte('created_at', `${range.start}T00:00:00+09:00`).lte('created_at', `${range.end}T23:59:59+09:00`);
     const { data, error } = await query;
     if (error) throw error;
     return { rows: data || [], warning: '' };
@@ -89,10 +121,12 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const studentId = String(searchParams.get('studentId') || '').trim();
 
+    // v41-236: 지금 보고 있는 기수 기간의 기록만 셉니다.
+    const cohortRange = await resolvePointCohortRange(supabase, request);
     const [pointRows, rewardResult, penaltyResult] = await Promise.all([
-      loadPointRows(supabase, studentId),
-      loadRewardRows(supabase, studentId),
-      loadPenaltyActionRows(supabase, studentId),
+      loadPointRows(supabase, studentId, cohortRange),
+      loadRewardRows(supabase, studentId, cohortRange),
+      loadPenaltyActionRows(supabase, studentId, cohortRange),
     ]);
 
     if (studentId) {
@@ -209,6 +243,8 @@ export async function POST(request) {
     const supabase = getSupabaseAdmin();
     const actor = getAuthorizedUser(request);
     const actorName = actor?.displayName || body.createdBy || '관리자';
+    // v41-236: 저장·판정도 화면과 같은 기수 기간을 봐야 숫자가 어긋나지 않습니다.
+    const cohortRange = await resolvePointCohortRange(supabase, request);
 
     // ── v41-156: 벌점 단계 조치 기록 ─────────────────────────
     if (action === 'penalty_done' || action === 'penalty_defer') {
@@ -219,9 +255,9 @@ export async function POST(request) {
       }
 
       const [points, penaltyRows, rewardsForStage] = await Promise.all([
-        loadPointRows(supabase, studentId),
-        loadPenaltyActionRows(supabase, studentId),
-        loadRewardRows(supabase, studentId),
+        loadPointRows(supabase, studentId, cohortRange),
+        loadPenaltyActionRows(supabase, studentId, cohortRange),
+        loadRewardRows(supabase, studentId, cohortRange),
       ]);
       if (penaltyRows.warning) {
         return Response.json({ error: penaltyRows.warning }, { status: 400 });
@@ -295,8 +331,8 @@ export async function POST(request) {
     }
 
     const [pointRows, rewardResult] = await Promise.all([
-      loadPointRows(supabase, studentId),
-      loadRewardRows(supabase, studentId),
+      loadPointRows(supabase, studentId, cohortRange),
+      loadRewardRows(supabase, studentId, cohortRange),
     ]);
     if (rewardResult.warning) {
       return Response.json({ error: rewardResult.warning }, { status: 400 });
