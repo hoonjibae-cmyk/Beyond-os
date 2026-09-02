@@ -837,7 +837,10 @@ function buildDailyLearningPeriodsFromChecks(checks = [], defaultSchedule = {}) 
       const content = [...new Set(sorted.map((check) => String(check.study_content || '').trim()).filter(Boolean))].join(' / ');
       const times = sorted.map((check) => formatTime(check.checked_at)).filter((value) => value && value !== '-');
       const checkedNote = times.length ? `체크 ${times.join(', ')}` : '';
-      return { title: group.title, timeRange: group.timeRange, status, content, checkedNote };
+      // v41-239: 그 차시에서 매긴 집중도. 한 차시에 여러 번 체크했으면 평균입니다.
+      // 별점을 안 매긴 체크만 있으면 percent 가 null 이라 표시하지 않습니다.
+      const focus = summarizeFocusRatings(sorted);
+      return { title: group.title, timeRange: group.timeRange, status, content, checkedNote, focusPercent: focus.percent };
     });
 }
 
@@ -1353,6 +1356,12 @@ export default async function PublicReportPage({ params }) {
                     <div className="learning-period-head">
                       <span>{row.title}</span>
                       {row.timeRange ? <strong>{row.timeRange}</strong> : null}
+                      {/* v41-239: 차시별 집중도. 별점을 안 매긴 차시는 표시하지 않습니다. */}
+                      {row.focusPercent !== null && row.focusPercent !== undefined ? (
+                        <em className={`learning-period-focus${row.focusPercent >= 80 ? ' good' : row.focusPercent < 60 ? ' warn' : ''}`}>
+                          집중도 {row.focusPercent}%
+                        </em>
+                      ) : null}
                     </div>
                     <div className="learning-period-status">{row.status}</div>
                     {row.content ? <p>{row.content}</p> : null}
@@ -1580,6 +1589,29 @@ const styles = `
     color: #6e6e73;
     font-size: 14px;
     text-align: right;
+  }
+  /* v41-239: 차시 옆에 붙는 집중도 배지 */
+  .learning-period-focus {
+    flex: none;
+    padding: 2px 9px;
+    border-radius: 999px;
+    border: 1px solid #d2d2d7;
+    background: #f5f5f7;
+    color: #424245;
+    font-style: normal;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .learning-period-focus.good {
+    border-color: #a9d5b5;
+    background: #eaf7ee;
+    color: #2f6b3a;
+  }
+  .learning-period-focus.warn {
+    border-color: #f0d79a;
+    background: #fff8e8;
+    color: #8a6a12;
   }
   .learning-period-list {
     display: grid;

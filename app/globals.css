@@ -19234,6 +19234,9 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .focus-rating-row .focus-star.on{ color:#f0b400 !important; }
 .focus-rating-row .focus-star:hover{ color:#f0c94a !important; }
 .focus-rating-label{ margin-left:8px; font-size:12px; font-weight:800; color:#6e6e73; }
+/* v41-239: 순찰 기록 목록에 표시하는 집중도 */
+.study-check-focus{ display:inline-block; margin-left:6px; font-style:normal;
+  font-size:11.5px; font-weight:800; color:#b8860b; letter-spacing:-0.3px; }
 
 /* v41-235: 플래너 표에서 이미 올라간 사진을 바로 돌리는 버튼 */
 .planner-photo-cell{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }

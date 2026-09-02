@@ -122,6 +122,8 @@ export async function PUT(request) {
       study_status: body.studyStatus || null,
       subject: body.subject || null,
       study_content: String(body.studyContent || '').trim() || null,
+      // v41-239: 집중도도 수정·삭제(0으로 되돌리기)할 수 있어야 합니다.
+      focus_rating: normalizeFocusRating(body.focusRating),
       checked_by: actorName,
     };
 

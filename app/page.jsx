@@ -4543,6 +4543,8 @@ export default function Page() {
       checkedTime: formatKstTime(check.checked_at) !== '-' ? formatKstTime(check.checked_at) : getCurrentKstTime(),
       subject: check.subject || '수학',
       studyStatus: check.study_status || '문제풀이',
+      // v41-239: 저장된 집중도를 그대로 올려서 고치거나 지울 수 있게 합니다.
+      focusRating: normalizeFocusRating(check.focus_rating),
       studyContent: check.study_content || '',
     });
   }
@@ -4570,6 +4572,7 @@ export default function Page() {
           subject: studyCheckEditor.subject,
           studyStatus: studyCheckEditor.studyStatus,
           studyContent: studyCheckEditor.studyContent,
+          focusRating: normalizeFocusRating(studyCheckEditor.focusRating),
           adminName: currentUser?.displayName || '관리자',
         }),
       });
@@ -6483,6 +6486,33 @@ export default function Page() {
                         </select>
                       </div>
                     </div>
+                    {/* v41-239: 집중도도 고치거나 지울 수 있습니다.
+                        같은 별을 다시 누르면 해제되어 '안 매김'으로 저장됩니다. */}
+                    <div className="field focus-rating-field">
+                      <label>집중도</label>
+                      <div className="focus-rating-row" role="group" aria-label="집중도 별점">
+                        {Array.from({ length: FOCUS_MAX }, (_, index) => index + 1).map((score) => {
+                          const active = normalizeFocusRating(studyCheckEditor.focusRating) >= score;
+                          return (
+                            <button
+                              key={score}
+                              type="button"
+                              className={`focus-star${active ? ' on' : ''}`}
+                              aria-label={`${score}점 ${FOCUS_LABELS[score]}`}
+                              aria-pressed={active}
+                              title={FOCUS_LABELS[score]}
+                              onClick={() => setStudyCheckEditor((prev) => ({
+                                ...prev,
+                                focusRating: normalizeFocusRating(prev.focusRating) === score ? 0 : score,
+                              }))}
+                            >★</button>
+                          );
+                        })}
+                        <span className="focus-rating-label">
+                          {getFocusLabel(studyCheckEditor.focusRating) || '안 매김 (평균에서 빠집니다)'}
+                        </span>
+                      </div>
+                    </div>
                     <div className="field">
                       <label>학습 내용 및 특이사항</label>
                       <textarea value={studyCheckEditor.studyContent} onChange={(e) => setStudyCheckEditor((prev) => ({ ...prev, studyContent: e.target.value }))} placeholder="예: 수1 지수로그 문제풀이 중. 집중도 양호." />
@@ -6494,7 +6524,12 @@ export default function Page() {
                   </div>
                 ) : (
                   <>
-                    <strong>{periodMeta.label} · {formatKstTime(check.checked_at)} / {check.subject || '-'} / {check.study_status || '-'}</strong><br />
+                    <strong>{periodMeta.label} · {formatKstTime(check.checked_at)} / {check.subject || '-'} / {check.study_status || '-'}</strong>
+                    {/* v41-239: 매긴 집중도를 목록에서도 바로 확인합니다. */}
+                    {normalizeFocusRating(check.focus_rating) ? (
+                      <em className="study-check-focus">{'★'.repeat(normalizeFocusRating(check.focus_rating))} {getFocusLabel(check.focus_rating)}</em>
+                    ) : null}
+                    <br />
                     {check.study_content || '학습 내용 및 특이사항 미입력'}
                     <div className="history-action-row">
                       <button type="button" className="secondary tiny-action" onClick={() => startEditStudyCheck(check)}>수정</button>
