@@ -72,6 +72,24 @@ async function findExistingPlanner(supabase, studentId, plannerDate) {
   return data || null;
 }
 
+// v41-240: 중복 방지 인덱스가 없는 환경에서만 쓰는 예전 방식입니다.
+// 경쟁 상태를 막지 못하므로 upsert 가 안 될 때만 씁니다.
+async function saveWithoutUpsert(supabase, payload, existing) {
+  const result = existing?.id
+    ? await supabase
+      .from('planner_photos')
+      .update(payload)
+      .eq('id', existing.id)
+      .select('*, students(*)')
+      .single()
+    : await supabase
+      .from('planner_photos')
+      .insert(payload)
+      .select('*, students(*)')
+      .single();
+  return { saved: result.data, saveError: result.error };
+}
+
 export async function GET(request) {
   if (!isAuthorized(request)) return unauthorizedResponse();
 
@@ -171,24 +189,35 @@ export async function POST(request) {
     let saved;
     let saveError;
 
-    if (existing?.id) {
-      const result = await supabase
-        .from('planner_photos')
-        .update(payload)
-        .eq('id', existing.id)
-        .select('*, students(*)')
-        .single();
-      saved = result.data;
-      saveError = result.error;
+    // v41-240: 같은 학생·같은 날짜는 한 줄만 있어야 합니다. (unique index)
+    //
+    // 지금까지는 '먼저 찾아보고 있으면 UPDATE, 없으면 INSERT' 였습니다.
+    // 찾는 순간과 넣는 순간 사이에 다른 요청이 끼어들면 둘 다 '없음'으로 보고
+    // 각자 INSERT 해서, 뒤에 도착한 쪽이 아래 오류로 죽었습니다.
+    //   duplicate key value violates unique constraint
+    //   "idx_planner_photos_student_date"
+    // 업로드 버튼을 두 번 누르거나(모바일에서 응답이 느려 흔합니다) 두 사람이
+    // 같은 학생을 동시에 올릴 때 재현됩니다. 실제로는 앞선 요청이 이미 저장을
+    // 마친 뒤라, 사진은 들어갔는데 화면에는 실패로 뜨는 상황이었습니다.
+    //
+    // upsert 는 찾기와 넣기를 DB 한 번의 처리로 묶어 이 틈을 없앱니다.
+    // 인덱스가 없는 환경(옛 SQL 미실행)에서는 42P10 이 나므로, 그때만
+    // 예전 방식으로 물러섭니다.
+    const upsertResult = await supabase
+      .from('planner_photos')
+      .upsert({ ...payload, ...(existing?.id ? { id: existing.id } : {}) }, { onConflict: 'student_id,planner_date' })
+      .select('*, students(*)')
+      .single();
+
+    if (!upsertResult.error) {
+      saved = upsertResult.data;
+    } else if (String(upsertResult.error.code || '') === '42P10') {
+      // 중복 방지 인덱스가 없는 환경. 예전 방식 그대로 진행합니다.
+      ({ saved, saveError } = await saveWithoutUpsert(supabase, payload, existing));
     } else {
-      const result = await supabase
-        .from('planner_photos')
-        .insert(payload)
-        .select('*, students(*)')
-        .single();
-      saved = result.data;
-      saveError = result.error;
+      saveError = upsertResult.error;
     }
+
 
     if (saveError) {
       await supabase.storage.from(BUCKET).remove([filePath]);

@@ -12468,6 +12468,8 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
   // v41-226: 업로드 전에 사진을 돌려 볼 수 있게 합니다. 저장할 때 이 각도가 사진에 구워집니다.
   const [rotation, setRotation] = useState(0);
   const [previewUrl, setPreviewUrl] = useState('');
+  // v41-240: 업로드 중에는 버튼을 잠급니다.
+  const [uploading, setUploading] = useState(false);
 
   // 미리보기 주소는 다 쓰면 반드시 반납해야 합니다. (안 하면 브라우저 메모리에 남습니다)
   useEffect(() => {
@@ -12497,6 +12499,11 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
   }
 
   async function submitUpload() {
+    // v41-240: 두 번 눌리면 같은 학생·날짜로 두 번 올라가 중복 오류가 납니다.
+    // (모바일에서 사진 전송이 느려 응답 전에 다시 누르기 쉽습니다)
+    if (uploading) return;
+    setUploading(true);
+    try {
     const saved = await uploadPlannerFile({ studentId, date: plannerDate, file, memo, rotation });
     if (saved) {
       setMemo('');
@@ -12506,6 +12513,9 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
       if (input) input.value = '';
       const cameraInput = document.getElementById('planner-camera-input');
       if (cameraInput) cameraInput.value = '';
+    }
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -12568,7 +12578,7 @@ function PlannerTab({ students, planners, plannerDate, setPlannerDate, loadPlann
             <label>메모</label>
             <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="예: 플래너 작성 상태 양호" />
           </div>
-          <button className="primary full-width-btn" onClick={submitUpload}>플래너 업로드</button>
+          <button className="primary full-width-btn" onClick={submitUpload} disabled={uploading}>{uploading ? '업로드 중...' : '플래너 업로드'}</button>
           <div className="hint">같은 날짜/학생으로 다시 업로드하면 기존 사진이 교체됩니다.</div>
         </section>
 
