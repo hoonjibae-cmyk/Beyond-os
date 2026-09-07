@@ -20,7 +20,7 @@ import { getKstDateString } from '../../../../lib/date';
 import { loadCohortRange, loadCohortStudentIds } from '../../../../lib/cohortScope';
 import { getPointAutoRules } from '../../../../lib/pointAutoRulesServer';
 import { resolvePointCyclesByStudent } from '../../../../lib/studentPointCycle';
-import { AUTO_TABLE_HINT, getPreviousWeekRange, resolveStudyTier, evaluatePerfectAttendance, formatMinutesKo } from '../../../../lib/pointAutoRules';
+import { AUTO_TABLE_HINT, getPreviousWeekRange, addDaysToDateString, resolveStudyTier, evaluatePerfectAttendance, formatMinutesKo } from '../../../../lib/pointAutoRules';
 
 export const AUTO_AWARD_ACTOR = '시스템 자동';
 
@@ -137,7 +137,24 @@ async function loadWeeklyStudyMinutes(supabase, week, studentIds) {
   return { minutesByStudent, daysByStudent, minutesByStudentDate, sessionByStudentDate };
 }
 
-/** 그 주 개인 시간표 (예정 등원일 판정용) */
+/**
+ * 그 주(월~일) 중 센터가 문을 여는 날.
+ *
+ * 개근 판정의 대상일입니다. 공휴일이나 설정에서 꺼 둔 요일(예: 일요일 미운영)은
+ * 빠지고, 그 외에는 개인 시간표가 있든 없든 전부 들어갑니다.
+ */
+async function loadOperatingDates(supabase, week) {
+  const scheduleConfig = await getDefaultScheduleConfig(supabase);
+  const dates = [];
+  for (let offset = 0; offset < 7; offset += 1) {
+    const date = addDaysToDateString(week.start, offset);
+    if (!date) continue;
+    if (resolveScheduleForDate(scheduleConfig, date).operating) dates.push(date);
+  }
+  return dates;
+}
+
+/** 그 주 개인 시간표 (지각 판정용 예정 등원 시각) */
 async function loadWeeklySchedules(supabase, week, studentIds) {
   try {
     const rows = await selectInChunks(studentIds, (part) => supabase
@@ -237,7 +254,7 @@ async function insertAutoAward({ supabase, student, week, runDate, kind, points,
 }
 
 /** 1) 자동 상점 부여 — 주간 순공 구간 + 주간 개근 (둘 다 받을 수 있습니다) */
-async function awardWeeklyPoints({ supabase, rules, week, runDate, students, minutesByStudent, minutesByStudentDate, sessionByStudentDate, schedulesByStudent, lateThresholdMinutes }) {
+async function awardWeeklyPoints({ supabase, rules, week, runDate, students, minutesByStudent, minutesByStudentDate, sessionByStudentDate, schedulesByStudent, operatingDates, lateThresholdMinutes }) {
   const wantsStudy = rules.autoRewardEnabled && rules.tiers.length > 0;
   const wantsPerfect = rules.perfectAttendanceEnabled && rules.perfectAttendancePoints > 0;
 
@@ -306,6 +323,7 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, min
     // 순공 구간 상점과 별개입니다. 같은 주에 둘 다 받을 수 있습니다.
     if (!wantsPerfect || alreadyAwarded.has(`${key}::perfect`)) continue;
     const perfect = evaluatePerfectAttendance({
+      operatingDates,
       schedules: schedulesByStudent[key] || [],
       sessionsByDate: sessionByStudentDate[key] || {},
       minutesByDate: minutesByStudentDate[key] || {},
@@ -321,14 +339,14 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, min
       studyMinutes: minutes,
       tierMinMinutes: rules.perfectAttendanceDailyMinutes,
       tierLabel: '주간 개근',
-      reason: `주간 개근 자동 상점 · ${week.start}~${week.end} 등원 ${perfect.scheduledDays}일 무지각·무결석`,
+      reason: `주간 개근 자동 상점 · ${week.start}~${week.end} 운영일 ${perfect.operatingDays}일 전원 등원`,
       memo: `일일 최소 순공 ${formatMinutesKo(rules.perfectAttendanceDailyMinutes)} 충족 · ${runDate} 자동 부여`,
     });
     if (result.status === 'awarded') {
       awarded.push({
         studentId: key, name: student.name || '학생', kind: 'perfect',
         studyMinutes: minutes, studyLabel: formatMinutesKo(minutes),
-        scheduledDays: perfect.scheduledDays, points: rules.perfectAttendancePoints,
+        operatingDays: perfect.operatingDays, points: rules.perfectAttendancePoints,
       });
     } else if (result.status === 'failed') {
       failures.push({ studentId: key, name: student.name || '', kind: 'perfect', message: result.message });
@@ -477,16 +495,20 @@ export async function runWeeklyPointBatch({ supabase, runDate: requestedRunDate,
     await loadWeeklyStudyMinutes(supabase, week, studentIds);
 
   let awardResult = { awarded: [], failures: [], skipped: mode === 'scan' ? 'scan-only' : '', warning: '' };
+  let operatingDayCount = 0;
   if (mode !== 'scan') {
-    const [scheduleResult, lateThresholdMinutes] = await Promise.all([
+    const [scheduleResult, operatingDates, lateThresholdMinutes] = await Promise.all([
       loadWeeklySchedules(supabase, week, studentIds),
+      loadOperatingDates(supabase, week),
       loadLateThresholdMinutes(supabase),
     ]);
     if (scheduleResult.warning) warnings.push(scheduleResult.warning);
+    operatingDayCount = operatingDates.length;
     awardResult = await awardWeeklyPoints({
       supabase, rules, week, runDate, students,
       minutesByStudent, minutesByStudentDate, sessionByStudentDate,
       schedulesByStudent: scheduleResult.byStudent,
+      operatingDates,
       lateThresholdMinutes,
     });
   }
@@ -525,6 +547,7 @@ export async function runWeeklyPointBatch({ supabase, runDate: requestedRunDate,
     scopedToCohort,
     studentCount: students.length,
     attendedCount: Object.keys(daysByStudent).length,
+    operatingDayCount,
     awarded: awardResult.awarded || [],
     awardedByKind: {
       study: (awardResult.awarded || []).filter((row) => row.kind === 'study').length,

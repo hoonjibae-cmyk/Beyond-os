@@ -16290,7 +16290,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
               <strong>주간 개근 상점</strong>
               <span>
                 순공시간 구간 상점과 <b>따로</b> 계산합니다. 같은 주에 둘 다 받을 수 있습니다.
-                그 주 개인 시간표에 잡힌 등원일을 <b>전부</b> 지키고 <b>지각·결석이 하나도 없어야</b> 부여합니다.
+                그 주에 <b>센터가 문을 여는 날은 전부</b> 나와야 하고, <b>지각·결석이 하나도 없어야</b> 부여합니다.
+                개인 시간표가 없는 날(일요일 자율학습 등)이나 시간표에 결석으로 등록해 둔 날도 나와야 합니다.
               </span>
             </div>
             <label className="point-auto-toggle">
@@ -16337,7 +16338,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
               </div>
             </div>
             <p className="point-auto-rules-note">
-              사전에 신고한 결석도 결석으로 봅니다. 지각 판정 기준은 설정 · 운영 기준의 [지각 허용 시간]을 그대로 씁니다.
+              대상일은 설정 · 기본 시간표에서 <b>운영으로 켜 둔 요일</b>과 공휴일 설정을 따릅니다. 문을 닫는 날은 대상에서 빠집니다.
+              지각은 개인 시간표에 등원 시각이 정해진 날만 보며, 기준은 설정 · 운영 기준의 [지각 허용 시간]을 그대로 씁니다.
             </p>
           </div>
 
@@ -16534,7 +16536,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                   </em>
                   <i>
                     {row.award_kind === 'perfect'
-                      ? `무지각·무결석 · 일일 최소 ${formatMinutesKo(row.tier_min_minutes)}`
+                      ? `운영일 전원 등원 · 일일 최소 ${formatMinutesKo(row.tier_min_minutes)}`
                       : `${row.tier_label ? `${row.tier_label} · ` : ''}${formatMinutesKo(row.tier_min_minutes)} 이상`}
                   </i>
                   <b>+{row.points}점</b>
