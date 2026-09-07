@@ -11,6 +11,7 @@ import { AUDIO_POLICIES, getAudioPolicy, getAudioPolicyLabel } from '../lib/audi
 import { MENTOR_COMMENT_TARGETS, DEFAULT_MENTOR_COMMENT_TARGET, getMentorCommentTarget, normalizeMentorCommentTarget } from '../lib/mentorCommentTarget';
 import { PLANNER_IMAGE_TARGETS, DEFAULT_PLANNER_IMAGE_TARGET, getPlannerImageTarget, normalizePlannerImageTarget } from '../lib/plannerImageTarget';
 import { getWeeklyInterviewTitle } from '../lib/weeklyInterview';
+import { DEFAULT_POINT_AUTO_RULES, SAMPLE_POINT_AUTO_TIERS, MAX_AUTO_TIERS, normalizePointAutoRules, formatMinutesKo } from '../lib/pointAutoRules';
 import { normalizePlannerRotation, turnPlannerRotation, isPlannerRotationSideways } from '../lib/plannerRotation';
 import { FOCUS_MAX, FOCUS_LABELS, normalizeFocusRating, getFocusLabel, summarizeFocusRatings } from '../lib/focusRating';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
@@ -15881,6 +15882,13 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   const [rewardState, setRewardState] = useState(null);
   const [rewardWorkingId, setRewardWorkingId] = useState('');
 
+  // v41-241: 주간 순공 자동 상점 구간표 / 상품 지급 기준 설정
+  const [autoRules, setAutoRules] = useState(DEFAULT_POINT_AUTO_RULES);
+  const [autoRulesOpen, setAutoRulesOpen] = useState(false);
+  const [autoRulesSaving, setAutoRulesSaving] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [autoAwardOpen, setAutoAwardOpen] = useState(false);
+
   // v41-127: 상벌점 기록을 '일자별 나열'에서 '학생별 대분류 → 학생 안에서 일자별'로 재구성합니다.
   // v41-171: 헤더 [기수 보기]로 좁힌 경우 상벌점 기록도 그 기수 학생만 보여줍니다.
   const cohortScopeIdSet = useMemo(() => (
@@ -15925,7 +15933,80 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   useEffect(() => {
     loadPoints();
     loadRewardState();
+    loadAutoRules();
   }, []);
+
+  // v41-241: 자동 상점 구간표와 지급 기준을 읽습니다.
+  async function loadAutoRules() {
+    try {
+      const data = await apiFetch('/api/point-auto-rules');
+      setAutoRules(normalizePointAutoRules(data?.rules || DEFAULT_POINT_AUTO_RULES));
+    } catch {
+      // 설정을 못 읽어도 화면은 떠야 합니다. 기본값으로 둡니다.
+    }
+  }
+
+  function updateAutoRules(patch) {
+    setAutoRules((prev) => ({ ...prev, ...patch }));
+  }
+
+  function updateAutoTier(index, patch) {
+    setAutoRules((prev) => ({
+      ...prev,
+      tiers: (prev.tiers || []).map((tier, i) => (i === index ? { ...tier, ...patch } : tier)),
+    }));
+  }
+
+  function addAutoTier() {
+    setAutoRules((prev) => {
+      if ((prev.tiers || []).length >= MAX_AUTO_TIERS) return prev;
+      return { ...prev, tiers: [...(prev.tiers || []), { minMinutes: 0, points: 1, label: '' }] };
+    });
+  }
+
+  function removeAutoTier(index) {
+    setAutoRules((prev) => ({ ...prev, tiers: (prev.tiers || []).filter((_, i) => i !== index) }));
+  }
+
+  async function saveAutoRules() {
+    const cleaned = normalizePointAutoRules(autoRules);
+    if (cleaned.autoRewardEnabled && !cleaned.tiers.length) {
+      const goOn = confirm('순공시간 구간이 하나도 없습니다.\n\n이대로 저장하면 자동 상점은 부여되지 않습니다. 계속할까요?');
+      if (!goOn) return;
+    }
+    try {
+      setAutoRulesSaving(true);
+      const data = await apiFetch('/api/point-auto-rules', {
+        method: 'POST',
+        body: JSON.stringify({ rules: cleaned }),
+      });
+      setAutoRules(normalizePointAutoRules(data?.rules || cleaned));
+      setMessage?.('자동 상점 기준을 저장했습니다.');
+      await loadRewardState();
+    } catch (error) {
+      setMessage?.(error.message || '자동 상점 기준 저장 실패');
+    } finally {
+      setAutoRulesSaving(false);
+    }
+  }
+
+  // v41-241: 다음 월요일을 기다리지 않고 지금 명단을 다시 만듭니다.
+  // 상점은 건드리지 않습니다(mode=scan). 순점수 스캔만 다시 합니다.
+  async function rescanRewardTargets() {
+    if (!confirm('지금 전체 학생 순점수를 다시 스캔해 상품 지급 대상 명단을 새로 만들까요?\n\n▶ 상점/벌점 기록은 바뀌지 않습니다. 명단만 지금 기준으로 갱신됩니다.')) return;
+    try {
+      setScanning(true);
+      const data = await apiFetch('/api/cron/weekly-points?mode=scan', { method: 'POST' });
+      setMessage?.(data?.warning
+        ? `스캔 완료 · 대상 ${data?.eligible?.length || 0}명 (${data.warning})`
+        : `스캔 완료 · 학생 ${data?.scannedCount || 0}명 중 상품 지급 대상 ${data?.eligible?.length || 0}명`);
+      await loadRewardState();
+    } catch (error) {
+      setMessage?.(error.message || '스캔 실패');
+    } finally {
+      setScanning(false);
+    }
+  }
 
   // v41-137: 상품 지급 대상(순점수 기준 초과) 학생과 지급 이력을 조회합니다.
   async function loadRewardState() {
@@ -16096,9 +16177,149 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
           <button className="secondary section-action" onClick={() => setPreset('today')}>오늘</button>
           <button className="secondary section-action" onClick={() => setPreset('week')}>이번 주</button>
           <button className="secondary section-action" onClick={() => setPreset('month')}>이번 달</button>
+          <button
+            className={autoRulesOpen ? 'primary section-action' : 'secondary section-action'}
+            onClick={() => setAutoRulesOpen((prev) => !prev)}
+          >
+            자동 상점 기준
+          </button>
           <button className="primary section-action" onClick={() => loadPoints()} disabled={loading}>{loading ? '조회 중...' : '조회'}</button>
         </div>
       </div>
+
+      {/* v41-241: 주간 순공 자동 상점 구간표 + 상품 지급 기준 */}
+      {autoRulesOpen ? (
+        <div className="point-auto-rules-card clean-panel">
+          <div className="point-auto-rules-head">
+            <div>
+              <strong>자동 상점 · 지급 기준 설정</strong>
+              <span>
+                매주 <b>월요일 06:00</b>에 지난 <b>월~일</b> 순공시간을 합산해 아래 구간표대로 상점을 일괄 부여하고,
+                이어서 전체 학생 순점수를 한 번 스캔해 상품 지급 대상 명단을 만듭니다.
+              </span>
+            </div>
+            <button type="button" className="secondary" onClick={() => setAutoRulesOpen(false)}>닫기</button>
+          </div>
+
+          <label className="point-auto-toggle">
+            <input
+              type="checkbox"
+              checked={autoRules.autoRewardEnabled !== false}
+              onChange={(e) => updateAutoRules({ autoRewardEnabled: e.target.checked })}
+            />
+            <span>주간 순공 자동 상점 사용</span>
+          </label>
+
+          <div className="point-auto-tier-block">
+            <div className="point-auto-tier-head">
+              <strong>순공시간 구간표</strong>
+              <span>위에서부터 처음 걸리는 구간 하나만 적용됩니다. 기준은 <b>이상</b>입니다. 한 번도 등원하지 않은 주는 부여하지 않습니다.</span>
+            </div>
+            {(autoRules.tiers || []).length ? (
+              <div className="point-auto-tier-list">
+                {(autoRules.tiers || []).map((tier, index) => {
+                  const minutes = Math.max(0, Number(tier.minMinutes || 0));
+                  return (
+                    <div key={`tier-${index}`} className="point-auto-tier-row">
+                      <span className="point-auto-tier-index">{index + 1}</span>
+                      <div className="field">
+                        <label>주간 순공</label>
+                        <div className="point-auto-time-input">
+                          <input
+                            type="number"
+                            min="0"
+                            max="200"
+                            value={Math.floor(minutes / 60)}
+                            onChange={(e) => updateAutoTier(index, { minMinutes: Math.max(0, Number(e.target.value || 0)) * 60 + (minutes % 60) })}
+                          />
+                          <em>시간</em>
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={minutes % 60}
+                            onChange={(e) => updateAutoTier(index, { minMinutes: Math.floor(minutes / 60) * 60 + Math.min(59, Math.max(0, Number(e.target.value || 0))) })}
+                          />
+                          <em>분 이상</em>
+                        </div>
+                      </div>
+                      <div className="field">
+                        <label>상점</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={tier.points}
+                          onChange={(e) => updateAutoTier(index, { points: Number(e.target.value || 0) })}
+                        />
+                      </div>
+                      <div className="field grow">
+                        <label>구간 이름 (선택)</label>
+                        <input
+                          value={tier.label || ''}
+                          onChange={(e) => updateAutoTier(index, { label: e.target.value })}
+                          placeholder="예: 최우수 / 우수"
+                        />
+                      </div>
+                      <button type="button" className="secondary" onClick={() => removeAutoTier(index)}>삭제</button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="point-auto-tier-empty">
+                구간이 아직 없습니다. 저장해도 자동 상점은 부여되지 않습니다.
+                <button type="button" className="secondary" onClick={() => updateAutoRules({ tiers: SAMPLE_POINT_AUTO_TIERS.map((tier) => ({ ...tier })) })}>
+                  예시 구간 넣기
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              className="secondary"
+              onClick={addAutoTier}
+              disabled={(autoRules.tiers || []).length >= MAX_AUTO_TIERS}
+            >
+              구간 추가
+            </button>
+          </div>
+
+          <div className="point-auto-threshold-grid">
+            <div className="field">
+              <label>상품 지급 기준 순점수</label>
+              <input
+                type="number"
+                min="0"
+                max="200"
+                value={autoRules.rewardThreshold}
+                onChange={(e) => updateAutoRules({ rewardThreshold: Number(e.target.value || 0) })}
+              />
+              <em>이 점수를 <b>초과</b>하면 명단에 오릅니다. ({autoRules.rewardThreshold}점 설정 → {Number(autoRules.rewardThreshold || 0) + 1}점부터)</em>
+            </div>
+            <div className="field">
+              <label>연속 초과 강조 기준</label>
+              <input
+                type="number"
+                min="2"
+                max="20"
+                value={autoRules.streakWeeks}
+                onChange={(e) => updateAutoRules({ streakWeeks: Number(e.target.value || 0) })}
+              />
+              <em>{autoRules.streakWeeks}주 연속으로 명단에 오르면 따로 표시합니다.</em>
+            </div>
+          </div>
+
+          <div className="point-auto-rules-actions">
+            <button type="button" className="primary" onClick={saveAutoRules} disabled={autoRulesSaving}>
+              {autoRulesSaving ? '저장 중...' : '기준 저장'}
+            </button>
+            <button type="button" className="secondary" onClick={loadAutoRules} disabled={autoRulesSaving}>되돌리기</button>
+          </div>
+          <p className="point-auto-rules-note">
+            벌점 단계 알림(순벌점 10 / 20 / 30점 초과)은 이 설정과 무관하게 예전 그대로 동작합니다.
+          </p>
+        </div>
+      ) : null}
 
       {/* v41-156: 누적 벌점이 10/20/30점을 넘으면 단계별 조치 대상으로 알립니다.
           상품 지급(순점수) 사이클과 별개로, 상점을 받아도 이 단계는 내려가지 않습니다. */}
@@ -16149,25 +16370,49 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
         </div>
       ) : null}
 
-      {/* v41-137: 순점수가 기준(10점)을 초과한 학생은 상품 지급 대상으로 알립니다. */}
+      {/* v41-137: 순점수가 기준을 초과한 학생은 상품 지급 대상으로 알립니다.
+          v41-241: 실시간 판정을 없애고 매주 월요일 스캔 결과를 보여 줍니다. */}
       {scopeRows(rewardState?.eligible).length ? (
         <div className="point-reward-alert-card">
           <div className="point-reward-alert-head">
             <strong>상품 지급 대상 {scopeRows(rewardState.eligible).length}명</strong>
-            <span>순점수가 {rewardState.threshold || 10}점을 초과했습니다. <b>[알림톡 발송]을 누르면 학부모·학생에게 상품 지급 안내가 발송</b>되고 카운팅이 리셋됩니다. 상벌점 기록 자체는 그대로 보관됩니다.</span>
+            <span>
+              순점수가 {rewardState.threshold ?? 15}점을 초과했습니다.
+              {rewardState.scanFallback
+                ? ' 아직 주간 스캔 기록이 없어 지금 기준으로 판정했습니다.'
+                : ` 명단 기준: ${rewardState.lastScanDate || '-'} 스캔${rewardState.lastScanWeek?.start ? ` (집계 주 ${rewardState.lastScanWeek.start}~${rewardState.lastScanWeek.end})` : ''}.`}
+              {' '}<b>[알림톡 발송]을 누르면 학부모·학생에게 상품 지급 안내가 발송</b>되고 카운팅이 리셋됩니다. 상벌점 기록 자체는 그대로 보관됩니다.
+            </span>
+            <button type="button" className="secondary" onClick={rescanRewardTargets} disabled={scanning}>
+              {scanning ? '스캔 중...' : '지금 다시 스캔'}
+            </button>
           </div>
           <div className="point-reward-alert-list">
-            {scopeRows(rewardState.eligible).map((item) => (
-              <article key={`reward-${item.studentId}`}>
+            {scopeRows(rewardState.eligible).map((item) => {
+              const streak = Number(item.streakWeeks || 1);
+              const streakHit = streak >= Number(rewardState?.autoRules?.streakWeeks || 2);
+              return (
+              <article key={`reward-${item.studentId}`} className={streakHit ? 'is-streak' : ''}>
                 <div className="point-reward-alert-student">
                   <strong>{item.name}</strong>
                   <span>{item.subtitle || '학교/학년 미입력'}</span>
+                  {streakHit ? <b className="point-streak-badge">{streak}주 연속</b> : null}
                 </div>
                 <div className="point-reward-alert-score">
-                  <b>순점수 +{item.net}점</b>
-                  <em>상 {item.reward} · 벌 {item.penalty} · {item.count}건{item.grantCount ? ` · 지급 ${item.grantCount}회` : ''}</em>
+                  <b>순점수 +{item.scanNet ?? item.net}점</b>
+                  <em>
+                    상 {item.reward} · 벌 {item.penalty} · {item.count}건{item.grantCount ? ` · 지급 ${item.grantCount}회` : ''}
+                    {Number(item.autoPoints || 0) ? ` · 자동 +${item.autoPoints}` : ''}
+                    {Number(item.studyMinutes || 0) ? ` · 그 주 순공 ${formatMinutesKo(item.studyMinutes)}` : ''}
+                  </em>
                 </div>
-                <p>{item.message}</p>
+                <p>
+                  {item.message}
+                  {streakHit ? ` — ${streak}주 연속 대상입니다. 별도 상품 검토 대상입니다.` : ''}
+                  {!rewardState.scanFallback && (item.scanNet ?? item.net) !== item.net
+                    ? ` (스캔 이후 변동: 현재 순점수 ${item.net > 0 ? '+' : ''}${item.net}점)`
+                    : ''}
+                </p>
                 <div className="point-reward-alert-actions">
                   <button
                     type="button"
@@ -16187,11 +16432,56 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                   </button>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div className="point-reward-empty-line">
+          <span>
+            상품 지급 대상이 없습니다.
+            {rewardState?.scanFallback === false && rewardState?.lastScanDate
+              ? ` (${rewardState.lastScanDate} 스캔 기준 · 학생 ${rewardState.scannedCount || 0}명)`
+              : ' (아직 주간 스캔 기록이 없습니다)'}
+          </span>
+          <button type="button" className="secondary" onClick={rescanRewardTargets} disabled={scanning}>
+            {scanning ? '스캔 중...' : '지금 다시 스캔'}
+          </button>
+        </div>
+      )}
       {rewardState?.warning ? <div className="point-reward-warning">{rewardState.warning}</div> : null}
+
+      {/* v41-241: 시스템이 자동으로 부여한 상점 내역 */}
+      <div className="point-auto-award-card clean-panel">
+        <div className="point-auto-award-head">
+          <div>
+            <strong>자동 상점 지급 내역 {scopeRows(rewardState?.autoAwards).length}건</strong>
+            <span>주간 순공시간 구간표에 따라 시스템이 부여한 상점입니다. 기록은 상벌점 기록 목록에도 함께 남습니다.</span>
+          </div>
+          <button type="button" className="secondary" onClick={() => setAutoAwardOpen((prev) => !prev)}>
+            {autoAwardOpen ? '접기' : '펼치기'}
+          </button>
+        </div>
+        {autoAwardOpen ? (
+          scopeRows(rewardState?.autoAwards).length ? (
+            <div className="point-auto-award-list">
+              {scopeRows(rewardState.autoAwards).map((row) => (
+                <article key={`auto-${row.id}`}>
+                  <div>
+                    <strong>{row.name || '학생'}</strong>
+                    <span>{row.week_start} ~ {row.week_end}</span>
+                  </div>
+                  <em>순공 {formatMinutesKo(row.study_minutes)}</em>
+                  <i>{row.tier_label ? `${row.tier_label} · ` : ''}{formatMinutesKo(row.tier_min_minutes)} 이상</i>
+                  <b>+{row.points}점</b>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="all-clear">아직 자동으로 부여된 상점이 없습니다. 첫 부여는 구간표를 저장한 뒤 다음 월요일 06:00입니다.</div>
+          )
+        ) : null}
+      </div>
 
       <div className="points-summary-grid">
         <div className="reward"><span>상점</span><strong>{summary.reward || 0}점</strong></div>

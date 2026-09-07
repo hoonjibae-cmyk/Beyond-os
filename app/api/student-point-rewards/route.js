@@ -11,10 +11,11 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse, requireTabPermission, getAuthorizedUser } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { sendPointNotification } from '../../../lib/pointNotifications';
-import { getCohortIdFromRequest, resolveScopeCohort } from '../../../lib/cohortScope';
+import { getCohortIdFromRequest, loadCohortRange } from '../../../lib/cohortScope';
+import { getPointAutoRules } from '../../../lib/pointAutoRulesServer';
+import { AUTO_TABLE_HINT } from '../../../lib/pointAutoRules';
 import { getKstDateString } from '../../../lib/date';
 import {
-  POINT_REWARD_THRESHOLD,
   PENALTY_STAGES,
   resolvePointCycle,
   resolvePointCyclesByStudent,
@@ -35,23 +36,10 @@ const PENALTY_TABLE_HINT = 'beyond-os-supabase-student-penalty-actions-v41-156.s
 //
 // 기수를 못 찾으면 null 을 돌려주고 예전처럼 전체를 셉니다.
 // (기수를 아직 만들지 않은 환경에서 화면이 비지 않게)
-async function resolvePointCohortRange(supabase, request) {
-  try {
-    const cohort = await resolveScopeCohort(supabase, getCohortIdFromRequest(request), getKstDateString());
-    if (!cohort?.id) return null;
-    const { data, error } = await supabase
-      .from('cohorts')
-      .select('id, name, start_date, end_date')
-      .eq('id', cohort.id)
-      .maybeSingle();
-    if (error) throw error;
-    const start = String(data?.start_date || '').slice(0, 10);
-    const end = String(data?.end_date || '').slice(0, 10);
-    if (!start || !end) return null;
-    return { id: String(data.id), name: data.name || '', start, end };
-  } catch {
-    return null;
-  }
+//
+// v41-241: 같은 계산을 주간 배치에서도 써서 lib/cohortScope 로 옮겼습니다.
+function resolvePointCohortRange(supabase, request) {
+  return loadCohortRange(supabase, getCohortIdFromRequest(request), getKstDateString());
 }
 
 function isMissingTableError(error) {
@@ -113,6 +101,82 @@ async function loadRewardRows(supabase, studentId, range = null) {
   }
 }
 
+// ── v41-241: 상품 지급 대상은 "매주 월요일 스캔 결과"로 봅니다 ─────────
+//
+// 예전에는 이 화면을 열 때마다 그 순간의 순점수로 판정했습니다. 그래서 주중에
+// 상점 한 건만 넣어도 명단이 바로 늘었다 줄었다 했습니다. 이제 월요일 배치가
+// 남긴 스냅샷을 그대로 보여 줍니다. (/api/cron/weekly-points)
+
+async function loadLatestScan(supabase, studentId = '') {
+  try {
+    const { data: latest, error: latestError } = await supabase
+      .from('student_point_weekly_scans')
+      .select('scan_date')
+      .order('scan_date', { ascending: false })
+      .limit(1);
+    if (latestError) throw latestError;
+    const scanDate = String(latest?.[0]?.scan_date || '').slice(0, 10);
+    if (!scanDate) return { scanDate: '', rows: [], warning: '' };
+
+    let query = supabase
+      .from('student_point_weekly_scans')
+      .select('*')
+      .eq('scan_date', scanDate);
+    if (studentId) query = query.eq('student_id', String(studentId));
+    const { data, error } = await query;
+    if (error) throw error;
+    return { scanDate, rows: data || [], warning: '' };
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return { scanDate: '', rows: [], warning: `주간 스캔 표가 아직 없습니다. ${AUTO_TABLE_HINT}` };
+    }
+    return { scanDate: '', rows: [], warning: error?.message || '주간 스캔 결과를 읽지 못했습니다.' };
+  }
+}
+
+async function loadAutoAwards(supabase, studentId, range = null, limit = 200) {
+  try {
+    let query = supabase
+      .from('student_point_auto_awards')
+      .select('*')
+      .order('week_start', { ascending: false })
+      .order('points', { ascending: false })
+      .limit(limit);
+    if (studentId) query = query.eq('student_id', String(studentId));
+    if (range) query = query.gte('week_end', range.start).lte('week_start', range.end);
+    const { data, error } = await query;
+    if (error) throw error;
+    return { rows: data || [], warning: '' };
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return { rows: [], warning: `자동 상점 표가 아직 없습니다. ${AUTO_TABLE_HINT}` };
+    }
+    return { rows: [], warning: error?.message || '자동 상점 내역을 읽지 못했습니다.' };
+  }
+}
+
+// v41-241: 명단에서 처리한 건에 도장을 찍습니다.
+// 이 표가 없거나 스캔 기록이 없어도 지급 처리 자체는 막지 않습니다.
+async function markScanHandled(supabase, studentId, action) {
+  try {
+    const { data, error } = await supabase
+      .from('student_point_weekly_scans')
+      .select('id')
+      .eq('student_id', String(studentId))
+      .order('scan_date', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    const id = data?.[0]?.id;
+    if (!id) return;
+    await supabase
+      .from('student_point_weekly_scans')
+      .update({ handled_at: new Date().toISOString(), handled_action: action })
+      .eq('id', id);
+  } catch {
+    // 명단 표시는 다음 스캔에서 정리됩니다. 지급 처리 결과를 되돌리지는 않습니다.
+  }
+}
+
 export async function GET(request) {
   if (!isAuthorized(request)) return unauthorizedResponse();
 
@@ -123,6 +187,9 @@ export async function GET(request) {
 
     // v41-236: 지금 보고 있는 기수 기간의 기록만 셉니다.
     const cohortRange = await resolvePointCohortRange(supabase, request);
+    // v41-241: 지급 기준 순점수는 상벌점 관리 화면에서 설정합니다. (기본 15점)
+    const autoRules = await getPointAutoRules(supabase);
+    const threshold = autoRules.rewardThreshold;
     const [pointRows, rewardResult, penaltyResult] = await Promise.all([
       loadPointRows(supabase, studentId, cohortRange),
       loadRewardRows(supabase, studentId, cohortRange),
@@ -130,20 +197,23 @@ export async function GET(request) {
     ]);
 
     if (studentId) {
-      const cycle = resolvePointCycle(pointRows, rewardResult.rows);
+      const cycle = resolvePointCycle(pointRows, rewardResult.rows, { threshold });
       const penalty = resolvePenaltyStages(pointRows, penaltyResult.rows, { rewardRows: rewardResult.rows });
+      const autoAwardResult = await loadAutoAwards(supabase, studentId, cohortRange, 60);
       return Response.json({
         ok: true,
-        threshold: POINT_REWARD_THRESHOLD,
+        threshold,
+        autoRules,
         penaltyStages: PENALTY_STAGES,
         studentId,
         cycle,
         penalty,
-        warning: [rewardResult.warning, penaltyResult.warning].filter(Boolean).join(' / '),
+        autoAwards: autoAwardResult.rows,
+        warning: [rewardResult.warning, penaltyResult.warning, autoAwardResult.warning].filter(Boolean).join(' / '),
       });
     }
 
-    const cycles = resolvePointCyclesByStudent(pointRows, rewardResult.rows);
+    const cycles = resolvePointCyclesByStudent(pointRows, rewardResult.rows, { threshold });
     const penaltyByStudent = resolvePenaltyStagesByStudent(pointRows, penaltyResult.rows, { rewardRows: rewardResult.rows });
     const studentIds = [...new Set([...Object.keys(cycles), ...Object.keys(penaltyByStudent)])];
 
@@ -161,22 +231,54 @@ export async function GET(request) {
       }
     }
 
-    const eligible = studentIds
-      .filter((id) => cycles[id]?.eligible)
-      .filter((id) => studentMap[id]?.status !== 'inactive')
-      .map((id) => ({
-        studentId: id,
-        student: studentMap[id] || null,
-        name: studentMap[id]?.name || '학생',
-        subtitle: [studentMap[id]?.school, studentMap[id]?.grade].filter(Boolean).join(' '),
-        net: cycles[id].net,
-        reward: cycles[id].reward,
-        penalty: cycles[id].penalty,
-        count: cycles[id].count,
-        grantCount: cycles[id].grantCount,
-        message: cycles[id].alertMessage,
-      }))
-      .sort((a, b) => b.net - a.net || String(a.name).localeCompare(String(b.name), 'ko'));
+    // v41-241: 상품 지급 대상 명단은 월요일 스캔 결과에서 가져옵니다.
+    //
+    // 아직 한 번도 스캔하지 않았다면(배포 직후, 첫 월요일 전) 예전처럼 실시간으로
+    // 판정해 명단이 비어 보이지 않게 합니다. scanFallback 으로 화면에 알립니다.
+    const scanResult = await loadLatestScan(supabase);
+    const scanByStudent = {};
+    for (const row of scanResult.rows) scanByStudent[String(row.student_id)] = row;
+    const scanFallback = !scanResult.scanDate;
+
+    const buildEligibleRow = (id, extra = {}) => ({
+      studentId: id,
+      student: studentMap[id] || null,
+      name: studentMap[id]?.name || '학생',
+      subtitle: [studentMap[id]?.school, studentMap[id]?.grade].filter(Boolean).join(' '),
+      net: cycles[id]?.net ?? 0,
+      reward: cycles[id]?.reward ?? 0,
+      penalty: cycles[id]?.penalty ?? 0,
+      count: cycles[id]?.count ?? 0,
+      grantCount: cycles[id]?.grantCount ?? 0,
+      message: cycles[id]?.alertMessage || `상벌점 누적 ${threshold}점 초과하여 상품 지급 대상입니다`,
+      ...extra,
+    });
+
+    const eligible = (scanFallback
+      ? studentIds
+        .filter((id) => cycles[id]?.eligible)
+        .map((id) => buildEligibleRow(id, { scanDate: '', streakWeeks: 1, scanNet: cycles[id].net, studyMinutes: 0, autoPoints: 0 }))
+      : Object.values(scanByStudent)
+        // 이미 [알림톡 발송]/[미지급]으로 처리한 건은 명단에서 내립니다.
+        // is_eligible 자체는 그대로 두어야 연속 주 수가 어긋나지 않습니다.
+        .filter((row) => row.is_eligible && !row.handled_at)
+        .map((row) => {
+          const id = String(row.student_id);
+          return buildEligibleRow(id, {
+            scanDate: String(row.scan_date || '').slice(0, 10),
+            scanNet: Number(row.net_points || 0),
+            streakWeeks: Number(row.streak_weeks || 1),
+            studyMinutes: Number(row.study_minutes || 0),
+            autoPoints: Number(row.auto_points || 0),
+            weekStart: String(row.week_start || '').slice(0, 10),
+            weekEnd: String(row.week_end || '').slice(0, 10),
+          });
+        }))
+      .filter((row) => studentMap[row.studentId]?.status !== 'inactive')
+      // 연속 초과가 오래된 학생을 먼저 보여 줍니다. (별도 상품 대상이라 눈에 띄어야 합니다)
+      .sort((a, b) => (b.streakWeeks || 0) - (a.streakWeeks || 0)
+        || (b.scanNet ?? b.net) - (a.scanNet ?? a.net)
+        || String(a.name).localeCompare(String(b.name), 'ko'));
 
     // v41-156: 누적 벌점이 단계(10/20/30)를 넘겼는데 아직 조치하지 않은 학생.
     // 심각한 단계(제적 > 면담 > 경고)가 먼저 오도록 정렬합니다.
@@ -208,15 +310,30 @@ export async function GET(request) {
       })
       .sort((a, b) => b.stage - a.stage || b.penaltyNet - a.penaltyNet || String(a.name).localeCompare(String(b.name), 'ko'));
 
+    const autoAwardResult = await loadAutoAwards(supabase, '', cohortRange, 300);
+
     return Response.json({
       ok: true,
-      threshold: POINT_REWARD_THRESHOLD,
+      threshold,
+      autoRules,
       penaltyStages: PENALTY_STAGES,
       cycles,
       eligible,
+      // v41-241: 명단을 만든 시점. 화면에 "OO 기준"으로 함께 보여 줍니다.
+      lastScanDate: scanResult.scanDate,
+      lastScanWeek: scanResult.rows[0]
+        ? { start: String(scanResult.rows[0].week_start || '').slice(0, 10), end: String(scanResult.rows[0].week_end || '').slice(0, 10) }
+        : null,
+      scanFallback,
+      scannedCount: scanResult.rows.length,
+      // v41-241: 시스템이 자동으로 준 상점 내역
+      autoAwards: autoAwardResult.rows.map((row) => ({
+        ...row,
+        name: studentMap[String(row.student_id)]?.name || '',
+      })),
       penaltyByStudent,
       penaltyAlerts,
-      warning: [rewardResult.warning, penaltyResult.warning].filter(Boolean).join(' / '),
+      warning: [rewardResult.warning, penaltyResult.warning, scanResult.warning, autoAwardResult.warning].filter(Boolean).join(' / '),
     });
   } catch (error) {
     return Response.json({
@@ -338,10 +455,19 @@ export async function POST(request) {
       return Response.json({ error: rewardResult.warning }, { status: 400 });
     }
 
-    const cycle = resolvePointCycle(pointRows, rewardResult.rows);
-    if (!cycle.eligible) {
+    const autoRules = await getPointAutoRules(supabase);
+    const cycle = resolvePointCycle(pointRows, rewardResult.rows, { threshold: autoRules.rewardThreshold });
+
+    // v41-241: 명단은 월요일 스캔 기준입니다.
+    //
+    // 스캔 이후에 벌점이 들어가 지금 순점수가 기준 아래로 내려갔더라도, 명단에 올라
+    // 있는 학생은 지급 처리를 막지 않습니다. 화면에 보이는 버튼이 눌리지 않는 쪽이
+    // 더 나쁜 상황입니다. 반대로 스캔에는 없지만 지금 기준을 넘었다면 그것도 허용합니다.
+    const scanForStudent = await loadLatestScan(supabase, studentId);
+    const scanEligible = scanForStudent.rows.some((row) => row.is_eligible);
+    if (!cycle.eligible && !scanEligible) {
       return Response.json({
-        error: `현재 순점수는 ${cycle.net}점으로 상품 지급 대상이 아닙니다. (기준 ${cycle.threshold}점 초과)`,
+        error: `현재 순점수는 ${cycle.net}점으로 상품 지급 대상이 아닙니다. (기준 ${cycle.threshold}점 초과 · 매주 월요일 스캔)`,
       }, { status: 400 });
     }
 
@@ -376,8 +502,10 @@ export async function POST(request) {
 
     if (error) throw error;
 
+    await markScanHandled(supabase, studentId, action === 'grant' ? 'granted' : 'deferred');
+
     const nextRewardRows = [...rewardResult.rows, data];
-    const nextCycle = resolvePointCycle(pointRows, nextRewardRows);
+    const nextCycle = resolvePointCycle(pointRows, nextRewardRows, { threshold: autoRules.rewardThreshold });
 
     // v41-161: [상품지급안내완료]는 이제 실제로 학부모·학생에게 알림톡을 보냅니다.
     // 미지급(defer)은 아직 안내할 내용이 없으므로 보내지 않습니다.

@@ -13,6 +13,7 @@ import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes, formatMinutes } from '../../../lib/date';
 import { resolvePointCycle, resolvePenaltyStages } from '../../../lib/studentPointCycle';
+import { getPointAutoRules } from '../../../lib/pointAutoRulesServer';
 import { loadCohortContext, resolveDefaultCohort, resolveStudentCohortRange, sortCohorts, isUsableCohort, formatCohortLabel } from '../../../lib/cohorts';
 
 export const dynamic = 'force-dynamic';
@@ -398,7 +399,9 @@ export async function GET(request) {
       .select('*')
       .eq('student_id', String(studentId))
       .order('created_at', { ascending: true }));
-    const pointCycle = resolvePointCycle(pointRows, rewardHistoryResult.rows);
+    // v41-241: 지급 기준 순점수는 상벌점 관리 화면 설정을 따릅니다. (기본 15점)
+    const autoRules = await getPointAutoRules(supabase);
+    const pointCycle = resolvePointCycle(pointRows, rewardHistoryResult.rows, { threshold: autoRules.rewardThreshold });
     const reward = pointCycle.reward;
     const penalty = pointCycle.penalty;
 

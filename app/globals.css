@@ -20643,6 +20643,226 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .penalty-stage-alert-list > article { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* ── v41-241: 주간 순공 자동 상점 ───────────────────────────── */
+.point-auto-rules-card {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.point-auto-rules-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.point-auto-rules-head strong {
+  display: block;
+  font-size: 15px;
+  color: #211f1b;
+}
+.point-auto-rules-head span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 850;
+  color: #8a8479;
+  line-height: 1.5;
+  max-width: 720px;
+}
+.point-auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #211f1b;
+}
+.point-auto-toggle input { width: 16px; height: 16px; }
+.point-auto-tier-block {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #ece7dd;
+  border-radius: 16px;
+  padding: 13px 14px;
+  background: #fcfbf8;
+}
+.point-auto-tier-head strong { display: block; font-size: 13.5px; color: #211f1b; }
+.point-auto-tier-head span {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #8a8479;
+  line-height: 1.45;
+}
+.point-auto-tier-list { display: grid; gap: 8px; }
+.point-auto-tier-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #ece7dd;
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+.point-auto-tier-row .field { display: grid; gap: 4px; }
+.point-auto-tier-row .field.grow { flex: 1 1 180px; min-width: 140px; }
+.point-auto-tier-row .field label {
+  font-size: 11px;
+  font-weight: 900;
+  color: #8a8479;
+}
+.point-auto-tier-row input {
+  border: 1px solid #e3ded4;
+  border-radius: 10px;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-weight: 850;
+  min-width: 64px;
+}
+.point-auto-tier-index {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #efeae0;
+  color: #6b665d;
+  font-size: 11px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.point-auto-time-input { display: flex; align-items: center; gap: 5px; }
+.point-auto-time-input input { width: 64px; }
+.point-auto-time-input em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 900;
+  color: #8a8479;
+}
+.point-auto-tier-empty {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  font-weight: 850;
+  color: #8a8479;
+}
+.point-auto-threshold-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.point-auto-threshold-grid .field { display: grid; gap: 4px; }
+.point-auto-threshold-grid .field label { font-size: 11.5px; font-weight: 900; color: #8a8479; }
+.point-auto-threshold-grid .field input {
+  border: 1px solid #e3ded4;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  font-weight: 850;
+  max-width: 140px;
+}
+.point-auto-threshold-grid .field em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #9a938a;
+  line-height: 1.45;
+}
+.point-auto-rules-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.point-auto-rules-note {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #9a938a;
+}
+.point-reward-empty-line {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  border: 1px solid #ece7dd;
+  border-radius: 16px;
+  background: #fcfbf8;
+  padding: 11px 14px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  font-weight: 850;
+  color: #8a8479;
+}
+.point-streak-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #7b2d12;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+.point-reward-alert-list > article.is-streak {
+  border-color: #e0a06a;
+  box-shadow: inset 3px 0 0 #b4560d;
+}
+.point-auto-award-card { display: grid; gap: 12px; margin-bottom: 14px; }
+.point-auto-award-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.point-auto-award-head strong { display: block; font-size: 14px; color: #211f1b; }
+.point-auto-award-head span {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #8a8479;
+  line-height: 1.45;
+}
+.point-auto-award-list { display: grid; gap: 7px; }
+.point-auto-award-list > article {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 1.1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #ece7dd;
+  border-radius: 13px;
+  background: #fff;
+  padding: 9px 12px;
+}
+.point-auto-award-list > article strong { font-size: 13.5px; color: #211f1b; }
+.point-auto-award-list > article span {
+  display: block;
+  font-size: 11px;
+  font-weight: 850;
+  color: #8a8479;
+  margin-top: 2px;
+}
+.point-auto-award-list > article em,
+.point-auto-award-list > article i {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #6b665d;
+}
+.point-auto-award-list > article b {
+  font-size: 14px;
+  color: #1f7a4d;
+  text-align: right;
+}
+@media (max-width: 720px) {
+  .point-auto-award-list > article { grid-template-columns: 1fr auto; }
+  .point-auto-award-list > article i { grid-column: 1 / -1; }
+}
+
 .point-reward-alert-card {
   border: 1px solid #f2d49a;
   border-radius: 20px;
