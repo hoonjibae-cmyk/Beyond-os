@@ -20752,6 +20752,48 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   font-weight: 850;
   color: #8a8479;
 }
+.point-auto-perfect-block {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #ece7dd;
+  border-radius: 16px;
+  padding: 13px 14px;
+  background: #fcfbf8;
+}
+.point-auto-perfect-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.point-auto-perfect-grid .field { display: grid; gap: 4px; }
+.point-auto-perfect-grid .field label { font-size: 11.5px; font-weight: 900; color: #8a8479; }
+.point-auto-perfect-grid .field > input {
+  border: 1px solid #e3ded4;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  font-weight: 850;
+  max-width: 140px;
+}
+.point-auto-perfect-grid .field em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 850;
+  color: #9a938a;
+  line-height: 1.45;
+}
+.point-auto-kind {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 900;
+  background: #eef2f8;
+  color: #3a5580;
+}
+.point-auto-kind.kind-perfect { background: #eaf6ef; color: #1f6b45; }
+
 .point-auto-threshold-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -20839,7 +20881,9 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   padding: 9px 12px;
 }
 .point-auto-award-list > article strong { font-size: 13.5px; color: #211f1b; }
-.point-auto-award-list > article span {
+/* 이름/기간 칸의 보조 줄만 블록입니다.
+   여기서 span 전체를 잡으면 종류 배지(.point-auto-kind)까지 가로로 늘어납니다. */
+.point-auto-award-list > article > div span {
   display: block;
   font-size: 11px;
   font-weight: 850;

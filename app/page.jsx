@@ -11,7 +11,7 @@ import { AUDIO_POLICIES, getAudioPolicy, getAudioPolicyLabel } from '../lib/audi
 import { MENTOR_COMMENT_TARGETS, DEFAULT_MENTOR_COMMENT_TARGET, getMentorCommentTarget, normalizeMentorCommentTarget } from '../lib/mentorCommentTarget';
 import { PLANNER_IMAGE_TARGETS, DEFAULT_PLANNER_IMAGE_TARGET, getPlannerImageTarget, normalizePlannerImageTarget } from '../lib/plannerImageTarget';
 import { getWeeklyInterviewTitle } from '../lib/weeklyInterview';
-import { DEFAULT_POINT_AUTO_RULES, SAMPLE_POINT_AUTO_TIERS, MAX_AUTO_TIERS, normalizePointAutoRules, formatMinutesKo } from '../lib/pointAutoRules';
+import { DEFAULT_POINT_AUTO_RULES, SAMPLE_POINT_AUTO_TIERS, MAX_AUTO_TIERS, normalizePointAutoRules, formatMinutesKo, getAutoAwardKindLabel } from '../lib/pointAutoRules';
 import { normalizePlannerRotation, turnPlannerRotation, isPlannerRotationSideways } from '../lib/plannerRotation';
 import { FOCUS_MAX, FOCUS_LABELS, normalizeFocusRating, getFocusLabel, summarizeFocusRatings } from '../lib/focusRating';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
@@ -15970,8 +15970,9 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
 
   async function saveAutoRules() {
     const cleaned = normalizePointAutoRules(autoRules);
-    if (cleaned.autoRewardEnabled && !cleaned.tiers.length) {
-      const goOn = confirm('순공시간 구간이 하나도 없습니다.\n\n이대로 저장하면 자동 상점은 부여되지 않습니다. 계속할까요?');
+    const givesPerfect = cleaned.perfectAttendanceEnabled && cleaned.perfectAttendancePoints > 0;
+    if (cleaned.autoRewardEnabled && !cleaned.tiers.length && !givesPerfect) {
+      const goOn = confirm('순공시간 구간이 하나도 없고 주간 개근 상점도 0점입니다.\n\n이대로 저장하면 자동 상점은 부여되지 않습니다. 계속할까요?');
       if (!goOn) return;
     }
     try {
@@ -16284,6 +16285,62 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
             </button>
           </div>
 
+          <div className="point-auto-perfect-block">
+            <div className="point-auto-tier-head">
+              <strong>주간 개근 상점</strong>
+              <span>
+                순공시간 구간 상점과 <b>따로</b> 계산합니다. 같은 주에 둘 다 받을 수 있습니다.
+                그 주 개인 시간표에 잡힌 등원일을 <b>전부</b> 지키고 <b>지각·결석이 하나도 없어야</b> 부여합니다.
+              </span>
+            </div>
+            <label className="point-auto-toggle">
+              <input
+                type="checkbox"
+                checked={autoRules.perfectAttendanceEnabled !== false}
+                onChange={(e) => updateAutoRules({ perfectAttendanceEnabled: e.target.checked })}
+              />
+              <span>주간 개근 상점 사용</span>
+            </label>
+            <div className="point-auto-perfect-grid">
+              <div className="field">
+                <label>개근 상점</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={autoRules.perfectAttendancePoints}
+                  onChange={(e) => updateAutoRules({ perfectAttendancePoints: Number(e.target.value || 0) })}
+                />
+                <em>{Number(autoRules.perfectAttendancePoints || 0) > 0 ? `개근한 주마다 ${autoRules.perfectAttendancePoints}점` : '0점이면 부여하지 않습니다.'}</em>
+              </div>
+              <div className="field">
+                <label>일일 최소 순공시간</label>
+                <div className="point-auto-time-input">
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={Math.floor(Number(autoRules.perfectAttendanceDailyMinutes || 0) / 60)}
+                    onChange={(e) => updateAutoRules({ perfectAttendanceDailyMinutes: Math.max(0, Number(e.target.value || 0)) * 60 + (Number(autoRules.perfectAttendanceDailyMinutes || 0) % 60) })}
+                  />
+                  <em>시간</em>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={Number(autoRules.perfectAttendanceDailyMinutes || 0) % 60}
+                    onChange={(e) => updateAutoRules({ perfectAttendanceDailyMinutes: Math.floor(Number(autoRules.perfectAttendanceDailyMinutes || 0) / 60) * 60 + Math.min(59, Math.max(0, Number(e.target.value || 0))) })}
+                  />
+                  <em>분</em>
+                </div>
+                <em>이 시간에 못 미친 날은 등원으로 세지 않습니다. (기본 30분)</em>
+              </div>
+            </div>
+            <p className="point-auto-rules-note">
+              사전에 신고한 결석도 결석으로 봅니다. 지각 판정 기준은 설정 · 운영 기준의 [지각 허용 시간]을 그대로 씁니다.
+            </p>
+          </div>
+
           <div className="point-auto-threshold-grid">
             <div className="field">
               <label>상품 지급 기준 순점수</label>
@@ -16456,7 +16513,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
         <div className="point-auto-award-head">
           <div>
             <strong>자동 상점 지급 내역 {scopeRows(rewardState?.autoAwards).length}건</strong>
-            <span>주간 순공시간 구간표에 따라 시스템이 부여한 상점입니다. 기록은 상벌점 기록 목록에도 함께 남습니다.</span>
+            <span>주간 순공시간 구간표와 주간 개근 기준에 따라 시스템이 부여한 상점입니다. 기록은 상벌점 기록 목록에도 함께 남습니다.</span>
           </div>
           <button type="button" className="secondary" onClick={() => setAutoAwardOpen((prev) => !prev)}>
             {autoAwardOpen ? '접기' : '펼치기'}
@@ -16471,8 +16528,15 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                     <strong>{row.name || '학생'}</strong>
                     <span>{row.week_start} ~ {row.week_end}</span>
                   </div>
-                  <em>순공 {formatMinutesKo(row.study_minutes)}</em>
-                  <i>{row.tier_label ? `${row.tier_label} · ` : ''}{formatMinutesKo(row.tier_min_minutes)} 이상</i>
+                  <em>
+                    <span className={`point-auto-kind kind-${row.award_kind || 'study'}`}>{getAutoAwardKindLabel(row.award_kind)}</span>
+                    순공 {formatMinutesKo(row.study_minutes)}
+                  </em>
+                  <i>
+                    {row.award_kind === 'perfect'
+                      ? `무지각·무결석 · 일일 최소 ${formatMinutesKo(row.tier_min_minutes)}`
+                      : `${row.tier_label ? `${row.tier_label} · ` : ''}${formatMinutesKo(row.tier_min_minutes)} 이상`}
+                  </i>
                   <b>+{row.points}점</b>
                 </article>
               ))}
