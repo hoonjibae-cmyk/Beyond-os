@@ -41,6 +41,48 @@ function midnightAfter(sessionDate) {
   return new Date(`${addDays(sessionDate, 1)}T00:00:00+09:00`).toISOString();
 }
 
+// v41-245: 마감 시각은 "세션 날짜 다음 날 자정 + 설정 분"입니다.
+//   0   → 자정 정각 (예전과 같음)
+//   60  → 새벽 1시
+function closingAfter(sessionDate, offsetMinutes = 0) {
+  const base = new Date(midnightAfter(sessionDate)).getTime();
+  return new Date(base + Math.max(0, Number(offsetMinutes || 0)) * 60000).toISOString();
+}
+
+function formatClosingLabel(offsetMinutes = 0) {
+  const total = Math.max(0, Math.round(Number(offsetMinutes || 0)));
+  if (!total) return '자정';
+  const hour = Math.floor(total / 60);
+  const minute = total % 60;
+  if (!hour) return `자정 ${minute}분`;
+  return minute ? `새벽 ${hour}시 ${minute}분` : `새벽 ${hour}시`;
+}
+
+/**
+ * 자동 퇴실 마감 시각(자정 이후 분)을 읽습니다.
+ *
+ * 키오스크 브리지 설정에 함께 들어 있습니다. 자정 퇴실 보정과 짝이 되는 값이라
+ * 같은 화면에서 보고 고치는 편이 안전합니다.
+ *
+ * 여기서는 필요한 한 칸만 읽습니다. normalizeKioskBridgeSettings 는 이미 두 곳에
+ * 복사돼 있어, 세 번째 사본을 만들면 필드가 조용히 사라지는 사고가 납니다.
+ */
+async function loadAutoCheckoutOffsetMinutes(supabase) {
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', 'kiosk_bridge_settings')
+      .maybeSingle();
+    if (error) throw error;
+    const raw = data?.setting_value || {};
+    const value = Number(raw.autoCheckoutAfterMidnightMinutes ?? raw.auto_checkout_after_midnight_minutes);
+    return Number.isFinite(value) && value >= 0 && value <= 360 ? Math.round(value) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function calculatePureStudyMinutes(session, checkoutIso, studyWindows) {
   return calculateScheduledPureStudyMinutes(session, { nowIso: checkoutIso, studyWindows });
 }
@@ -49,6 +91,8 @@ async function runAutoCheckout() {
   const supabase = getSupabaseAdmin();
   const today = getKstDateString();
   const defaultSchedule = await getDefaultScheduleSettings(supabase, today);
+  const offsetMinutes = await loadAutoCheckoutOffsetMinutes(supabase);
+  const nowMs = Date.now();
 
   const { data: sessions, error } = await supabase
     .from('daily_sessions')
@@ -61,12 +105,24 @@ async function runAutoCheckout() {
   if (error) throw error;
 
   const updated = [];
+  let waiting = 0;
 
   for (const session of sessions || []) {
-    // 외출 후 복귀 없이 하루가 끝난 경우: 자정이 아니라 "외출 시작 시각"을 실제 퇴실로 봅니다.
-    // (18:59에 나가서 안 돌아왔으면 18:59 퇴실이지, 자정까지 외출 5시간이 아님)
+    // v41-245: 마감 시각이 아직 지나지 않았으면 건드리지 않습니다.
+    //
+    // 대상 조건이 '세션 날짜 < 오늘(KST)' 이라, 자정만 지나면 전날 세션이 곧바로
+    // 걸립니다. 마감이 새벽 1시인데 00:30 에 이 함수가 돌면(크론이든, 직원이
+    // 대시보드를 여는 순간이든) 아직 앉아 있는 학생이 퇴실 처리돼 버립니다.
+    const closingIso = closingAfter(session.session_date, offsetMinutes);
+    if (nowMs < new Date(closingIso).getTime()) {
+      waiting += 1;
+      continue;
+    }
+
+    // 외출 후 복귀 없이 하루가 끝난 경우: 마감 시각이 아니라 "외출 시작 시각"을 실제 퇴실로 봅니다.
+    // (18:59에 나가서 안 돌아왔으면 18:59 퇴실이지, 마감까지 외출 5시간이 아님)
     const leftWithoutReturn = session.seat_status === 'away' && Boolean(session.away_started_at);
-    const checkoutIso = leftWithoutReturn ? session.away_started_at : midnightAfter(session.session_date);
+    const checkoutIso = leftWithoutReturn ? session.away_started_at : closingIso;
     const extraAway = (!leftWithoutReturn && session.away_started_at)
       ? diffMinutes(session.away_started_at, checkoutIso)
       : 0;
@@ -97,14 +153,18 @@ async function runAutoCheckout() {
       seat_no: session.seat_no,
       event_type: 'check_out',
       event_at: checkoutIso,
-      memo: leftWithoutReturn ? '시스템 자동 퇴실(외출 후 미복귀 · 외출 시작 시각 기준)' : '시스템 자동 자정 퇴실',
+      // '자정 퇴실' 문구는 키오스크 보정 쪽에서 자동 퇴실을 알아보는 표시로도 쓰입니다.
+      // (created_by: 'system' 으로도 걸리지만, 예전 기록과 표현을 맞춰 둡니다)
+      memo: leftWithoutReturn
+        ? '시스템 자동 퇴실(외출 후 미복귀 · 외출 시작 시각 기준)'
+        : `시스템 자동 자정 퇴실(마감 ${formatClosingLabel(offsetMinutes)} 기준)`,
       created_by: 'system',
     });
 
     updated.push(saved);
   }
 
-  return updated;
+  return { updated, offsetMinutes, waiting };
 }
 
 export async function GET(request) {
@@ -112,12 +172,16 @@ export async function GET(request) {
     return Response.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
   try {
-    const updated = await runAutoCheckout();
+    const { updated, offsetMinutes, waiting } = await runAutoCheckout();
     return Response.json({
       ok: true,
       updatedCount: updated.length,
       updated,
-      note: 'KST 자정 기준 미퇴실 학생 자동 퇴실 처리',
+      closingLabel: formatClosingLabel(offsetMinutes),
+      closingAfterMidnightMinutes: offsetMinutes,
+      // 마감 전이라 아직 손대지 않은 세션 수
+      waitingCount: waiting,
+      note: `KST ${formatClosingLabel(offsetMinutes)} 마감 기준 미퇴실 학생 자동 퇴실 처리`,
     });
   } catch (error) {
     return Response.json({ ok: false, error: error.message || 'Unknown error' }, { status: 500 });

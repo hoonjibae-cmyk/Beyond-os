@@ -22509,6 +22509,16 @@ function formatKioskErrorForOperator(error = '') {
 }
 
 
+// v41-245: 자정 이후 분 → 사람이 읽는 마감 시각
+function formatAutoCheckoutClosing(minutes) {
+  const total = Math.max(0, Math.round(Number(minutes || 0)));
+  if (!total) return '자정';
+  const hour = Math.floor(total / 60);
+  const minute = total % 60;
+  if (!hour) return `자정 ${minute}분`;
+  return minute ? `새벽 ${hour}시 ${minute}분` : `새벽 ${hour}시`;
+}
+
 function KioskBridgeSettingsTab({ apiFetch, setMessage }) {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -22564,7 +22574,7 @@ function KioskBridgeSettingsTab({ apiFetch, setMessage }) {
   const activeStudents = Array.isArray(config?.activeStudents) ? config.activeStudents : [];
   const studentAliases = Array.isArray(config?.studentAliases) ? config.studentAliases : [];
   const operationSummary = config?.operationSummary || { total: 0, processed: 0, failed: 0, duplicate: 0, pending: 0, ignored: 0, reprocessed: 0, heartbeat: 0, successRate: 0, lastReceivedAt: null, lastProcessedAt: null, lastHeartbeatAt: null, lastAttendanceReceivedAt: null, lastSignalAt: null };
-  const bridgeSettings = config?.bridgeSettings || { autoApplyEnabled: true, staleWarningMinutes: 60, heartbeatIntervalMinutes: 30, manualConflictWindowSeconds: 60, overnightCheckoutCorrectionEnabled: true, overnightCheckoutGraceMinutes: 60, operatingHoursEnabled: true, operationStartTime: '09:00', operationEndTime: '24:00', breakHoldBufferMinutes: 1, breakHoldDuplicateWindowSeconds: 30 };
+  const bridgeSettings = config?.bridgeSettings || { autoApplyEnabled: true, staleWarningMinutes: 60, heartbeatIntervalMinutes: 30, manualConflictWindowSeconds: 60, overnightCheckoutCorrectionEnabled: true, overnightCheckoutGraceMinutes: 60, autoCheckoutAfterMidnightMinutes: 0, operatingHoursEnabled: true, operationStartTime: '09:00', operationEndTime: '24:00', breakHoldBufferMinutes: 1, breakHoldDuplicateWindowSeconds: 30 };
   const draftSettings = bridgeSettingsDraft || bridgeSettings;
   const staleStatus = config?.staleStatus || { thresholdMinutes: 60, stale: false, minutesSinceLastSignal: null, minutesSinceLastHeartbeat: null, minutesSinceLastAttendance: null, message: '최근 수신 상태를 확인 중입니다.' };
   const autoApplyEnabled = bridgeSettings.autoApplyEnabled !== false;
@@ -22603,6 +22613,7 @@ function KioskBridgeSettingsTab({ apiFetch, setMessage }) {
       manualConflictWindowSeconds: Number(draftSettings.manualConflictWindowSeconds ?? bridgeSettings.manualConflictWindowSeconds ?? 60),
       overnightCheckoutCorrectionEnabled: draftSettings.overnightCheckoutCorrectionEnabled ?? bridgeSettings.overnightCheckoutCorrectionEnabled ?? true,
       overnightCheckoutGraceMinutes: Number(draftSettings.overnightCheckoutGraceMinutes ?? bridgeSettings.overnightCheckoutGraceMinutes ?? 60),
+      autoCheckoutAfterMidnightMinutes: Number(draftSettings.autoCheckoutAfterMidnightMinutes ?? bridgeSettings.autoCheckoutAfterMidnightMinutes ?? 0),
       breakHoldBufferMinutes: Number(draftSettings.breakHoldBufferMinutes ?? bridgeSettings.breakHoldBufferMinutes ?? 1),
       breakHoldDuplicateWindowSeconds: Number(draftSettings.breakHoldDuplicateWindowSeconds ?? bridgeSettings.breakHoldDuplicateWindowSeconds ?? 30),
       ...(nextSettings || {}),
@@ -22772,6 +22783,7 @@ function KioskBridgeSettingsTab({ apiFetch, setMessage }) {
         <div><span>Heartbeat 주기</span><strong>{bridgeSettings.heartbeatIntervalMinutes || 30}분</strong><em>MacroDroid 반복 실행</em></div>
         <div><span>중복 방지</span><strong>{bridgeSettings.manualConflictWindowSeconds ?? 60}초</strong><em>수동 처리 직후 키오스크 무시</em></div>
         <div><span>자정 퇴실 보정</span><strong>{bridgeSettings.overnightCheckoutCorrectionEnabled === false ? 'OFF' : `${bridgeSettings.overnightCheckoutGraceMinutes ?? 60}분`}</strong><em>실제 키오스크 퇴실 우선</em></div>
+        <div><span>자동 퇴실 마감</span><strong>{formatAutoCheckoutClosing(bridgeSettings.autoCheckoutAfterMidnightMinutes)}</strong><em>이 시각 전에는 퇴실 처리하지 않음</em></div>
         <div><span>쉬는 시간 HOLD buffer</span><strong>{bridgeSettings.breakHoldBufferMinutes ?? 1}분</strong><em>다음 차시 시작 후 신호 지연 보정</em></div>
         <div><span>HOLD 중복 신호 방지</span><strong>{bridgeSettings.breakHoldDuplicateWindowSeconds ?? 30}초</strong><em>같은 학생·같은 신호 반복 제거</em></div>
         <div><span>운영시간 감시</span><strong>{bridgeSettings.operatingHoursEnabled === false ? 'OFF' : `${bridgeSettings.operationStartTime || '09:00'}~${bridgeSettings.operationEndTime || '24:00'}`}</strong><em>{staleStatus.insideOperatingHours === false ? '현재 운영시간 외' : '감시 적용 중'}</em></div>
@@ -22844,9 +22856,44 @@ function KioskBridgeSettingsTab({ apiFetch, setMessage }) {
             <div className="hint">기본값 30초. 같은 학생의 같은 외출·퇴실·입실 신호가 설정 시간 안에 반복되면 첫 신호만 HOLD하고 나머지는 중복으로 무시합니다.</div>
           </div>
           <div className="field">
+            <label>자동 퇴실 마감 시각</label>
+            <div className="auto-checkout-time-input" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span>자정 이후</span>
+              <input
+                type="number"
+                min="0"
+                max="6"
+                style={{ width: 72 }}
+                value={Math.floor(Number(draftSettings.autoCheckoutAfterMidnightMinutes ?? 0) / 60)}
+                onChange={(e) => setBridgeSettingsDraft({
+                  ...(draftSettings || {}),
+                  autoCheckoutAfterMidnightMinutes: Math.min(360, Math.max(0, Number(e.target.value || 0)) * 60 + (Number(draftSettings.autoCheckoutAfterMidnightMinutes ?? 0) % 60)),
+                })}
+              />
+              <span>시간</span>
+              <input
+                type="number"
+                min="0"
+                max="59"
+                style={{ width: 72 }}
+                value={Number(draftSettings.autoCheckoutAfterMidnightMinutes ?? 0) % 60}
+                onChange={(e) => setBridgeSettingsDraft({
+                  ...(draftSettings || {}),
+                  autoCheckoutAfterMidnightMinutes: Math.min(360, Math.floor(Number(draftSettings.autoCheckoutAfterMidnightMinutes ?? 0) / 60) * 60 + Math.min(59, Math.max(0, Number(e.target.value || 0)))),
+                })}
+              />
+              <span>분 &rarr; <b>{formatAutoCheckoutClosing(draftSettings.autoCheckoutAfterMidnightMinutes)} 마감</b></span>
+            </div>
+            <div className="hint">
+              0이면 자정 마감(예전과 같음), 1시간이면 새벽 1시 마감입니다. 마감 시각이 지나야 미퇴실 학생을 자동 퇴실 처리하며,
+              그 전에는 직원이 대시보드를 열어도 아직 앉아 있는 학생을 건드리지 않습니다.
+              <b> 순공시간 인정은 별개</b>라, 연장한 시간을 순공으로 세려면 설정 · 기본 시간표에 그 시간대 차시를 추가해야 합니다.
+            </div>
+          </div>
+          <div className="field">
             <label>자정 이후 실제 퇴실 보정 허용(분)</label>
             <input type="number" min="0" max="180" value={draftSettings.overnightCheckoutGraceMinutes ?? 60} onChange={(e) => setBridgeSettingsDraft({ ...(draftSettings || {}), overnightCheckoutGraceMinutes: Number(e.target.value || 0) })} />
-            <div className="hint">권장값 60분. 자정 자동마감 뒤 이 시간 안에 실제 키오스크 퇴실 문자가 들어오면 전날 세션의 실제 퇴실로 보정하고 퇴실 알림을 발송합니다.</div>
+            <div className="hint">권장값 60분. 자동 마감 뒤 이 시간 안에 실제 키오스크 퇴실 문자가 들어오면 전날 세션의 실제 퇴실로 보정하고 퇴실 알림을 발송합니다. 보정을 받아 주는 창은 <b>자정부터 마감 시각 + 이 시간</b>까지입니다. (마감이 새벽 1시 · 보정 60분이면 자정~새벽 2시)</div>
           </div>
           <div className="field checkbox-field">
             <label><input type="checkbox" checked={draftSettings.overnightCheckoutCorrectionEnabled !== false} onChange={(e) => setBridgeSettingsDraft({ ...(draftSettings || {}), overnightCheckoutCorrectionEnabled: e.target.checked })} /> 자정 이후 실제 퇴실 보정 사용</label>

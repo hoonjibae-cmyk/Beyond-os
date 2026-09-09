@@ -20,6 +20,9 @@ const DEFAULT_KIOSK_BRIDGE_SETTINGS = {
   manualConflictWindowSeconds: 60,
   overnightCheckoutCorrectionEnabled: true,
   overnightCheckoutGraceMinutes: 60,
+  // v41-245: 자정 이후 몇 분에 미퇴실 학생을 자동 퇴실 처리할지. 0 = 자정 정각.
+  // 예: 60 이면 새벽 1시. 이 시각 전에는 아직 앉아 있는 학생을 건드리지 않습니다.
+  autoCheckoutAfterMidnightMinutes: 0,
   operatingHoursEnabled: true,
   operationStartTime: '09:00',
   operationEndTime: '24:00',
@@ -47,6 +50,7 @@ function normalizeKioskBridgeSettings(value = {}) {
   const heartbeatMinutes = Number(source.heartbeatIntervalMinutes ?? source.heartbeat_interval_minutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.heartbeatIntervalMinutes);
   const manualConflictSeconds = Number(source.manualConflictWindowSeconds ?? source.manual_conflict_window_seconds ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.manualConflictWindowSeconds);
   const overnightGraceMinutes = Number(source.overnightCheckoutGraceMinutes ?? source.overnight_checkout_grace_minutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.overnightCheckoutGraceMinutes);
+  const autoCheckoutOffsetMinutes = Number(source.autoCheckoutAfterMidnightMinutes ?? source.auto_checkout_after_midnight_minutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.autoCheckoutAfterMidnightMinutes);
   const breakHoldBufferMinutes = Number(source.breakHoldBufferMinutes ?? source.break_hold_buffer_minutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.breakHoldBufferMinutes);
   const breakHoldDuplicateWindowSeconds = Number(source.breakHoldDuplicateWindowSeconds ?? source.break_hold_duplicate_window_seconds ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.breakHoldDuplicateWindowSeconds);
   return {
@@ -56,6 +60,7 @@ function normalizeKioskBridgeSettings(value = {}) {
     manualConflictWindowSeconds: Number.isFinite(manualConflictSeconds) && manualConflictSeconds >= 0 ? Math.round(manualConflictSeconds) : DEFAULT_KIOSK_BRIDGE_SETTINGS.manualConflictWindowSeconds,
     overnightCheckoutCorrectionEnabled: source.overnightCheckoutCorrectionEnabled ?? source.overnight_checkout_correction_enabled ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.overnightCheckoutCorrectionEnabled,
     overnightCheckoutGraceMinutes: Number.isFinite(overnightGraceMinutes) && overnightGraceMinutes >= 0 ? Math.round(overnightGraceMinutes) : DEFAULT_KIOSK_BRIDGE_SETTINGS.overnightCheckoutGraceMinutes,
+    autoCheckoutAfterMidnightMinutes: Number.isFinite(autoCheckoutOffsetMinutes) && autoCheckoutOffsetMinutes >= 0 && autoCheckoutOffsetMinutes <= 360 ? Math.round(autoCheckoutOffsetMinutes) : DEFAULT_KIOSK_BRIDGE_SETTINGS.autoCheckoutAfterMidnightMinutes,
     operatingHoursEnabled: source.operatingHoursEnabled ?? source.operating_hours_enabled ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.operatingHoursEnabled,
     operationStartTime: normalizeClockTime(source.operationStartTime ?? source.operation_start_time, DEFAULT_KIOSK_BRIDGE_SETTINGS.operationStartTime),
     operationEndTime: normalizeClockTime(source.operationEndTime ?? source.operation_end_time, DEFAULT_KIOSK_BRIDGE_SETTINGS.operationEndTime, { allow24: true }),
@@ -111,13 +116,26 @@ function getKstMinuteOfDay(value) {
   }
 }
 
+// v41-245: 보정 창은 자정부터 "마감 시각 + 보정 시간"까지입니다.
+//
+// 예전에는 자정~자정+보정(기본 60분)이었습니다. 마감이 새벽 1시가 되면 01:10 에
+// 찍힌 실제 퇴실 기록이 이 창을 벗어나, 전날 세션으로 보정되지 못하고 다음 날
+// 새 세션이 만들어집니다. 마감이 자정(0분)이면 예전과 똑같은 창입니다.
+function getOvernightGraceWindowMinutes(settings = {}) {
+  const graceMinutes = Number(settings.overnightCheckoutGraceMinutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.overnightCheckoutGraceMinutes);
+  if (!Number.isFinite(graceMinutes) || graceMinutes <= 0) return 0;
+  const offsetMinutes = Number(settings.autoCheckoutAfterMidnightMinutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.autoCheckoutAfterMidnightMinutes);
+  const offset = Number.isFinite(offsetMinutes) && offsetMinutes > 0 ? offsetMinutes : 0;
+  return graceMinutes + offset;
+}
+
 function isWithinOvernightCheckoutGrace(receivedAt, settings = {}) {
   if (settings.overnightCheckoutCorrectionEnabled === false) return false;
-  const graceMinutes = Number(settings.overnightCheckoutGraceMinutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.overnightCheckoutGraceMinutes);
-  if (!Number.isFinite(graceMinutes) || graceMinutes <= 0) return false;
+  const windowMinutes = getOvernightGraceWindowMinutes(settings);
+  if (windowMinutes <= 0) return false;
   const minuteOfDay = getKstMinuteOfDay(receivedAt);
   if (minuteOfDay === null) return false;
-  return minuteOfDay >= 0 && minuteOfDay <= graceMinutes;
+  return minuteOfDay >= 0 && minuteOfDay <= windowMinutes;
 }
 
 function clockToMinutes(value) {
@@ -287,7 +305,10 @@ async function findOvernightCheckoutCandidate({ supabase, studentId, receivedAt,
   const midnightIso = midnightAfterKstDate(previousDate);
   const receivedTime = new Date(receivedAt).getTime();
   const midnightTime = new Date(midnightIso).getTime();
-  const graceMs = Number(settings.overnightCheckoutGraceMinutes || DEFAULT_KIOSK_BRIDGE_SETTINGS.overnightCheckoutGraceMinutes) * 60000;
+  const graceMs = getOvernightGraceWindowMinutes(settings) * 60000;
+  // 자동 퇴실이 찍는 시각. 이 시각 근처로 닫혀 있으면 자동 퇴실로 봅니다.
+  const closingMs = Math.max(0, Number(settings.autoCheckoutAfterMidnightMinutes ?? 0)) * 60000;
+  const closingTime = midnightTime + closingMs;
   if (!Number.isFinite(receivedTime) || receivedTime < midnightTime || receivedTime > midnightTime + graceMs) return null;
 
   const { data: previousSession, error: previousSessionError } = await supabase
@@ -313,7 +334,12 @@ async function findOvernightCheckoutCandidate({ supabase, studentId, receivedAt,
   const checkoutTime = previousSession.check_out_at ? new Date(previousSession.check_out_at).getTime() : null;
   const looksAutoClosed = !previousSession.check_out_at
     || Boolean(systemAutoEvent)
-    || (Number.isFinite(checkoutTime) && Math.abs(checkoutTime - midnightTime) <= 5 * 60000);
+    // 마감 시각 근처로 닫혔으면 자동 퇴실입니다.
+    // 자정도 함께 봅니다. 마감을 옮기기 전에 자정으로 닫힌 기록이 남아 있습니다.
+    || (Number.isFinite(checkoutTime) && (
+      Math.abs(checkoutTime - closingTime) <= 5 * 60000
+      || Math.abs(checkoutTime - midnightTime) <= 5 * 60000
+    ));
 
   if (realCheckoutEvent) {
     const eventTime = new Date(realCheckoutEvent.event_at || realCheckoutEvent.created_at || 0).getTime();

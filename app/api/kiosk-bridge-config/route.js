@@ -14,6 +14,9 @@ const DEFAULT_KIOSK_BRIDGE_SETTINGS = {
   manualConflictWindowSeconds: 60,
   overnightCheckoutCorrectionEnabled: true,
   overnightCheckoutGraceMinutes: 60,
+  // v41-245: 자정 이후 몇 분에 미퇴실 학생을 자동 퇴실 처리할지. 0 = 자정 정각.
+  // 예: 60 이면 새벽 1시. 이 시각 전에는 아직 앉아 있는 학생을 건드리지 않습니다.
+  autoCheckoutAfterMidnightMinutes: 0,
   operatingHoursEnabled: true,
   operationStartTime: '09:00',
   operationEndTime: '24:00',
@@ -40,6 +43,7 @@ function normalizeKioskBridgeSettings(value = {}) {
   const heartbeatMinutes = Number(source.heartbeatIntervalMinutes ?? source.heartbeat_interval_minutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.heartbeatIntervalMinutes);
   const manualConflictSeconds = Number(source.manualConflictWindowSeconds ?? source.manual_conflict_window_seconds ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.manualConflictWindowSeconds);
   const overnightGraceMinutes = Number(source.overnightCheckoutGraceMinutes ?? source.overnight_checkout_grace_minutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.overnightCheckoutGraceMinutes);
+  const autoCheckoutOffsetMinutes = Number(source.autoCheckoutAfterMidnightMinutes ?? source.auto_checkout_after_midnight_minutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.autoCheckoutAfterMidnightMinutes);
   const breakHoldBufferMinutes = Number(source.breakHoldBufferMinutes ?? source.break_hold_buffer_minutes ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.breakHoldBufferMinutes);
   const breakHoldDuplicateWindowSeconds = Number(source.breakHoldDuplicateWindowSeconds ?? source.break_hold_duplicate_window_seconds ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.breakHoldDuplicateWindowSeconds);
   return {
@@ -49,6 +53,7 @@ function normalizeKioskBridgeSettings(value = {}) {
     manualConflictWindowSeconds: Number.isFinite(manualConflictSeconds) && manualConflictSeconds >= 0 ? Math.round(manualConflictSeconds) : DEFAULT_KIOSK_BRIDGE_SETTINGS.manualConflictWindowSeconds,
     overnightCheckoutCorrectionEnabled: source.overnightCheckoutCorrectionEnabled ?? source.overnight_checkout_correction_enabled ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.overnightCheckoutCorrectionEnabled,
     overnightCheckoutGraceMinutes: Number.isFinite(overnightGraceMinutes) && overnightGraceMinutes >= 0 ? Math.round(overnightGraceMinutes) : DEFAULT_KIOSK_BRIDGE_SETTINGS.overnightCheckoutGraceMinutes,
+    autoCheckoutAfterMidnightMinutes: Number.isFinite(autoCheckoutOffsetMinutes) && autoCheckoutOffsetMinutes >= 0 && autoCheckoutOffsetMinutes <= 360 ? Math.round(autoCheckoutOffsetMinutes) : DEFAULT_KIOSK_BRIDGE_SETTINGS.autoCheckoutAfterMidnightMinutes,
     operatingHoursEnabled: source.operatingHoursEnabled ?? source.operating_hours_enabled ?? DEFAULT_KIOSK_BRIDGE_SETTINGS.operatingHoursEnabled,
     operationStartTime: normalizeClockTime(source.operationStartTime ?? source.operation_start_time, DEFAULT_KIOSK_BRIDGE_SETTINGS.operationStartTime),
     operationEndTime: normalizeClockTime(source.operationEndTime ?? source.operation_end_time, DEFAULT_KIOSK_BRIDGE_SETTINGS.operationEndTime, { allow24: true }),
