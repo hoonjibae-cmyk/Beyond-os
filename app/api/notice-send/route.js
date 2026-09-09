@@ -5,6 +5,7 @@ import { writeUserActionLog } from '../../../lib/actionLog';
 import { getReportSendSettings, resolveRecipientTestMode, getRecipientTestModeSource } from '../../../lib/reportSendSettings';
 import { getNoticeLink } from '../../../lib/noticeShare';
 import { getNoticeCategory, buildNoticeKakaoVariables } from '../../../lib/noticeTemplates';
+import { normalizeNoticeAudience, getNoticeAudienceLabel, audienceIncludesParent, audienceIncludesStudent } from '../../../lib/noticeAudience';
 import { getKstDateString } from '../../../lib/date';
 
 export const dynamic = 'force-dynamic';
@@ -29,13 +30,25 @@ async function resolveNoticeCohort(supabase, requested) {
   return resolveScopeCohort(supabase, requested, getKstDateString());
 }
 
-// 활성 학생의 수신 동의(데일리 리포트 수신) 보호자 → 전화번호 기준 중복 제거
+// 발송 대상 연락처를 모읍니다. 전화번호 기준으로 중복을 제거합니다.
+//
 // studentIds 가 배열이면 그 학생들로만 좁힙니다. (기수 수강 명단)
-async function collectRecipients(supabase, studentIds = null) {
+// audience
+//   parent  : 수신 동의(데일리 리포트 수신 ON)된 활성 보호자   ← 기존 동작
+//   student : 학생 본인 연락처(students.student_phone)
+//   both    : 둘 다
+//
+// v41-244: 보호자를 먼저 담고 학생을 나중에 담습니다.
+// 학생 번호로 보호자 번호를 등록해 둔 경우가 있어, 그때는 보호자 한 건으로만 나갑니다.
+// (같은 번호로 같은 알림톡이 두 번 가는 것을 막습니다)
+async function collectRecipients(supabase, studentIds = null, audience = 'parent') {
   if (Array.isArray(studentIds) && !studentIds.length) return [];
+  const wantParent = audienceIncludesParent(audience);
+  const wantStudent = audienceIncludesStudent(audience);
+
   let query = supabase
     .from('students')
-    .select('id, name, status, student_guardians(*)')
+    .select('id, name, status, student_phone, student_guardians(*)')
     .eq('status', 'active');
   if (Array.isArray(studentIds)) query = query.in('id', studentIds);
   const { data: students, error } = await query;
@@ -43,18 +56,51 @@ async function collectRecipients(supabase, studentIds = null) {
 
   const seen = new Set();
   const recipients = [];
-  for (const student of students || []) {
-    const guardians = Array.isArray(student.student_guardians) ? student.student_guardians : [];
-    for (const g of guardians) {
-      if (g.is_active === false) continue;
-      if (g.receive_daily_report === false) continue;
-      const phone = normalizePhone(g.phone);
-      if (!phone || seen.has(phone)) continue;
-      seen.add(phone);
-      recipients.push({ name: g.guardian_name || `${student.name || '학생'} 보호자`, phone });
+
+  if (wantParent) {
+    for (const student of students || []) {
+      const guardians = Array.isArray(student.student_guardians) ? student.student_guardians : [];
+      for (const g of guardians) {
+        if (g.is_active === false) continue;
+        if (g.receive_daily_report === false) continue;
+        const phone = normalizePhone(g.phone);
+        if (!phone || seen.has(phone)) continue;
+        seen.add(phone);
+        recipients.push({ name: g.guardian_name || `${student.name || '학생'} 보호자`, phone, role: 'parent' });
+      }
     }
   }
+
+  if (wantStudent) {
+    for (const student of students || []) {
+      const phone = normalizePhone(student.student_phone);
+      if (!phone || seen.has(phone)) continue;
+      seen.add(phone);
+      recipients.push({ name: student.name || '학생', phone, role: 'student' });
+    }
+  }
+
   return recipients;
+}
+
+function countByRole(recipients = []) {
+  return {
+    parentCount: recipients.filter((r) => r.role !== 'student').length,
+    studentCount: recipients.filter((r) => r.role === 'student').length,
+  };
+}
+
+/** 학생을 대상에 넣었는데 연락처가 없는 학생 수 (화면 경고용) */
+async function countStudentsWithoutPhone(supabase, studentIds = null) {
+  try {
+    let query = supabase.from('students').select('id, student_phone').eq('status', 'active');
+    if (Array.isArray(studentIds)) query = query.in('id', studentIds);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).filter((row) => !normalizePhone(row.student_phone)).length;
+  } catch {
+    return 0;
+  }
 }
 
 async function callWebhook(payload) {
@@ -114,7 +160,14 @@ export async function POST(request) {
     // v41-202: 지금 보고 있는 기수의 수강생 학부모에게만 보냅니다.
     const cohort = await resolveNoticeCohort(supabase, body.cohortId || getCohortIdFromRequest(request));
     const cohortStudentIds = cohort ? await loadCohortStudentIds(supabase, cohort.id) : null;
-    const recipients = await collectRecipients(supabase, cohortStudentIds);
+    // v41-244: 학부모 / 학생 / 둘 다 중에서 고릅니다. 값이 없으면 예전처럼 학부모입니다.
+    const audience = normalizeNoticeAudience(body.audience);
+    const audienceLabel = getNoticeAudienceLabel(audience);
+    const recipients = await collectRecipients(supabase, cohortStudentIds, audience);
+    const { parentCount, studentCount } = countByRole(recipients);
+    const studentsWithoutPhone = audienceIncludesStudent(audience)
+      ? await countStudentsWithoutPhone(supabase, cohortStudentIds)
+      : 0;
     const scopeLabel = cohort ? `${cohort.name || '해당 기수'} 수강 명단` : '활성 학생 전체';
     const sendSettings = await getReportSendSettings(supabase).catch(() => ({}));
     const testMode = resolveRecipientTestMode(sendSettings?.settings || sendSettings || {}, String(process.env.KAKAO_RECIPIENT_TEST_MODE || '').toLowerCase() === 'true');
@@ -135,6 +188,7 @@ export async function POST(request) {
       return Response.json({
         preview: true, recipientCount: recipients.length, testMode, testModeSource,
         category: cat.key, categoryLabel: cat.label, input: cat.input,
+        audience, audienceLabel, parentCount, studentCount, studentsWithoutPhone,
         link, hasLink: contentReady,
         cohortId: cohort?.id || null,
         cohortName: cohort?.name || '',
@@ -144,10 +198,11 @@ export async function POST(request) {
     }
 
     if (!recipients.length) {
+      const who = audience === 'student'
+        ? '학생 본인 연락처가 없습니다. (학생 정보의 학생 연락처를 확인하세요)'
+        : '수신 동의된 보호자 연락처가 없습니다. (활성 학생 · 데일리 리포트 수신 ON 기준)';
       return Response.json({
-        error: cohort
-          ? `${scopeLabel}에 수신 동의된 보호자 연락처가 없습니다. (활성 학생 · 데일리 리포트 수신 ON 기준) 기수 관리에서 수강 명단을 확인하세요.`
-          : '수신 동의된 보호자 연락처가 없습니다. (활성 학생 · 데일리 리포트 수신 ON 기준)',
+        error: cohort ? `${scopeLabel}에 ${who} 기수 관리에서 수강 명단을 확인하세요.` : who,
       }, { status: 400 });
     }
     if (!contentReady) {
@@ -163,6 +218,7 @@ export async function POST(request) {
     const payload = {
       reportType: 'notice',
       noticeCategory: cat.key,
+      noticeAudience: audience,
       actualSend,
       isTest: !actualSend,
       recipients,
@@ -179,14 +235,15 @@ export async function POST(request) {
       },
       cohortId: cohort?.id || null,
       cohortName: cohort?.name || '',
-      idempotencyKey: `notice:${notice.id}:${cohort?.id || 'all'}:${actualSend ? 'live' : 'test'}:${recipients.length}`,
+      // 대상이 달라지면 다른 발송입니다. (학부모에게 보낸 뒤 학생에게도 보낼 수 있어야 합니다)
+      idempotencyKey: `notice:${notice.id}:${cohort?.id || 'all'}:${audience}:${actualSend ? 'live' : 'test'}:${recipients.length}`,
     };
 
     const result = await callWebhook(payload);
 
     // 실제 발송이 접수되면 공지 상태 갱신 (발송 대상 스냅샷 포함 — 번호는 마스킹 저장)
     if (actualSend && result.ok) {
-      const recipientSnapshot = recipients.map((r) => ({ name: r.name, phone: maskPhone(r.phone) }));
+      const recipientSnapshot = recipients.map((r) => ({ name: r.name, phone: maskPhone(r.phone), role: r.role || 'parent' }));
       await supabase.from('notices').update({
         status: 'sent',
         sent_at: new Date().toISOString(),
@@ -198,6 +255,10 @@ export async function POST(request) {
           status: result.status,
           category: cat.key,
           categoryLabel: cat.label,
+          audience,
+          audienceLabel,
+          parentCount,
+          studentCount,
           cohortId: cohort?.id || null,
           cohortName: cohort?.name || '',
           scopeLabel,
@@ -213,6 +274,7 @@ export async function POST(request) {
       targetName: notice.title,
       payload: {
         category: cat.key, recipientCount: recipients.length, actualSend, testMode,
+        audience, audienceLabel, parentCount, studentCount,
         ok: result.ok, status: result.status,
         cohortId: cohort?.id || null, cohortName: cohort?.name || '',
       },
@@ -223,6 +285,10 @@ export async function POST(request) {
       status: result.status,
       message: result.message,
       recipientCount: recipients.length,
+      audience,
+      audienceLabel,
+      parentCount,
+      studentCount,
       testMode,
       testModeSource,
       cohortId: cohort?.id || null,

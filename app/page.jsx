@@ -17,6 +17,7 @@ import { FOCUS_MAX, FOCUS_LABELS, normalizeFocusRating, getFocusLabel, summarize
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
+import { NOTICE_AUDIENCES, DEFAULT_NOTICE_AUDIENCE, getNoticeAudience } from '../lib/noticeAudience';
 import { buildConfirmDetail, summarizeConfirmDetail } from '../lib/scheduleConfirmView';
 import { MENTORING_DAY_OPTIONS, FALLBACK_MENTORING_POLICY, normalizeMentoringPolicy, getSelectableMentoringDays, formatMentoringDays } from '../lib/mentoringPolicy';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
@@ -20272,6 +20273,8 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
   const [confirm, setConfirm] = useState(null);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [sending, setSending] = useState(false);
+  // v41-244: 공지 수신 대상 (학부모 / 학생 / 둘 다). 기본은 예전과 같은 학부모입니다.
+  const [audience, setAudience] = useState(DEFAULT_NOTICE_AUDIENCE);
   const [recipientView, setRecipientView] = useState(null); // 발송 대상 조회 중인 공지 id
 
   const activeCategory = getNoticeCategory(form.category);
@@ -20337,12 +20340,18 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
     if (!form.id) { setMessage('먼저 공지를 저장하세요.'); return; }
     try {
       setSending(true);
-      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, previewOnly: true }) });
+      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, previewOnly: true, audience }) });
       setConfirm({
         recipientCount: d.recipientCount, testMode: d.testMode, testModeSource: d.testModeSource,
         link: d.link, hasLink: d.hasLink, categoryLabel: d.categoryLabel, input: d.input,
         // v41-202: 어느 기수 학부모에게 가는지 확인창에 그대로 보여 줍니다.
         cohortName: d.cohortName || '', scopeLabel: d.scopeLabel || '', cohortStudentCount: d.cohortStudentCount,
+        // v41-244: 확인 시점의 대상을 그대로 들고 갑니다.
+        // 확인 후에 대상을 바꿔도, 실제로 나가는 것은 확인한 대상입니다.
+        audience: d.audience || DEFAULT_NOTICE_AUDIENCE,
+        audienceLabel: d.audienceLabel || '학부모',
+        parentCount: d.parentCount, studentCount: d.studentCount,
+        studentsWithoutPhone: d.studentsWithoutPhone || 0,
       });
       setConfirmChecked(false);
     } catch (e) { setMessage(e.message); } finally { setSending(false); }
@@ -20353,8 +20362,8 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
     if (!confirm.testMode && !confirmChecked) { setMessage('실제 발송 확인 체크가 필요합니다.'); return; }
     try {
       setSending(true);
-      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, actualSend: true }) });
-      if (d.ok) setMessage(`공지 알림톡 발송 접수 완료 · ${d.cohortName ? `${d.cohortName} ` : ''}대상 ${d.recipientCount}명${d.testMode ? ' (테스트 수신번호 모드)' : ''}`);
+      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, actualSend: true, audience: confirm.audience }) });
+      if (d.ok) setMessage(`공지 알림톡 발송 접수 완료 · ${d.cohortName ? `${d.cohortName} ` : ''}${d.audienceLabel || '학부모'} ${d.recipientCount}명${d.testMode ? ' (테스트 수신번호 모드)' : ''}`);
       else setMessage(`발송 실패: ${d.message || d.error || '알 수 없는 오류'}`);
       setConfirm(null); setConfirmChecked(false);
       await loadNotices();
@@ -20379,7 +20388,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
   return (
     <section className="content-card notice-broadcast-tab">
       <h2>공지사항 발송</h2>
-      <p>공지를 작성하면 학부모 전체에게 카카오 알림톡으로 링크를 발송합니다. 발송 대상은 <b>활성 학생의 수신 동의 보호자</b> 기준이며, 테스트 수신번호 모드·Allowlist 설정이 그대로 적용됩니다.</p>
+      <p>공지를 작성하면 카카오 알림톡으로 발송합니다. 받는 사람은 <b>학부모 · 학생 · 둘 다</b> 중에서 고를 수 있습니다. 학부모는 <b>활성 학생의 수신 동의 보호자</b>, 학생은 <b>학생 본인 연락처</b> 기준이며, 테스트 수신번호 모드·Allowlist 설정이 그대로 적용됩니다.</p>
       <div className="call note" style={{ marginTop: 4 }}>
         <b>준비물</b>
         <p>목적별로 카카오 알림톡 템플릿을 등록하고, 카테고리별 환경변수(<span className="path">SOLAPI_TEMPLATE_ID_NOTICE_*</span>)에 승인된 템플릿 ID를 설정해야 실제 발송됩니다. 아래에서 <b>공지 유형(카테고리)</b>을 먼저 고르면 그 유형에 맞는 입력 항목과 등록용 템플릿 예시가 나타납니다.</p>
@@ -20472,24 +20481,58 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
         </div>
       ) : null}
 
-      <h4>3) 학부모 발송</h4>
-      <div className="hint">화면 상단 [기수 보기]에서 고른 기수의 수강생 학부모에게만 보냅니다. 아래 [발송 준비]를 누르면 어느 기수 몇 명인지 확인할 수 있습니다.</div>
+      <h4>3) 발송 대상 · 발송</h4>
+      <div className="hint">화면 상단 [기수 보기]에서 고른 기수의 수강생에게만 보냅니다. 아래 [발송 준비]를 누르면 어느 기수 몇 명인지 확인할 수 있습니다.</div>
+      <div className="notice-audience-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '6px 0 4px' }}>
+        {NOTICE_AUDIENCES.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={audience === item.key ? 'primary' : 'secondary'}
+            onClick={() => { setAudience(item.key); setConfirm(null); setConfirmChecked(false); }}
+          >{item.label}</button>
+        ))}
+      </div>
+      <div className="hint">{getNoticeAudience(audience).desc}</div>
+      {audience !== 'parent' ? (
+        <div className="call warn notice-audience-note" style={{ marginTop: 8 }}>
+          <b>학생에게 보내기 전에 확인하세요</b>
+          <p style={{ margin: '4px 0 0', fontSize: 12.5, lineHeight: 1.5 }}>
+            카카오 알림톡 본문은 심사받은 그대로만 나갑니다. 지금 등록된 세 템플릿은 모두
+            <b> &quot;안녕하세요, 학부모님.&quot;</b>으로 시작합니다. 학생에게도 그 문구 그대로 갑니다.
+            학생용 문구가 따로 필요하시면 학생용 템플릿을 별도로 심사받아야 합니다.
+          </p>
+        </div>
+      ) : null}
       <div className="btn-row">
         <button className="primary" onClick={prepareSend} disabled={!form.id || sending}>{sending && !confirm ? '대상 확인 중...' : '발송 준비 (대상 확인)'}</button>
       </div>
 
       {confirm ? (
         <div className={`notice-confirm-panel call ${confirm.testMode ? 'warn' : 'field'}`} style={{ marginTop: 10 }}>
-          <b>{confirm.testMode ? '테스트 수신번호 모드로 발송' : `${confirm.cohortName ? `${confirm.cohortName} ` : '전체 '}학부모에게 실제 발송`}</b>
+          <b>{confirm.testMode ? '테스트 수신번호 모드로 발송' : `${confirm.cohortName ? `${confirm.cohortName} ` : '전체 '}${confirm.audienceLabel || '학부모'}에게 실제 발송`}</b>
           {confirm.categoryLabel ? <p style={{ margin: '2px 0 4px' }}>유형: <b>{confirm.categoryLabel}</b></p> : null}
           <p>발송 범위: <b>{confirm.scopeLabel || '활성 학생 전체'}</b>{typeof confirm.cohortStudentCount === 'number' ? ` (수강생 ${confirm.cohortStudentCount}명)` : ''}</p>
-          <p>수신 대상 <b>{confirm.recipientCount}명</b> (활성 학생 · 데일리 리포트 수신 ON 보호자, 번호 중복 제거).</p>
+          <p>
+            수신 대상 <b>{confirm.audienceLabel || '학부모'} {confirm.recipientCount}명</b>
+            {confirm.audience === 'both' ? ` (보호자 ${confirm.parentCount || 0} · 학생 ${confirm.studentCount || 0})` : ''}
+            {' '}— 번호 중복 제거 후 기준입니다.
+            {confirm.audience === 'parent' ? ' (활성 학생 · 데일리 리포트 수신 ON 보호자)' : ''}
+          </p>
+          {confirm.audience === 'both' && Number(confirm.studentCount || 0) === 0 && Number(confirm.parentCount || 0) > 0 ? (
+            <p>학생 연락처가 보호자 번호와 같거나 비어 있어, 학생으로 따로 나가는 건이 없습니다.</p>
+          ) : null}
+          {Number(confirm.studentsWithoutPhone || 0) > 0 ? (
+            <p style={{ color: 'var(--ap-attn-text,#c0392b)' }}>
+              ⚠️ 학생 연락처가 없는 학생 <b>{confirm.studentsWithoutPhone}명</b>은 대상에서 빠집니다. 학생 관리에서 연락처를 채우면 다음 발송부터 포함됩니다.
+            </p>
+          ) : null}
           {confirm.testMode ? <p>현재 <b>테스트 수신번호 모드</b>입니다. 실제 학부모가 아니라 설정된 테스트 번호로만 발송됩니다. (실전 발송하려면 설정 › 리포트 발송 설정에서 테스트 모드를 끄세요.)</p> : null}
           {!confirm.hasLink ? <p style={{ color: 'var(--ap-attn-text,#c0392b)' }}>⚠️ {confirm.input === 'fields' ? '발송 항목(기간·사유·내용)이 비어 있습니다. 저장 후 다시 시도하세요.' : '링크가 없습니다. 본문 저장 또는 외부 URL을 확인하세요.'}</p> : null}
           {!confirm.testMode ? (
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0', fontWeight: 700 }}>
               <input type="checkbox" checked={confirmChecked} onChange={(e) => setConfirmChecked(e.target.checked)} />
-              {confirm.cohortName ? `${confirm.cohortName} ` : ''}실제 학부모 {confirm.recipientCount}명에게 발송하는 것을 확인합니다.
+              {confirm.cohortName ? `${confirm.cohortName} ` : ''}실제 {confirm.audienceLabel || '학부모'} {confirm.recipientCount}명에게 발송하는 것을 확인합니다.
             </label>
           ) : null}
           <div className="btn-row">
