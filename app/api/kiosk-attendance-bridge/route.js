@@ -328,6 +328,16 @@ async function findOvernightCheckoutCandidate({ supabase, studentId, receivedAt,
   if (!studentId || !receivedAt || !isWithinOvernightCheckoutGrace(receivedAt, settings)) return null;
 
   const today = getKstDateString(new Date(receivedAt));
+
+  // v41-247: 아직 마감 전이면 보정할 것이 없습니다.
+  //
+  // 마감이 새벽 1시면 00:30 은 아직 어제 운영일이라 어제 세션이 열려 있습니다.
+  // 그 세션은 평소 경로가 그대로 처리합니다. 여기까지 내려오는 것은 그 학생의
+  // 어제 세션이 아예 없는 경우인데, 이때 달력 기준으로 하루를 더 빼면 그저께
+  // 세션을 건드리게 됩니다. 마감이 지난 뒤에만 보정합니다.
+  const businessDate = getBusinessDateString(settings?.autoCheckoutAfterMidnightMinutes, new Date(receivedAt));
+  if (businessDate !== today) return null;
+
   const previousDate = addKstDays(today, -1);
   const midnightIso = midnightAfterKstDate(previousDate);
   const receivedTime = new Date(receivedAt).getTime();
