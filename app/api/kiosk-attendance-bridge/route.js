@@ -149,15 +149,41 @@ function clockToMinutes(value) {
   return hour * 60 + minute;
 }
 
-function getBreakHoldWindow(receivedAt, studyWindows = [], bufferMinutes = 1) {
-  const minuteOfDay = getKstMinuteOfDay(receivedAt);
-  if (minuteOfDay === null) return null;
+// 운영일 안의 분을 시:분으로 씁니다. 자정을 넘긴 차시는 24시를 넘겨 표기합니다. (예: 24:30)
+function formatHoldClock(minute) {
+  const total = Math.max(0, Math.round(Number(minute || 0)));
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+// v41-247: 차시 순서는 '달력 시각'이 아니라 '운영일 안의 순서'로 봐야 합니다.
+//
+// 운영 마감을 새벽 1시로 늘리면서 [자율학습2 00:00~01:00] 차시를 추가하면,
+// 시각만으로 정렬했을 때 이 차시가 맨 앞(00:00)으로 갑니다. 그러면 그 뒤에
+// 1차시(09:00)가 오므로 01:00~09:01 이 통째로 '쉬는 시간'이 되어 버립니다.
+// 마감 시각에 퇴실하는 학생 신호가 전부 HOLD 로 잡히는 문제였습니다.
+//
+// 마감 시각(자정 이후 분)보다 이른 차시는 그 운영일의 '다음 날 새벽' 부분입니다.
+// 24시간을 더해 맨 뒤로 보내면 22:00~24:00 다음에 24:00~25:00 이 이어져
+// 사이에 빈 구간이 생기지 않고, 마지막 차시가 되어 그 뒤로도 HOLD 가 없습니다.
+// 마감이 자정(0분)이면 아무것도 옮겨지지 않아 예전과 완전히 같습니다.
+function getBreakHoldWindow(receivedAt, studyWindows = [], bufferMinutes = 1, closingOffsetMinutes = 0) {
+  const rawMinute = getKstMinuteOfDay(receivedAt);
+  if (rawMinute === null) return null;
+  const offset = Number.isFinite(Number(closingOffsetMinutes))
+    ? Math.max(0, Math.min(360, Math.round(Number(closingOffsetMinutes))))
+    : 0;
+  const minuteOfDay = rawMinute < offset ? rawMinute + 24 * 60 : rawMinute;
   const windows = (studyWindows || [])
-    .map((item, index) => ({
-      label: String(item?.label || `${index + 1}차시`),
-      start: clockToMinutes(item?.start),
-      end: clockToMinutes(item?.end),
-    }))
+    .map((item, index) => {
+      const rawStart = clockToMinutes(item?.start);
+      const rawEnd = clockToMinutes(item?.end);
+      const shift = rawStart !== null && rawStart < offset ? 24 * 60 : 0;
+      return {
+        label: String(item?.label || `${index + 1}차시`),
+        start: rawStart === null ? null : rawStart + shift,
+        end: rawEnd === null ? null : rawEnd + shift,
+      };
+    })
     .filter((item) => item.start !== null && item.end !== null && item.end > item.start)
     .sort((a, b) => a.start - b.start);
 
@@ -171,15 +197,15 @@ function getBreakHoldWindow(receivedAt, studyWindows = [], bufferMinutes = 1) {
     if (next.start <= current.end) continue;
     // 차시 종료 직후부터 다음 차시 시작 + 사용자 설정 buffer까지 보류합니다.
     const holdStart = current.end;
-    const holdEnd = Math.min(24 * 60, next.start + normalizedBufferMinutes);
+    const holdEnd = Math.min(24 * 60 + offset, next.start + normalizedBufferMinutes);
     if (minuteOfDay >= holdStart && minuteOfDay <= holdEnd) {
       return {
         previousLabel: current.label,
         nextLabel: next.label,
         startMinute: holdStart,
         endMinute: holdEnd,
-        startTime: `${String(Math.floor(holdStart / 60)).padStart(2, '0')}:${String(holdStart % 60).padStart(2, '0')}`,
-        endTime: `${String(Math.floor(holdEnd / 60)).padStart(2, '0')}:${String(holdEnd % 60).padStart(2, '0')}`,
+        startTime: formatHoldClock(holdStart),
+        endTime: formatHoldClock(holdEnd),
       };
     }
   }
@@ -1242,7 +1268,7 @@ export async function POST(request) {
     // (복귀는 shouldHoldBreakSignal에서 이미 HOLD 대상에서 빠집니다.)
     const isFirstCheckIn = parsed.eventType === 'check_in' && !currentSession?.check_in_at;
     const breakHoldWindow = (shouldHoldBreakSignal(parsed.eventType) && !isFirstCheckIn)
-      ? getBreakHoldWindow(receivedAt, defaultSchedule.studyWindows, bridgeSettings.breakHoldBufferMinutes)
+      ? getBreakHoldWindow(receivedAt, defaultSchedule.studyWindows, bridgeSettings.breakHoldBufferMinutes, bridgeSettings.autoCheckoutAfterMidnightMinutes)
       : null;
 
     // v41-159: 쉬는 시간 복귀는 즉시 반영하지만(v41-155), HOLD 목록에는 함께 남깁니다.
@@ -1250,7 +1276,7 @@ export async function POST(request) {
     // 운영자가 처리할 일은 없으므로 pending이 아니라 auto_applied로 넣습니다.
     // 복귀만 남깁니다. 첫 등원은 짝이 될 외출이 없어 늘 '미완결'로 보여 오히려 헷갈립니다.
     const autoAppliedBreakWindow = parsed.eventType === 'return'
-      ? getBreakHoldWindow(receivedAt, defaultSchedule.studyWindows, bridgeSettings.breakHoldBufferMinutes)
+      ? getBreakHoldWindow(receivedAt, defaultSchedule.studyWindows, bridgeSettings.breakHoldBufferMinutes, bridgeSettings.autoCheckoutAfterMidnightMinutes)
       : null;
 
     // ── v41-160: 같은 쉬는 시간의 외출 ↔ 복귀 짝이 맞으면 자동으로 쉬는 시간 이동 처리 ──
