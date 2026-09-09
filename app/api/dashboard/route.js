@@ -1,6 +1,8 @@
 import { getSupabaseAdmin, getSupabaseEnv } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString } from '../../../lib/date';
+import { getBusinessDate } from '../../../lib/businessDateServer';
+import { getBusinessDayEndIso, getBusinessDayStartIso } from '../../../lib/businessDate';
 import { STATIC_SEATS } from '../../../lib/staticSeats';
 import { MENTORING_POLICY_SETTING_KEY, getMentoringPolicyCohortKey, normalizeMentoringPolicy, FALLBACK_MENTORING_POLICY } from '../../../lib/mentoringPolicy';
 
@@ -55,12 +57,22 @@ async function attachCurrentStudents(supabase, seats) {
 export async function GET(request) {
   if (!isAuthorized(request)) return unauthorizedResponse();
 
-  const today = getKstDateString();
   let supabase;
+  // v41-246: 좌석판은 달력 날짜가 아니라 '운영일'을 봅니다. (아래 try 안에서 채웁니다)
+  // catch 블록의 응답에서도 쓰이므로 여기서 선언합니다.
+  let today = getKstDateString();
+  let closingOffsetMinutes = 0;
 
   try {
     getSupabaseEnv();
     supabase = getSupabaseAdmin();
+
+    // v41-246: 좌석판은 달력 날짜가 아니라 '운영일'을 봅니다.
+    //
+    // 마감이 새벽 1시면 00:30 은 아직 어제 운영일입니다. 달력 날짜로 그리면 자정에
+    // 화면이 새 날짜로 넘어가, 자리에 앉아 있는 학생이 전원 [미입실]로 보였습니다.
+    // 마감이 자정(0분)이면 아래 값은 getKstDateString() 과 같습니다.
+    ({ businessDate: today, offsetMinutes: closingOffsetMinutes } = await getBusinessDate(supabase));
   } catch (error) {
     return Response.json({
       ok: false,
@@ -396,8 +408,9 @@ export async function GET(request) {
       const { data: alertLogs } = await supabase
         .from('parent_notification_logs')
         .select('id, student_id, schedule_id, break_id, notification_type, send_status, created_by, created_at')
-        .gte('created_at', `${today}T00:00:00+09:00`)
-        .lte('created_at', `${today}T23:59:59+09:00`)
+        // 운영일 시작(자정)부터 마감까지. 마감이 새벽 1시면 다음 날 01:00 까지입니다.
+        .gte('created_at', getBusinessDayStartIso(today))
+        .lte('created_at', getBusinessDayEndIso(today, closingOffsetMinutes))
         .order('created_at', { ascending: false });
       // 초안 저장과 실패 건은 "발송됨"으로 보지 않습니다.
       parentAlertLogs = (alertLogs || []).filter((row) => !['draft', 'failed'].includes(String(row.send_status || '')));
@@ -408,6 +421,8 @@ export async function GET(request) {
     return Response.json({
       ok: true,
       today,
+      // v41-246: 화면도 같은 마감 기준을 쓰도록 함께 내려 줍니다.
+      closingOffsetMinutes,
       seats,
       students: allStudents || [],
       sessions: sessions || [],

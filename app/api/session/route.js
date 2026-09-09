@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
+import { getBusinessDate } from '../../../lib/businessDateServer';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
 import { sendAttendanceNotification } from '../../../lib/attendanceNotifications';
@@ -139,7 +140,9 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const supabase = getSupabaseAdmin();
-    const today = getKstDateString();
+    // v41-246: 좌석판과 같은 운영일에 기록합니다.
+    // 화면은 어제를 보여 주는데 버튼은 오늘에 쓰면 기록이 갈라집니다.
+    const { businessDate: today } = await getBusinessDate(supabase);
     const defaultSchedule = await getDefaultScheduleSettings(supabase, today);
     const actor = getAuthorizedUser(request);
     const actorName = actor?.displayName || body.adminName || '관리자';

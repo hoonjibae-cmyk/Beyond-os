@@ -2031,8 +2031,9 @@ function createPresenceMismatchAlert({ schedule, session, scheduleBreaks = [], s
 // 등원 예정(결석/지각 판정 대상)은 개인 시간표가 '명시적으로' 저장된 학생만 포함합니다.
 // 개인 시간표가 없는 학생/날짜는 등원 예정 없음으로 처리되며,
 // 초기 입력은 학생 시간표 탭의 '기본 시간표로 일괄 생성' 도구를 사용합니다.
-function buildEffectiveSchedulesForPresence({ schedules = [] }) {
-  const today = getKstDateString();
+function buildEffectiveSchedulesForPresence({ schedules = [], businessDate = '' }) {
+  // v41-246: 운영일 기준. 마감이 새벽 1시면 00:30 에도 어제 시간표를 봅니다.
+  const today = businessDate || getKstDateString();
   const explicitSchedules = [];
   for (const schedule of schedules || []) {
     if (schedule?.schedule_date !== today || !schedule?.student_id) continue;
@@ -2041,11 +2042,11 @@ function buildEffectiveSchedulesForPresence({ schedules = [] }) {
   return explicitSchedules;
 }
 
-function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, students = [], defaultSchedule = DEFAULT_SCHEDULE_SETTINGS }) {
-  const today = getKstDateString();
+function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, students = [], defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, businessDate = '' }) {
+  const today = businessDate || getKstDateString();
   const now = currentKstMinutes();
   const breaksBySchedule = groupBreaksBySchedule(scheduleBreaks);
-  const effectiveSchedules = buildEffectiveSchedulesForPresence({ schedules, students, sessions, seats, defaultSchedule });
+  const effectiveSchedules = buildEffectiveSchedulesForPresence({ schedules, students, sessions, seats, defaultSchedule, businessDate: today });
   const sessionByStudentId = {};
   for (const session of sessions || []) sessionByStudentId[session.student_id] = session;
 
@@ -2240,6 +2241,8 @@ export default function Page() {
   const [awayPopup, setAwayPopup] = useState(null);
   const [attendanceAdjustPopup, setAttendanceAdjustPopup] = useState(null);
   const [nowTick, setNowTick] = useState(new Date());
+  // v41-246: 서버가 알려 준 운영일. 마감 전이면 어제 날짜가 담깁니다.
+  const [businessDate, setBusinessDate] = useState(getKstDateString());
   const [todaySchedules, setTodaySchedules] = useState([]);
   const [todayScheduleBreaks, setTodayScheduleBreaks] = useState([]);
   const [scheduleRows, setScheduleRows] = useState([]);
@@ -2549,8 +2552,9 @@ export default function Page() {
       seats: seatsForDisplay,
       students,
       defaultSchedule,
+      businessDate,
     }).filter((alert) => !dismissedAlerts.includes(alert.id));
-  }, [todaySchedules, todayScheduleBreaks, sessions, seatsForDisplay, students, defaultSchedule, dismissedAlerts, nowTick]);
+  }, [todaySchedules, todayScheduleBreaks, sessions, seatsForDisplay, students, defaultSchedule, dismissedAlerts, nowTick, businessDate]);
 
   const summary = useMemo(() => {
     const values = Object.values(sessionBySeat);
@@ -3148,7 +3152,10 @@ export default function Page() {
         return acc;
       }, {}));
 
-      const today = getKstDateString();
+      // v41-246: 좌석판과 같은 운영일의 시간표를 읽습니다.
+      // 서버가 today 를 운영일로 내려 주므로 그대로 씁니다.
+      const today = data.today || getKstDateString();
+      setBusinessDate(today);
       try {
         const scheduleData = await apiFetch(`/api/schedules?start=${today}&end=${today}`);
         setTodaySchedules(scheduleData.schedules || []);

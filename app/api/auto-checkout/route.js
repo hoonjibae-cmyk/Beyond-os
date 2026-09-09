@@ -3,6 +3,7 @@ import { diffMinutes, getKstDateString } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
 import { getAuthorizedUser } from '../../../lib/auth';
+import { getClosingOffsetMinutes } from '../../../lib/businessDateServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,31 +59,6 @@ function formatClosingLabel(offsetMinutes = 0) {
   return minute ? `새벽 ${hour}시 ${minute}분` : `새벽 ${hour}시`;
 }
 
-/**
- * 자동 퇴실 마감 시각(자정 이후 분)을 읽습니다.
- *
- * 키오스크 브리지 설정에 함께 들어 있습니다. 자정 퇴실 보정과 짝이 되는 값이라
- * 같은 화면에서 보고 고치는 편이 안전합니다.
- *
- * 여기서는 필요한 한 칸만 읽습니다. normalizeKioskBridgeSettings 는 이미 두 곳에
- * 복사돼 있어, 세 번째 사본을 만들면 필드가 조용히 사라지는 사고가 납니다.
- */
-async function loadAutoCheckoutOffsetMinutes(supabase) {
-  try {
-    const { data, error } = await supabase
-      .from('system_settings')
-      .select('setting_value')
-      .eq('setting_key', 'kiosk_bridge_settings')
-      .maybeSingle();
-    if (error) throw error;
-    const raw = data?.setting_value || {};
-    const value = Number(raw.autoCheckoutAfterMidnightMinutes ?? raw.auto_checkout_after_midnight_minutes);
-    return Number.isFinite(value) && value >= 0 && value <= 360 ? Math.round(value) : 0;
-  } catch {
-    return 0;
-  }
-}
-
 function calculatePureStudyMinutes(session, checkoutIso, studyWindows) {
   return calculateScheduledPureStudyMinutes(session, { nowIso: checkoutIso, studyWindows });
 }
@@ -91,7 +67,7 @@ async function runAutoCheckout() {
   const supabase = getSupabaseAdmin();
   const today = getKstDateString();
   const defaultSchedule = await getDefaultScheduleSettings(supabase, today);
-  const offsetMinutes = await loadAutoCheckoutOffsetMinutes(supabase);
+  const offsetMinutes = await getClosingOffsetMinutes(supabase);
   const nowMs = Date.now();
 
   const { data: sessions, error } = await supabase

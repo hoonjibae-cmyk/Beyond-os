@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
+import { getBusinessDateString } from '../../../lib/businessDate';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
 import { checkKioskBridgeReadiness, buildKioskErrorResponse } from '../../../lib/kioskBridgeDiagnostics';
 import { sendAttendanceNotification } from '../../../lib/attendanceNotifications';
@@ -1007,8 +1008,8 @@ export async function POST(request) {
       }, { status: 500 });
     }
 
-    const defaultSchedule = await getDefaultScheduleSettings(supabase, getKstDateString());
     const bridgeSettings = await getKioskBridgeSettings(supabase);
+    const defaultSchedule = await getDefaultScheduleSettings(supabase, getBusinessDateString(bridgeSettings.autoCheckoutAfterMidnightMinutes));
     const rawText = getRawText(body);
     const sourceDeviceId = safeText(body.sourceDeviceId || body.deviceId || request.headers.get('x-source-device-id') || request.headers.get('x-device-id') || 'android-bridge');
     const receivedAt = (body.receivedAt || request.headers.get('x-received-at')) ? new Date(body.receivedAt || request.headers.get('x-received-at')).toISOString() : new Date().toISOString();
@@ -1198,7 +1199,10 @@ export async function POST(request) {
       }, { status: 404 });
     }
 
-    const today = getKstDateString(new Date(receivedAt));
+    // v41-246: 신호가 붙을 세션도 운영일 기준입니다.
+    // 마감이 새벽 1시면 00:30 퇴실 문자는 어제 세션에 그대로 붙습니다.
+    // (자정 이후 보정 경로를 타지 않고 평소처럼 처리됩니다)
+    const today = getBusinessDateString(bridgeSettings.autoCheckoutAfterMidnightMinutes, new Date(receivedAt));
     const { data: currentSession, error: currentSessionError } = await supabase
       .from('daily_sessions')
       .select('*')
