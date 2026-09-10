@@ -62,6 +62,7 @@ export async function GET(request) {
   // catch 블록의 응답에서도 쓰이므로 여기서 선언합니다.
   let today = getKstDateString();
   let closingOffsetMinutes = 0;
+  let dayBoundaryMinutes = 60;
 
   try {
     getSupabaseEnv();
@@ -72,7 +73,7 @@ export async function GET(request) {
     // 마감이 새벽 1시면 00:30 은 아직 어제 운영일입니다. 달력 날짜로 그리면 자정에
     // 화면이 새 날짜로 넘어가, 자리에 앉아 있는 학생이 전원 [미입실]로 보였습니다.
     // 마감이 자정(0분)이면 아래 값은 getKstDateString() 과 같습니다.
-    ({ businessDate: today, offsetMinutes: closingOffsetMinutes } = await getBusinessDate(supabase));
+    ({ businessDate: today, offsetMinutes: closingOffsetMinutes, boundaryMinutes: dayBoundaryMinutes } = await getBusinessDate(supabase));
   } catch (error) {
     return Response.json({
       ok: false,
@@ -410,7 +411,7 @@ export async function GET(request) {
         .select('id, student_id, schedule_id, break_id, notification_type, send_status, created_by, created_at')
         // 운영일 시작(자정)부터 마감까지. 마감이 새벽 1시면 다음 날 01:00 까지입니다.
         .gte('created_at', getBusinessDayStartIso(today))
-        .lte('created_at', getBusinessDayEndIso(today, closingOffsetMinutes))
+        .lte('created_at', getBusinessDayEndIso(today, dayBoundaryMinutes))
         .order('created_at', { ascending: false });
       // 초안 저장과 실패 건은 "발송됨"으로 보지 않습니다.
       parentAlertLogs = (alertLogs || []).filter((row) => !['draft', 'failed'].includes(String(row.send_status || '')));

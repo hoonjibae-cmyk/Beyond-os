@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
-import { getBusinessDateString } from '../../../lib/businessDate';
+import { getOperatingDayString } from '../../../lib/businessDate';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
 import { checkKioskBridgeReadiness, buildKioskErrorResponse } from '../../../lib/kioskBridgeDiagnostics';
 import { sendAttendanceNotification } from '../../../lib/attendanceNotifications';
@@ -335,7 +335,7 @@ async function findOvernightCheckoutCandidate({ supabase, studentId, receivedAt,
   // 그 세션은 평소 경로가 그대로 처리합니다. 여기까지 내려오는 것은 그 학생의
   // 어제 세션이 아예 없는 경우인데, 이때 달력 기준으로 하루를 더 빼면 그저께
   // 세션을 건드리게 됩니다. 마감이 지난 뒤에만 보정합니다.
-  const businessDate = getBusinessDateString(settings?.autoCheckoutAfterMidnightMinutes, new Date(receivedAt));
+  const businessDate = getOperatingDayString(settings?.autoCheckoutAfterMidnightMinutes, new Date(receivedAt));
   if (businessDate !== today) return null;
 
   const previousDate = addKstDays(today, -1);
@@ -401,6 +401,48 @@ async function findOvernightCheckoutCandidate({ supabase, studentId, receivedAt,
     session: previousSession,
     systemAutoEvent,
   };
+}
+
+/**
+ * v41-248: 마감 뒤 ~ 날짜가 바뀌기 전에 들어온 실제 퇴실 문자.
+ *
+ * 마감(예: 새벽 1시)에 자동 퇴실이 돌면 그 세션은 닫힙니다. 그런데 하루가 바뀌는
+ * 시점은 마감 + 1시간이라, 01:05 에 나가는 학생의 문자는 여전히 같은 운영일의
+ * '이미 닫힌 세션'으로 들어옵니다. 그대로 두면 중복 퇴실로 무시되어 자동 퇴실 시각
+ * (01:00)이 그대로 남고, 실제 나간 시각이 기록되지 않습니다.
+ *
+ * 시스템이 자동으로 닫은 세션일 때만 시각을 보정합니다. 관리자가 손으로 퇴실 처리한
+ * 세션은 건드리지 않습니다.
+ */
+async function findClosedSessionCheckoutCorrection({ supabase, session, receivedAt, settings }) {
+  if (!session?.id || !session.check_in_at || !session.check_out_at) return null;
+  if (!isWithinOvernightCheckoutGrace(receivedAt, settings)) return null;
+
+  const { data: checkOutEvents, error } = await supabase
+    .from('attendance_events')
+    .select('*')
+    .eq('session_id', session.id)
+    .eq('event_type', 'check_out')
+    .order('event_at', { ascending: false })
+    .limit(20);
+  if (error) throw error;
+
+  const realCheckoutEvent = (checkOutEvents || []).find((event) => !isSystemAutoCheckoutEvent(event)) || null;
+  if (realCheckoutEvent) {
+    return {
+      duplicate: true,
+      session,
+      existingEvent: realCheckoutEvent,
+      previousDate: session.session_date,
+      reason: '이미 실제 키오스크 퇴실이 반영되어 있습니다.',
+    };
+  }
+
+  const systemAutoEvent = (checkOutEvents || []).find(isSystemAutoCheckoutEvent) || null;
+  // 자동 퇴실 흔적이 없으면 사람이 처리한 것입니다. 보정하지 않습니다.
+  if (!systemAutoEvent) return null;
+
+  return { duplicate: false, session, systemAutoEvent, previousDate: session.session_date };
 }
 
 async function applyOvernightCheckoutCorrection({ supabase, student, candidate, receivedAt, importEventId, defaultSchedule }) {
@@ -1045,7 +1087,7 @@ export async function POST(request) {
     }
 
     const bridgeSettings = await getKioskBridgeSettings(supabase);
-    const defaultSchedule = await getDefaultScheduleSettings(supabase, getBusinessDateString(bridgeSettings.autoCheckoutAfterMidnightMinutes));
+    const defaultSchedule = await getDefaultScheduleSettings(supabase, getOperatingDayString(bridgeSettings.autoCheckoutAfterMidnightMinutes));
     const rawText = getRawText(body);
     const sourceDeviceId = safeText(body.sourceDeviceId || body.deviceId || request.headers.get('x-source-device-id') || request.headers.get('x-device-id') || 'android-bridge');
     const receivedAt = (body.receivedAt || request.headers.get('x-received-at')) ? new Date(body.receivedAt || request.headers.get('x-received-at')).toISOString() : new Date().toISOString();
@@ -1238,7 +1280,7 @@ export async function POST(request) {
     // v41-246: 신호가 붙을 세션도 운영일 기준입니다.
     // 마감이 새벽 1시면 00:30 퇴실 문자는 어제 세션에 그대로 붙습니다.
     // (자정 이후 보정 경로를 타지 않고 평소처럼 처리됩니다)
-    const today = getBusinessDateString(bridgeSettings.autoCheckoutAfterMidnightMinutes, new Date(receivedAt));
+    const today = getOperatingDayString(bridgeSettings.autoCheckoutAfterMidnightMinutes, new Date(receivedAt));
     const { data: currentSession, error: currentSessionError } = await supabase
       .from('daily_sessions')
       .select('*')
@@ -1527,6 +1569,95 @@ export async function POST(request) {
           attendanceNotification: attendanceNotificationResult,
           importEvent: updated,
           toastMessage: `${student.name} 학생의 자정 이후 실제 퇴실을 ${corrected.previousDate} 세션 퇴실로 보정하고 알림을 발송했습니다.`,
+        });
+      }
+    }
+
+    // v41-248: 마감 뒤 자동 퇴실로 닫힌 세션에 실제 퇴실 문자가 들어오면 시각을 보정합니다.
+    if (parsed.eventType === 'check_out' && currentSession?.check_out_at) {
+      const closedCorrection = await findClosedSessionCheckoutCorrection({
+        supabase,
+        session: currentSession,
+        receivedAt,
+        settings: bridgeSettings,
+      });
+
+      if (closedCorrection?.duplicate) {
+        const friendlyMessage = getOperatorFriendlyKioskError(closedCorrection.reason);
+        const updated = await updateImportEvent(supabase, importEvent.id, {
+          status: 'duplicate',
+          student_id: student.id,
+          session_id: closedCorrection.session.id,
+          attendance_event_id: closedCorrection.existingEvent?.id || null,
+          seat_no: closedCorrection.session.seat_no || null,
+          error_message: friendlyMessage,
+          processed_at: new Date().toISOString(),
+        });
+        return Response.json({
+          ok: true,
+          duplicate: true,
+          stage: 'closed_session_checkout_duplicate_guard',
+          status: 'duplicate',
+          eventType: parsed.eventType,
+          koreanType: parsed.koreanType,
+          studentName: student.name,
+          sessionDate: closedCorrection.previousDate,
+          importEvent: updated,
+          attendanceEvent: closedCorrection.existingEvent,
+          toastMessage: `${student.name} 학생의 실제 퇴실은 이미 반영되어 있어 중복으로 무시했습니다.`,
+        });
+      }
+
+      if (closedCorrection?.session?.id) {
+        const corrected = await applyOvernightCheckoutCorrection({
+          supabase,
+          student,
+          candidate: closedCorrection,
+          receivedAt,
+          importEventId: importEvent.id,
+          defaultSchedule,
+        });
+
+        const updated = await updateImportEvent(supabase, importEvent.id, {
+          status: 'processed',
+          student_id: student.id,
+          session_id: corrected.savedSession.id,
+          attendance_event_id: corrected.savedEvent.id,
+          seat_no: corrected.savedSession.seat_no || null,
+          processed_at: new Date().toISOString(),
+          error_message: null,
+        });
+
+        let attendanceNotificationResult = null;
+        try {
+          attendanceNotificationResult = await sendAttendanceNotification({
+            supabase,
+            request,
+            attendanceEvent: corrected.savedEvent,
+            session: corrected.savedSession,
+            student,
+            sourceType: KIOSK_SOURCE_TYPE,
+            sourceLabel: '키오스크 자동기록',
+            createdBy: KIOSK_ACTOR,
+          });
+        } catch (notificationError) {
+          attendanceNotificationResult = { ok: false, error: notificationError.message || '출결 자동 알림 처리 실패' };
+        }
+
+        return Response.json({
+          ok: true,
+          source: KIOSK_SOURCE_LABEL,
+          overnightCheckoutCorrection: true,
+          eventType: parsed.eventType,
+          koreanType: parsed.koreanType,
+          studentName: student.name,
+          seatNo: corrected.savedSession.seat_no,
+          sessionDate: corrected.previousDate,
+          session: corrected.savedSession,
+          attendanceEvent: corrected.savedEvent,
+          attendanceNotification: attendanceNotificationResult,
+          importEvent: updated,
+          toastMessage: `${student.name} 학생의 자동 퇴실 시각을 실제 퇴실 시각으로 보정하고 알림을 발송했습니다.`,
         });
       }
     }
