@@ -4,6 +4,7 @@ import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
 import { getAuthorizedUser } from '../../../lib/auth';
 import { getClosingOffsetMinutes } from '../../../lib/businessDateServer';
+import { getDayBoundaryMinutes } from '../../../lib/businessDate';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +69,15 @@ async function runAutoCheckout() {
   const today = getKstDateString();
   const defaultSchedule = await getDefaultScheduleSettings(supabase, today);
   const offsetMinutes = await getClosingOffsetMinutes(supabase);
+  // v41-249: 도는 시각은 '마감 + 1시간'(= 하루 경계), 기록하는 시각은 '마감'입니다.
+  //
+  // 마감에 바로 돌리면, 마감 직후(예: 01:05)에 나가는 학생의 실제 퇴실 문자가
+  // 이미 닫힌 세션으로 들어와 보정 경로를 타야 했습니다. 한 시간 미뤄 두면 그
+  // 시간대 퇴실은 열려 있는 세션에 평소처럼 실제 시각으로 기록됩니다.
+  //
+  // 끝까지 찍지 않은 학생만 경계 시각에 정리되며, 그때 남는 퇴실 시각은 실제로
+  // 문을 닫은 시각(마감)입니다. 한 시간 뒤가 아닙니다.
+  const boundaryMinutes = getDayBoundaryMinutes(offsetMinutes);
   const nowMs = Date.now();
 
   const { data: sessions, error } = await supabase
@@ -89,8 +99,10 @@ async function runAutoCheckout() {
     // 대상 조건이 '세션 날짜 < 오늘(KST)' 이라, 자정만 지나면 전날 세션이 곧바로
     // 걸립니다. 마감이 새벽 1시인데 00:30 에 이 함수가 돌면(크론이든, 직원이
     // 대시보드를 여는 순간이든) 아직 앉아 있는 학생이 퇴실 처리돼 버립니다.
+    // 기록할 퇴실 시각(마감)과 정리를 시작하는 시각(경계)은 다릅니다.
     const closingIso = closingAfter(session.session_date, offsetMinutes);
-    if (nowMs < new Date(closingIso).getTime()) {
+    const boundaryIso = closingAfter(session.session_date, boundaryMinutes);
+    if (nowMs < new Date(boundaryIso).getTime()) {
       waiting += 1;
       continue;
     }
@@ -155,9 +167,11 @@ export async function GET(request) {
       updated,
       closingLabel: formatClosingLabel(offsetMinutes),
       closingAfterMidnightMinutes: offsetMinutes,
+      // 실제로 정리를 시작하는 시각 (마감 + 1시간)
+      sweepLabel: formatClosingLabel(getDayBoundaryMinutes(offsetMinutes)),
       // 마감 전이라 아직 손대지 않은 세션 수
       waitingCount: waiting,
-      note: `KST ${formatClosingLabel(offsetMinutes)} 마감 기준 미퇴실 학생 자동 퇴실 처리`,
+      note: `KST ${formatClosingLabel(getDayBoundaryMinutes(offsetMinutes))}부터 정리 · 퇴실 시각은 마감 ${formatClosingLabel(offsetMinutes)}으로 기록`,
     });
   } catch (error) {
     return Response.json({ ok: false, error: error.message || 'Unknown error' }, { status: 500 });

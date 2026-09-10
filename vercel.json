@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/auto-checkout",
-      "schedule": "0 15-21 * * *"
+      "schedule": "0 15-22 * * *"
     },
     {
       "path": "/api/cron/report-send",

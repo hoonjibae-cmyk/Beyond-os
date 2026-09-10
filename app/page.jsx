@@ -22790,7 +22790,7 @@ function KioskBridgeSettingsTab({ apiFetch, setMessage }) {
         <div><span>Heartbeat 주기</span><strong>{bridgeSettings.heartbeatIntervalMinutes || 30}분</strong><em>MacroDroid 반복 실행</em></div>
         <div><span>중복 방지</span><strong>{bridgeSettings.manualConflictWindowSeconds ?? 60}초</strong><em>수동 처리 직후 키오스크 무시</em></div>
         <div><span>자정 퇴실 보정</span><strong>{bridgeSettings.overnightCheckoutCorrectionEnabled === false ? 'OFF' : `${bridgeSettings.overnightCheckoutGraceMinutes ?? 60}분`}</strong><em>실제 키오스크 퇴실 우선</em></div>
-        <div><span>자동 퇴실 마감</span><strong>{formatAutoCheckoutClosing(bridgeSettings.autoCheckoutAfterMidnightMinutes)}</strong><em>이 시각 전에는 퇴실 처리하지 않음</em></div>
+        <div><span>자동 퇴실 마감</span><strong>{formatAutoCheckoutClosing(bridgeSettings.autoCheckoutAfterMidnightMinutes)}</strong><em>정리는 {formatAutoCheckoutClosing(Number(bridgeSettings.autoCheckoutAfterMidnightMinutes || 0) + 60)}부터 · 퇴실 시각은 마감으로 기록</em></div>
         <div><span>쉬는 시간 HOLD buffer</span><strong>{bridgeSettings.breakHoldBufferMinutes ?? 1}분</strong><em>다음 차시 시작 후 신호 지연 보정</em></div>
         <div><span>HOLD 중복 신호 방지</span><strong>{bridgeSettings.breakHoldDuplicateWindowSeconds ?? 30}초</strong><em>같은 학생·같은 신호 반복 제거</em></div>
         <div><span>운영시간 감시</span><strong>{bridgeSettings.operatingHoursEnabled === false ? 'OFF' : `${bridgeSettings.operationStartTime || '09:00'}~${bridgeSettings.operationEndTime || '24:00'}`}</strong><em>{staleStatus.insideOperatingHours === false ? '현재 운영시간 외' : '감시 적용 중'}</em></div>
@@ -22892,8 +22892,10 @@ function KioskBridgeSettingsTab({ apiFetch, setMessage }) {
               <span>분 &rarr; <b>{formatAutoCheckoutClosing(draftSettings.autoCheckoutAfterMidnightMinutes)} 마감</b></span>
             </div>
             <div className="hint">
-              0이면 자정 마감(예전과 같음), 1시간이면 새벽 1시 마감입니다. 마감 시각이 지나야 미퇴실 학생을 자동 퇴실 처리하며,
-              그 전에는 직원이 대시보드를 열어도 아직 앉아 있는 학생을 건드리지 않습니다.
+              0이면 자정 마감(예전과 같음), 1시간이면 새벽 1시 마감입니다.
+              <b> 하루가 바뀌는 시각은 여기서 한 시간 뒤</b>로 잡힙니다. 마감이 새벽 1시면 운영일은 새벽 2시부터 다음 날 1시 59분까지입니다.
+              끝까지 찍지 않은 학생 정리도 그 시각(새벽 2시)에 하며, 남는 퇴실 시각은 마감 시각(새벽 1시)입니다.
+              그래서 마감 직후에 나가는 학생은 실제 찍은 시각이 그대로 기록되고, 새벽에 퇴실한 기록이 다음 날 낮까지 좌석배치도에 남지 않습니다.
               <b> 순공시간 인정은 별개</b>라, 연장한 시간을 순공으로 세려면 설정 · 기본 시간표에 그 시간대 차시를 추가해야 합니다.
             </div>
           </div>
