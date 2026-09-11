@@ -63,7 +63,19 @@ where s.check_in_at is not null
   )
 order by s.session_date desc, s.seat_no;
 
--- ── C) A 목록만 삭제 (A 를 확인한 뒤에 실행) ──────────────────
+-- ── C) 삭제 ── ⚠ 실행하지 마세요 (2026-09-11 사용 중지) ───────
+--
+-- 이 조건은 '경계 이후 출결 이벤트가 있는가' 로 유령을 가렸는데,
+-- 이벤트의 event_at 이 비어 있으면 비교가 참이 되지 않아 '이벤트 없음'으로
+-- 판정됩니다. 그 탓에 실제 출결 기록(김승은 9/10)을 지웠습니다.
+--
+-- 남은 건들은 지울 대상이 아니라 '입실 시각만 고칠 대상' 입니다.
+-- A·B 조회는 그대로 쓰셔도 되고, 삭제는 아래를 쓰지 마세요.
+-- 필요하시면 event_at 누락까지 처리한 판을 다시 만들어 드리겠습니다.
+--
+-- 아래는 기록용으로만 남깁니다. 실행하려면 주석을 직접 풀어야 합니다.
+/*
+
 with ghost as (
   select s.id
   from daily_sessions s
@@ -93,3 +105,4 @@ with ghost as (
     )
 )
 delete from daily_sessions where id in (select id from ghost);
+*/
