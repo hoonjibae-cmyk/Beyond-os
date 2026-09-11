@@ -2,6 +2,12 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
+import { getClosingOffsetMinutes } from '../../../lib/businessDateServer';
+import { getOperatingDayString } from '../../../lib/businessDate';
+
+async function getOperatingDate(supabase) {
+  return getOperatingDayString(await getClosingOffsetMinutes(supabase));
+}
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
 import { isFiveMinuteTime24, timeToMinutes24 } from '../../../lib/defaultSchedule';
 import { sendAttendanceNotification } from '../../../lib/attendanceNotifications';
@@ -57,7 +63,10 @@ async function resolveSession(supabase, body) {
     baseSession = data;
   }
 
-  const sessionDate = body.sessionDate || baseSession?.session_date || getKstDateString();
+  // v41-251: 날짜를 안 넘기면 운영일을 씁니다.
+  // 달력 날짜로 떨어지면 마감~경계 사이(예: 새벽 1시 30분)에 조정할 때 다음 날에
+  // 세션을 만들어 버립니다. 이번에 문제가 된 것과 같은 형태입니다.
+  const sessionDate = body.sessionDate || baseSession?.session_date || await getOperatingDate(supabase);
   const studentId = body.studentId || baseSession?.student_id;
   const seatNo = Number(body.seatNo || baseSession?.seat_no || 0);
 

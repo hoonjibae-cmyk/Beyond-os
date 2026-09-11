@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
-import { getKstDateString, diffMinutes } from '../../../lib/date';
+import { diffMinutes } from '../../../lib/date';
 import { getBusinessDate } from '../../../lib/businessDateServer';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';

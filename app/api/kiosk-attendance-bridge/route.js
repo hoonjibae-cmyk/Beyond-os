@@ -783,7 +783,7 @@ function parseKioskAlimtalk(rawText = '', students = []) {
   };
 }
 
-async function findSeatNoForStudent(supabase, student, operatingDate = '') {
+async function findSeatNoForStudent(supabase, student, operatingDate = '', closingOffsetMinutes = 0) {
   if (student?.default_seat_no) return Number(student.default_seat_no);
 
   const { data: seat } = await supabase
@@ -794,7 +794,8 @@ async function findSeatNoForStudent(supabase, student, operatingDate = '') {
 
   if (seat?.seat_no) return Number(seat.seat_no);
 
-  const today = operatingDate || getKstDateString();
+  // 좌석 되찾기도 운영일 기준입니다. 안 넘어오면 지금 시각의 운영일을 씁니다.
+  const today = operatingDate || getOperatingDayString(closingOffsetMinutes);
   const { data: session } = await supabase
     .from('daily_sessions')
     .select('seat_no')
@@ -970,7 +971,13 @@ async function applyAttendanceEvent({ supabase, student, seatNo, eventType, nowI
   // buildSessionStateForEvent 가 퇴실에 입실 기록이 없으면 입실 시각을 지금으로
   // 채우기 때문에 [입실 00:05 · 퇴실 00:05 · 순공 0분] 짜리 유령 세션이 생겼습니다.
   // 그 세션이 다음 날 하루 종일 좌석배치도에 퇴실로 남았습니다.
-  const today = operatingDate || getKstDateString(new Date(nowIso));
+  // 운영일은 반드시 호출한 쪽이 정해 넘겨야 합니다.
+  //
+  // 예전에는 없으면 달력 날짜로 조용히 떨어졌습니다. 그래서 v41-246 에서 호출부만
+  // 고치고 이 함수를 놓쳤을 때, 새벽 퇴실이 다음 날에 빈 세션을 만드는데도 아무
+  // 오류 없이 넘어갔습니다. 폴백을 없애 같은 실수가 반복되지 않게 합니다.
+  if (!operatingDate) throw new Error('applyAttendanceEvent: operatingDate(운영일)가 필요합니다.');
+  const today = operatingDate;
 
   const { data: existingSession, error: existingError } = await supabase
     .from('daily_sessions')
