@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
+import { getClosingOffsetMinutes } from '../../../lib/businessDateServer';
+import { getOperatingDayString } from '../../../lib/businessDate';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
 import { sendAttendanceNotification } from '../../../lib/attendanceNotifications';
@@ -10,6 +12,16 @@ export const dynamic = 'force-dynamic';
 
 const EVENT_LABELS = { check_in: '입실', away: '외출', return: '복귀', check_out: '퇴실' };
 const UNDO_WINDOW_MINUTES = 10;
+
+// v41-250: HOLD 신호가 붙을 날짜도 달력이 아니라 운영일 기준입니다.
+//
+// 마감이 새벽 1시일 때 00:05 에 찍힌 신호를 달력 날짜로 넣으면 다음 날 세션이
+// 새로 만들어집니다. 승인은 나중에(아침에) 하더라도 날짜는 '신호가 찍힌 시점의
+// 운영일'이어야 합니다.
+async function resolveHoldSessionDate(supabase, eventAt) {
+  const offsetMinutes = await getClosingOffsetMinutes(supabase);
+  return getOperatingDayString(offsetMinutes, new Date(eventAt));
+}
 
 function buildNextSession(existingSession, eventType, nowIso) {
   let awayTotalMinutes = Number(existingSession?.away_total_minutes || 0);
@@ -68,7 +80,7 @@ async function applySessionEvent({
   importEventId = null,
 }) {
   if (!student?.id) throw new Error('학생 정보를 찾을 수 없습니다.');
-  const sessionDate = getKstDateString(new Date(eventAt));
+  const sessionDate = await resolveHoldSessionDate(supabase, eventAt);
   const { data: existingSession, error: existingError } = await supabase
     .from('daily_sessions')
     .select('*')
@@ -306,7 +318,7 @@ async function applyManualFinalStatus({ supabase, request, actorName, holds, man
   const student = anchor?.students;
   if (!student?.id) throw new Error('수동 지정 대상 학생 정보를 찾을 수 없습니다.');
 
-  const sessionDate = getKstDateString(new Date(anchor.event_at));
+  const sessionDate = await resolveHoldSessionDate(supabase, anchor.event_at);
   const rawTime = String(manual?.time || '').trim();
   let eventAt;
   if (/^\d{2}:\d{2}$/.test(rawTime)) {
@@ -407,7 +419,7 @@ function rebuildStateFromEvents(events = []) {
 }
 
 async function rebuildSessionAfterUndo({ supabase, hold }) {
-  const sessionDate = getKstDateString(new Date(hold.event_at));
+  const sessionDate = await resolveHoldSessionDate(supabase, hold.event_at);
   const { data: existingSession, error: sessionError } = await supabase
     .from('daily_sessions')
     .select('*')

@@ -783,7 +783,7 @@ function parseKioskAlimtalk(rawText = '', students = []) {
   };
 }
 
-async function findSeatNoForStudent(supabase, student) {
+async function findSeatNoForStudent(supabase, student, operatingDate = '') {
   if (student?.default_seat_no) return Number(student.default_seat_no);
 
   const { data: seat } = await supabase
@@ -794,7 +794,7 @@ async function findSeatNoForStudent(supabase, student) {
 
   if (seat?.seat_no) return Number(seat.seat_no);
 
-  const today = getKstDateString();
+  const today = operatingDate || getKstDateString();
   const { data: session } = await supabase
     .from('daily_sessions')
     .select('seat_no')
@@ -962,8 +962,15 @@ function buildSessionStateForEvent({ existingSession, eventType, nowIso }) {
   return { checkInAt, checkOutAt, awayStartedAt, awayTotalMinutes, seatStatus, eventMemo };
 }
 
-async function applyAttendanceEvent({ supabase, student, seatNo, eventType, nowIso, memo, importEventId, defaultSchedule }) {
-  const today = getKstDateString(new Date(nowIso));
+async function applyAttendanceEvent({ supabase, student, seatNo, eventType, nowIso, memo, importEventId, defaultSchedule, operatingDate }) {
+  // v41-250: 반드시 호출한 쪽이 정한 운영일에 기록해야 합니다.
+  //
+  // 여기서 달력 날짜를 다시 구하면, 마감(새벽 1시) 직전에 찍은 퇴실이 '다음 날'
+  // 세션으로 들어갑니다. 그 날짜에는 세션이 없으니 새로 만들어지고,
+  // buildSessionStateForEvent 가 퇴실에 입실 기록이 없으면 입실 시각을 지금으로
+  // 채우기 때문에 [입실 00:05 · 퇴실 00:05 · 순공 0분] 짜리 유령 세션이 생겼습니다.
+  // 그 세션이 다음 날 하루 종일 좌석배치도에 퇴실로 남았습니다.
+  const today = operatingDate || getKstDateString(new Date(nowIso));
 
   const { data: existingSession, error: existingError } = await supabase
     .from('daily_sessions')
@@ -1351,7 +1358,7 @@ export async function POST(request) {
         const memo = `${autoAppliedBreakWindow.startTime}~${autoAppliedBreakWindow.endTime} 쉬는 시간에 외출 후 복귀가 확인되어 자동으로 쉬는 시간 이동 처리했습니다.`;
 
         // 복귀 신호도 같은 쉬는 시간 기록으로 남겨 짝이 보이게 합니다.
-        const seatNoForPair = await findSeatNoForStudent(supabase, student);
+        const seatNoForPair = await findSeatNoForStudent(supabase, student, today);
         const { data: returnHold } = await supabase
           .from('kiosk_attendance_holds')
           .insert({
@@ -1440,7 +1447,7 @@ export async function POST(request) {
         });
       }
 
-      const seatNo = await findSeatNoForStudent(supabase, student);
+      const seatNo = await findSeatNoForStudent(supabase, student, today);
       const { data: holdRow, error: holdError } = await supabase
         .from('kiosk_attendance_holds')
         .insert({
@@ -1687,7 +1694,7 @@ export async function POST(request) {
       }, { status: transition.duplicate ? 200 : 409 });
     }
 
-    const seatNo = await findSeatNoForStudent(supabase, student);
+    const seatNo = await findSeatNoForStudent(supabase, student, today);
     if (!seatNo) {
       const friendlyMessage = getOperatorFriendlyKioskError(`${student.name} 학생의 기본 좌석이 없습니다. 학생 정보에서 좌석을 지정하세요.`);
       const updated = await updateImportEvent(supabase, importEvent.id, {
@@ -1710,6 +1717,8 @@ export async function POST(request) {
       memo: eventMemo,
       importEventId: importEvent.id,
       defaultSchedule,
+      // 위에서 정한 운영일과 같은 날짜에 기록합니다.
+      operatingDate: today,
     });
 
     const updated = await updateImportEvent(supabase, importEvent.id, {
