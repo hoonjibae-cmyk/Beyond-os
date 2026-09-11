@@ -1,68 +1,95 @@
--- Beyond OS v41-250 (2차): 새벽 시간대에만 존재하는 '유령 세션' 정리
+-- Beyond OS v41-250 (2차, 수정판): 유령 세션 구분과 정리
 --
--- 1차 정리(beyond-os-cleanup-ghost-sessions-v41-250.sql)는 [입실 시각 = 퇴실 시각]
--- 인 행만 지웠습니다. 그런데 00:34에 퇴실 신호가 유령 세션을 만든 뒤 01:06에 신호가
--- 한 번 더 들어오면 두 시각이 벌어져서 조건에 걸리지 않습니다.
+-- ⚠ 이전 판은 조건이 너무 넓어 실제 출결 기록까지 목록에 올렸습니다. 쓰지 마세요.
 --
--- 이 파일은 더 정확한 기준을 씁니다.
+-- 왜 구분이 필요한가
+--   새벽 퇴실이 다음 날 세션을 잘못 만들고 나서, 그 학생이 그날 오후에 실제로
+--   등원하면 같은 행에 실제 출결이 이어서 쌓입니다. 그래서 한 행 안에
+--   [잘못 찍힌 새벽 입실] + [진짜 그날 출결] 이 섞여 있습니다.
 --
---   "그 세션의 등원 기록이, 세션 날짜 당일의 하루 경계(새벽 2시) 이전에 찍혀 있다"
+--   이런 행은 지우면 안 됩니다. 입실 시각만 고쳐야 합니다.
 --
--- 이건 정상적으로는 생길 수 없습니다. 그 시간대에는 운영일이 아직 '전날'이라
--- 모든 기록이 전날 세션으로 들어가야 하기 때문입니다. 9월 11일 세션인데 입실이
--- 9월 11일 00:34 로 찍혀 있다면, 그것은 9월 10일 운영일의 기록이 잘못 들어간 것입니다.
+-- 구분 기준
+--   그 세션에 '하루 경계(새벽 2시) 이후' 출결 이벤트가 있는가
+--     없다 → 진짜 유령. 새벽 신호만 있고 그날 오지 않았습니다. 지웁니다.
+--     있다 → 실제 출결이 섞여 있습니다. 지우지 말고 입실 시각을 고칩니다.
 --
--- ※ 하루 경계 = [자동 퇴실 마감 시각] + 1시간. 현재 설정(마감 새벽 1시) 기준 새벽 2시입니다.
---    마감을 바꾸셨다면 아래 interval '2 hours' 를 그에 맞게 고치세요.
---
--- 실행 순서
---   1) [1단계] SELECT 로 대상을 눈으로 확인
---   2) 맞으면 [2단계] 실행
+-- ※ 경계 = [자동 퇴실 마감 시각] + 1시간. 현재 설정(마감 새벽 1시) 기준 새벽 2시입니다.
 
--- ── 1단계: 지울 대상 확인 (먼저 이것만 실행) ──────────────────
+-- ── A) 진짜 유령 (지워도 되는 것) ─────────────────────────────
 select
-  s.session_date                            as "세션 날짜",
-  st.name                                   as "학생",
-  s.seat_no                                 as "좌석",
+  s.session_date as "세션 날짜", st.name as "학생", s.seat_no as "좌석",
   to_char(s.check_in_at  at time zone 'Asia/Seoul', 'MM-DD HH24:MI') as "입실(KST)",
   to_char(s.check_out_at at time zone 'Asia/Seoul', 'MM-DD HH24:MI') as "퇴실(KST)",
-  coalesce(s.pure_study_minutes, 0)         as "순공(분)",
-  coalesce(s.away_total_minutes, 0)         as "외출(분)",
-  s.seat_status                             as "상태"
+  coalesce(s.pure_study_minutes, 0) as "순공(분)"
 from daily_sessions s
 left join students st on st.id = s.student_id
 where s.check_in_at is not null
-  -- 등원 기록이 '세션 날짜 당일의 경계 이전'에 찍힌 경우
-  and (s.check_in_at at time zone 'Asia/Seoul')
-      <  (s.session_date::timestamp + interval '2 hours')
-  and (s.check_in_at at time zone 'Asia/Seoul')
-      >= s.session_date::timestamp
-  and s.session_date >= (current_date - interval '7 days')
+  and (s.check_in_at at time zone 'Asia/Seoul') >= s.session_date::timestamp
+  and (s.check_in_at at time zone 'Asia/Seoul') <  (s.session_date::timestamp + interval '2 hours')
+  and s.session_date >= (current_date - interval '14 days')
+  and not exists (
+    select 1 from attendance_events e
+    where e.session_id = s.id
+      and (e.event_at at time zone 'Asia/Seoul') >= (s.session_date::timestamp + interval '2 hours')
+  )
 order by s.session_date desc, s.seat_no;
 
--- ── 2단계: 실제 삭제 (1단계 결과를 확인한 뒤에 실행) ──────────
+-- ── B) 실제 출결이 섞인 세션 (지우지 말 것 · 입실 시각만 고치기) ──
+-- 아래 "실제 첫 등원" 시각이 그날 진짜로 온 시각입니다.
+-- 화면에서 해당 좌석 → [출결시간 조정] 으로 입실 시각을 이 값으로 바꾸고,
+-- 외출 누적은 실제 외출만 남도록 조정하세요.
+select
+  s.session_date as "세션 날짜", st.name as "학생", s.seat_no as "좌석",
+  to_char(s.check_in_at at time zone 'Asia/Seoul', 'MM-DD HH24:MI') as "지금 입실(잘못됨)",
+  to_char(
+    (select min(e.event_at) from attendance_events e
+     where e.session_id = s.id and e.event_type = 'check_in'
+       and (e.event_at at time zone 'Asia/Seoul') >= (s.session_date::timestamp + interval '2 hours'))
+    at time zone 'Asia/Seoul', 'MM-DD HH24:MI') as "실제 첫 등원",
+  to_char(s.check_out_at at time zone 'Asia/Seoul', 'MM-DD HH24:MI') as "퇴실(KST)",
+  coalesce(s.away_total_minutes, 0) as "외출 누적(분·부풀려짐)",
+  coalesce(s.pure_study_minutes, 0) as "순공(분)"
+from daily_sessions s
+left join students st on st.id = s.student_id
+where s.check_in_at is not null
+  and (s.check_in_at at time zone 'Asia/Seoul') >= s.session_date::timestamp
+  and (s.check_in_at at time zone 'Asia/Seoul') <  (s.session_date::timestamp + interval '2 hours')
+  and s.session_date >= (current_date - interval '14 days')
+  and exists (
+    select 1 from attendance_events e
+    where e.session_id = s.id
+      and (e.event_at at time zone 'Asia/Seoul') >= (s.session_date::timestamp + interval '2 hours')
+  )
+order by s.session_date desc, s.seat_no;
+
+-- ── C) A 목록만 삭제 (A 를 확인한 뒤에 실행) ──────────────────
 with ghost as (
   select s.id
   from daily_sessions s
   where s.check_in_at is not null
-    and (s.check_in_at at time zone 'Asia/Seoul')
-        <  (s.session_date::timestamp + interval '2 hours')
-    and (s.check_in_at at time zone 'Asia/Seoul')
-        >= s.session_date::timestamp
-    and s.session_date >= (current_date - interval '7 days')
+    and (s.check_in_at at time zone 'Asia/Seoul') >= s.session_date::timestamp
+    and (s.check_in_at at time zone 'Asia/Seoul') <  (s.session_date::timestamp + interval '2 hours')
+    and s.session_date >= (current_date - interval '14 days')
+    and not exists (
+      select 1 from attendance_events e
+      where e.session_id = s.id
+        and (e.event_at at time zone 'Asia/Seoul') >= (s.session_date::timestamp + interval '2 hours')
+    )
 )
-delete from attendance_events
-where session_id in (select id from ghost);
+delete from attendance_events where session_id in (select id from ghost);
 
 with ghost as (
   select s.id
   from daily_sessions s
   where s.check_in_at is not null
-    and (s.check_in_at at time zone 'Asia/Seoul')
-        <  (s.session_date::timestamp + interval '2 hours')
-    and (s.check_in_at at time zone 'Asia/Seoul')
-        >= s.session_date::timestamp
-    and s.session_date >= (current_date - interval '7 days')
+    and (s.check_in_at at time zone 'Asia/Seoul') >= s.session_date::timestamp
+    and (s.check_in_at at time zone 'Asia/Seoul') <  (s.session_date::timestamp + interval '2 hours')
+    and s.session_date >= (current_date - interval '14 days')
+    and not exists (
+      select 1 from attendance_events e
+      where e.session_id = s.id
+        and (e.event_at at time zone 'Asia/Seoul') >= (s.session_date::timestamp + interval '2 hours')
+    )
 )
-delete from daily_sessions
-where id in (select id from ghost);
+delete from daily_sessions where id in (select id from ghost);
