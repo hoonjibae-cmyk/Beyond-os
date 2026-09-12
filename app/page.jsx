@@ -5133,7 +5133,7 @@ export default function Page() {
     const lines = (conflicts || []).slice(0, 5).map((conflict, index) => [
       `${index + 1}. ${conflict.studentName || '학생'} · ${conflict.date || ''} ${conflict.dayLabel || ''} ${conflict.slotLabel || ''}`.trim(),
       `   멘토링: ${conflict.slotTime || '-'}`,
-      `   개인일정: ${conflict.plannedRange || '-'}`,
+      `   학습실 재실 예정: ${conflict.plannedRange || '-'} (등원~하원)`,
       `   사유: ${conflict.reason || '멘토링 시간과 개인 일정이 맞지 않습니다.'}`,
     ].join('\n'));
     const more = conflicts.length > 5 ? `\n외 ${conflicts.length - 5}건 추가` : '';
@@ -5157,7 +5157,7 @@ export default function Page() {
       });
       const conflicts = data.result?.conflicts || data.conflicts || [];
       if (!conflicts.length) return true;
-      return window.confirm(`수정하려는 개인 일정이 이미 배정된 멘토링 일정과 맞지 않습니다.\n\n${formatMentoringScheduleConflictMessage(conflicts)}\n\n그래도 개인일정을 저장하시겠습니까?`);
+      return window.confirm(`수정하려는 등·하원 시간 기준으로, 이미 배정된 멘토링 차시에 학생이 학습실에 없는 시간이 생깁니다.\n\n${formatMentoringScheduleConflictMessage(conflicts)}\n\n그래도 저장하시겠습니까?`);
     } catch (error) {
       return window.confirm(`멘토링 일정 충돌 검증에 실패했습니다.\n${error.message || ''}\n\n그래도 개인일정을 저장하시겠습니까?`);
     }
@@ -9046,7 +9046,7 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
       items.push({ key: 'template', label: '요일 기본값 기반', className: 'template' });
     }
     if (hasDateSlotAssignmentChanges(slot, rows)) items.push({ key: 'assignment-changed', label: '배정 변경 있음', className: 'changed' });
-    if (hasConflict) items.push({ key: 'conflict', label: '개인일정 주의 있음', className: 'warning' });
+    if (hasConflict) items.push({ key: 'conflict', label: '재실 시간 주의', className: 'warning' });
     return items;
   }
 
@@ -9509,7 +9509,7 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
     const lines = (conflicts || []).slice(0, 4).map((conflict, index) => [
       `${index + 1}. ${conflict.studentName || '학생'} · ${conflict.date || selectedDate} ${conflict.slotLabel || ''}`.trim(),
       `멘토링: ${conflict.slotTime || '-'}`,
-      `개인일정: ${conflict.plannedRange || '-'}`,
+      `학습실 재실 예정: ${conflict.plannedRange || '-'} (등원~하원)`,
       `사유: ${conflict.reason || '개인 일정과 맞지 않습니다.'}`,
     ].join('\n'));
     return `${lines.join('\n\n')}${conflicts.length > 4 ? `\n\n외 ${conflicts.length - 4}건 추가` : ''}`;
@@ -9572,7 +9572,7 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
       await refreshSeatCueAfterMentoringChange();
     } catch (error) {
       if (error?.conflicts?.length && !forceScheduleConflict) {
-        const ok = window.confirm(`이동하려는 차시가 학생 개인일정과 맞지 않습니다.\n\n${formatMentoringConflictsForConfirm(error.conflicts)}\n\n그래도 이 차시로 이동할까요?`);
+        const ok = window.confirm(`이동하려는 차시에 학생이 학습실에 없는 시간이 있습니다.\n\n${formatMentoringConflictsForConfirm(error.conflicts)}\n\n그래도 이 차시로 이동할까요?`);
         if (ok) {
           await moveDateAssignmentToSlot(slot, true, dragPayload);
           return;
@@ -9869,7 +9869,7 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
                             type="button"
                             className="mentoring-conflict-pill"
                             onClick={(event) => showConflictDetail(scheduleConflict, event)}
-                            title="개인일정 주의 상세 보기"
+                            title="학습실 재실 시간 주의 상세 보기"
                           >
                             <span aria-hidden="true">⚠</span>
                             <b>주의</b>
@@ -9976,7 +9976,7 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
             <b>배정 기준</b>
             <span>{isDateMode ? '날짜별 화면에서는 한 학생이 선택 날짜에 한 차시만 배정됩니다.' : '요일별 템플릿에서는 한 학생이 같은 요일에 한 차시만 배정됩니다.'}</span>
             <span>저장 전 학생 개인 시간표와 멘토링 차시가 충돌하면 상세 경고를 표시합니다.</span>
-            <span>나중에 학생 개인 일정이 바뀌어도 기존 멘토링 카드에 개인일정 주의 표시가 남습니다.</span>
+            <span>나중에 학생 등·하원 시간이 바뀌어도 기존 멘토링 카드에 재실 시간 주의 표시가 남습니다.</span>
             <span>{isDateMode ? '오늘만 바꾸는 일정 조정은 날짜별 화면에서 처리합니다.' : '반복 운영 기준은 요일별 템플릿에서 관리합니다.'}</span>
             <span>멘토를 선택하면 담당학생은 흰색, 비담당학생은 회색으로 보이며 비담당학생도 선택할 수 있습니다.</span>
           </div>
@@ -10000,8 +10000,8 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
           <div className="modal-card mentoring-conflict-modal mentoring-conflict-detail-modal" role="dialog" aria-modal="true">
             <div className="modal-head">
               <div>
-                <h3>개인일정 주의 상세</h3>
-                <p>멘토링 시간과 학생 개인 일정이 맞지 않는 이유를 확인하세요.</p>
+                <h3>학습실 재실 시간 주의</h3>
+                <p>멘토링 차시에 학생이 학습실에 없는 시간이 있는지 확인하세요.</p>
               </div>
               <button type="button" className="modal-close" onClick={() => setConflictDetail(null)}>×</button>
             </div>
@@ -10011,10 +10011,11 @@ function MentoringTab({ students = [], apiFetch, setMessage, currentUser, defaul
                 <dl>
                   <div><dt>기준일</dt><dd>{conflictDetail.date || selectedDate}</dd></div>
                   <div><dt>멘토링 시간</dt><dd>{conflictDetail.slotTime || '-'}</dd></div>
-                  <div><dt>학생 개인 일정</dt><dd>{conflictDetail.plannedRange || '확인 불가'}{conflictDetail.isDefaultSchedule ? ' · 기본 시간표 적용' : ''}</dd></div>
+                  <div><dt>학습실 재실 예정</dt><dd>{conflictDetail.plannedRange || '확인 불가'} <span className="mentoring-conflict-hint">(등원~하원)</span>{conflictDetail.isDefaultSchedule ? ' · 기본 시간표 적용' : ''}</dd></div>
+                  {conflictDetail.outsideLabel ? <div><dt>학습실 밖인 시간</dt><dd className="mentoring-conflict-outside">{conflictDetail.outsideLabel}</dd></div> : null}
                   {conflictDetail.scheduleNote ? <div><dt>시간표 메모</dt><dd>{conflictDetail.scheduleNote}</dd></div> : null}
                 </dl>
-                <em>{conflictDetail.reason || '학생 개인 일정과 멘토링 시간이 맞지 않습니다.'}</em>
+                <em>{conflictDetail.reason || '이 차시에 학생이 학습실에 없는 시간이 있습니다.'}</em>
               </div>
             </div>
             <div className="modal-actions">

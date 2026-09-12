@@ -18153,6 +18153,9 @@ textarea,
   box-shadow: 0 0 0 2px rgba(245, 158, 11, .25);
 }
 
+.mentoring-conflict-hint { font-size: 11.5px; font-weight: 850; color: #9a938a; }
+.mentoring-conflict-outside { color: #b4560d; font-weight: 900; }
+
 .mentoring-conflict-detail-modal {
   max-width: 620px;
 }

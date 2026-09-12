@@ -291,7 +291,7 @@ function formatConflictReason(conflict) {
   return [
     `${conflict.studentName || '학생'} · ${conflict.dayLabel || ''} ${conflict.slotLabel || ''} ${conflict.slotTime || ''}`.trim(),
     `기준일: ${conflict.date}`,
-    `개인시간표: ${conflict.plannedRange || '확인 불가'}`,
+    `학습실 재실 예정: ${conflict.plannedRange || '확인 불가'} (등원~하원)`,
     `사유: ${conflict.reason || '학습실 내 시간이 아님'}`,
   ].filter(Boolean).join('\n');
 }
@@ -306,6 +306,48 @@ function dayLabel(day) {
   if (number === 5) return '금요일';
   if (number === 6) return '토요일';
   return `${day}요일`;
+}
+
+// v41-252: 멘토링 차시가 '학생이 학습실에 있기로 한 시간' 밖으로 나간 부분을 짚어 줍니다.
+//
+// 예전 문구는 "멘토링 차시가 예정 학습실 체류 시간 밖입니다." 한 줄이라, 어디가
+// 얼마나 벗어났는지 알 수 없었습니다. 등원 전인지 하원 후인지, 몇 분인지 씁니다.
+function minutesToClock(value) {
+  const total = Math.max(0, Math.round(Number(value || 0)));
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function describeOutsideStay({ slotStart, slotEnd, plannedIn, plannedOut, prefix = '' }) {
+  if (plannedIn === null || plannedOut === null) {
+    return {
+      reason: `${prefix}학생의 예정 등·하원 시간이 없어 이 차시에 학습실에 있는지 확인할 수 없습니다.`,
+      outsideLabel: '',
+      outsideMinutes: 0,
+    };
+  }
+  const parts = [];
+  let outsideMinutes = 0;
+  if (slotStart < plannedIn) {
+    const end = Math.min(slotEnd, plannedIn);
+    const gap = end - slotStart;
+    outsideMinutes += gap;
+    parts.push(`${minutesToClock(slotStart)}~${minutesToClock(end)} 등원 전 (${gap}분)`);
+  }
+  if (slotEnd > plannedOut) {
+    const start = Math.max(slotStart, plannedOut);
+    const gap = slotEnd - start;
+    outsideMinutes += gap;
+    parts.push(`${minutesToClock(start)}~${minutesToClock(slotEnd)} 하원 후 (${gap}분)`);
+  }
+  if (!parts.length) {
+    return { reason: `${prefix}멘토링 차시가 학습실에 있기로 한 시간 밖입니다.`, outsideLabel: '', outsideMinutes: 0 };
+  }
+  const outsideLabel = parts.join(' · ');
+  return {
+    reason: `${prefix}이 차시 중 ${outsideLabel} 은 학생이 학습실에 없는 시간입니다.`,
+    outsideLabel,
+    outsideMinutes,
+  };
 }
 
 function timeToMinutes(value) {
@@ -494,7 +536,7 @@ async function getScheduleConflictsForPairs(supabase, pairs = []) {
       scope: pair.scope || 'weekly',
     };
     if (plannedIn === null || plannedOut === null || slotStart < plannedIn || slotEnd > plannedOut) {
-      conflicts.push({ ...base, reason: '멘토링 차시가 예정 학습실 체류 시간 밖입니다.' });
+      conflicts.push({ ...base, ...describeOutsideStay({ slotStart, slotEnd, plannedIn, plannedOut }) });
       continue;
     }
     const scheduleBreaks = schedule.is_default_schedule ? [] : (breaksBySchedule[schedule.id] || []);
@@ -506,7 +548,7 @@ async function getScheduleConflictsForPairs(supabase, pairs = []) {
     if (overlapBreak) {
       conflicts.push({
         ...base,
-        reason: `등록된 외출 시간 ${String(overlapBreak.leave_start || '').slice(0, 5)}~${String(overlapBreak.return_time || '').slice(0, 5)}${overlapBreak.reason_detail ? ` (${overlapBreak.reason_detail})` : ''}과 겹칩니다.`,
+        reason: `이 차시가 외출 예정 ${String(overlapBreak.leave_start || '').slice(0, 5)}~${String(overlapBreak.return_time || '').slice(0, 5)}${overlapBreak.reason_detail ? ` (${overlapBreak.reason_detail})` : ''} 과 겹칩니다. 그 시간에는 학생이 학습실 밖에 있습니다.`,
       });
     }
   }
@@ -1428,7 +1470,7 @@ async function validateAssignmentScheduleConflicts(supabase, { studentIds = [], 
         isDefaultSchedule: Boolean(schedule.is_default_schedule),
       };
       if (plannedIn === null || plannedOut === null || slotStart < plannedIn || slotEnd > plannedOut) {
-        conflicts.push({ ...base, reason: '멘토링 차시가 예정 학습실 체류 시간 밖입니다.' });
+        conflicts.push({ ...base, ...describeOutsideStay({ slotStart, slotEnd, plannedIn, plannedOut }) });
         continue;
       }
       const scheduleBreaks = schedule.is_default_schedule ? [] : (breaksBySchedule[schedule.id] || []);
@@ -1440,7 +1482,7 @@ async function validateAssignmentScheduleConflicts(supabase, { studentIds = [], 
       if (overlapBreak) {
         conflicts.push({
           ...base,
-          reason: `등록된 외출 시간 ${String(overlapBreak.leave_start || '').slice(0, 5)}~${String(overlapBreak.return_time || '').slice(0, 5)}${overlapBreak.reason_detail ? ` (${overlapBreak.reason_detail})` : ''}과 겹칩니다.`,
+          reason: `이 차시가 외출 예정 ${String(overlapBreak.leave_start || '').slice(0, 5)}~${String(overlapBreak.return_time || '').slice(0, 5)}${overlapBreak.reason_detail ? ` (${overlapBreak.reason_detail})` : ''} 과 겹칩니다. 그 시간에는 학생이 학습실 밖에 있습니다.`,
         });
       }
     }
@@ -1535,7 +1577,7 @@ function buildProposedPersonalScheduleConflicts({ assignmentRows = [], slotById 
       scope: 'personal-schedule-save',
     };
     if (plannedIn === null || plannedOut === null || slotStart < plannedIn || slotEnd > plannedOut) {
-      conflicts.push({ ...base, reason: '수정하려는 개인 일정 기준으로 멘토링 차시가 예정 학습실 체류 시간 밖입니다.' });
+      conflicts.push({ ...base, ...describeOutsideStay({ slotStart, slotEnd, plannedIn, plannedOut, prefix: '수정하려는 등·하원 기준으로, ' }) });
       continue;
     }
     const overlapBreak = (breaks || []).find((item) => {
@@ -1549,7 +1591,7 @@ function buildProposedPersonalScheduleConflicts({ assignmentRows = [], slotById 
       const reasonDetail = overlapBreak.reasonDetail || overlapBreak.reason_detail || overlapBreak.reason || '';
       conflicts.push({
         ...base,
-        reason: `수정하려는 외출 시간 ${leaveLabel}~${returnLabel}${reasonDetail ? ` (${reasonDetail})` : ''}과 멘토링 차시가 겹칩니다.`,
+        reason: `이 차시가 수정하려는 외출 ${leaveLabel}~${returnLabel}${reasonDetail ? ` (${reasonDetail})` : ''} 과 겹칩니다. 그 시간에는 학생이 학습실 밖에 있습니다.`,
       });
     }
   }
