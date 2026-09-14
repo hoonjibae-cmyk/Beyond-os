@@ -246,6 +246,9 @@ export async function GET(request) {
       name: studentMap[id]?.name || '학생',
       subtitle: [studentMap[id]?.school, studentMap[id]?.grade].filter(Boolean).join(' '),
       net: cycles[id]?.net ?? 0,
+      // v41-253: 이 순점수가 '언제부터' 쌓인 것인지 화면에 밝히기 위해 함께 보냅니다.
+      // 마지막 상품 지급 시각이며, 지급 이력이 없으면 null(기수 시작부터)입니다.
+      cycleStartAt: cycles[id]?.cycleStartAt ?? null,
       reward: cycles[id]?.reward ?? 0,
       penalty: cycles[id]?.penalty ?? 0,
       count: cycles[id]?.count ?? 0,

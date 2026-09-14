@@ -16445,10 +16445,12 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
           <div className="point-reward-alert-head">
             <strong>상품 지급 대상 {scopeRows(rewardState.eligible).length}명</strong>
             <span>
-              순점수가 {rewardState.threshold ?? 15}점을 초과했습니다.
+              <b>마지막 상품 지급 이후 누적</b> 순점수가 {rewardState.threshold ?? 15}점을 초과한 학생입니다.
+              지급 이력이 없으면 기수 시작부터 셉니다. <b>지난 한 주 점수가 아닙니다</b> — 아래 상벌점 기록을 한 주로 조회하면 그 주 것만 보여 숫자가 달라 보입니다.
               {rewardState.scanFallback
                 ? ' 아직 주간 스캔 기록이 없어 지금 기준으로 판정했습니다.'
-                : ` 명단 기준: ${rewardState.lastScanDate || '-'} 스캔${rewardState.lastScanWeek?.start ? ` (집계 주 ${rewardState.lastScanWeek.start}~${rewardState.lastScanWeek.end})` : ''}.`}
+                : ` 명단을 만든 시점: ${rewardState.lastScanDate || '-'}.`}
+              {rewardState.lastScanWeek?.start ? ` (카드의 [그 주 순공]은 ${rewardState.lastScanWeek.start}~${rewardState.lastScanWeek.end} 자동 상점 계산용입니다)` : ''}
               {' '}<b>[알림톡 발송]을 누르면 학부모·학생에게 상품 지급 안내가 발송</b>되고 카운팅이 리셋됩니다. 상벌점 기록 자체는 그대로 보관됩니다.
             </span>
             <button type="button" className="secondary" onClick={rescanRewardTargets} disabled={scanning}>
@@ -16468,6 +16470,11 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                 </div>
                 <div className="point-reward-alert-score">
                   <b>순점수 +{item.scanNet ?? item.net}점</b>
+                  <i className="point-reward-cycle-since">
+                    {item.cycleStartAt
+                      ? `${String(item.cycleStartAt).slice(0, 10)} 지급 이후 누적`
+                      : '기수 시작 이후 누적'}
+                  </i>
                   <em>
                     상 {item.reward} · 벌 {item.penalty} · {item.count}건{item.grantCount ? ` · 지급 ${item.grantCount}회` : ''}
                     {Number(item.autoPoints || 0) ? ` · 자동 +${item.autoPoints}` : ''}
