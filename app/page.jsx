@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
+import { isTimeEditableEvent } from '../lib/attendanceEventTime';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
@@ -996,6 +997,16 @@ function formatKstTime(value) {
     minute: '2-digit',
     hour12: false,
   }).format(new Date(value));
+}
+
+// v41-255: ISO 시각 → <input type="time"> 에 넣을 'HH:MM' (KST 기준)
+function toHhMmInputValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date);
 }
 
 function formatKstTimeWithSeconds(value) {
@@ -2240,6 +2251,8 @@ export default function Page() {
   const [attendanceSavingStatus, setAttendanceSavingStatus] = useState(null);
   const [awayPopup, setAwayPopup] = useState(null);
   const [attendanceAdjustPopup, setAttendanceAdjustPopup] = useState(null);
+  // v41-255: [최근 출결 이력] 한 줄의 시각을 그 자리에서 고칩니다.
+  const [attendanceEventTimeEditor, setAttendanceEventTimeEditor] = useState(null);
   const [nowTick, setNowTick] = useState(new Date());
   // v41-246: 서버가 알려 준 운영일. 마감 전이면 어제 날짜가 담깁니다.
   const [businessDate, setBusinessDate] = useState(getKstDateString());
@@ -4127,6 +4140,96 @@ export default function Page() {
         type: 'failed',
         title: '출결 사유 수정 실패',
         message: error.message || '출결 사유를 수정하지 못했습니다.',
+      });
+    }
+  }
+
+  // v41-255: 출결 이력 한 줄의 시각 수정
+  //
+  // 이벤트 시각만 바꾸면 [오늘 출결 요약]의 입실/퇴실/순공시간과 어긋납니다.
+  // 서버가 이벤트 전체에서 세션 값을 다시 만들어 함께 맞춥니다.
+  // 결과가 이상하면 서버가 먼저 경고만 돌려주고, 확인을 받은 뒤에 저장합니다.
+  function openAttendanceEventTimeEditor(event) {
+    if (!event?.id) return alert('수정할 출결 이력을 찾을 수 없습니다.');
+    if (!isTimeEditableEvent(event)) {
+      return alert(`${getAttendanceEventLabel(event.event_type)} 기록은 시각을 고칠 수 없습니다.\n\n입실 · 외출 · 복귀 · 퇴실 기록만 수정할 수 있습니다.`);
+    }
+    const current = event.event_at || event.created_at;
+    setAttendanceEventTimeEditor({
+      id: event.id,
+      time: current ? toHhMmInputValue(current) : '',
+      originalTime: current ? toHhMmInputValue(current) : '',
+      saving: false,
+    });
+  }
+
+  function closeAttendanceEventTimeEditor() {
+    setAttendanceEventTimeEditor(null);
+  }
+
+  async function saveAttendanceEventTime(event) {
+    const editor = attendanceEventTimeEditor;
+    if (!editor || editor.id !== event.id) return;
+
+    const time = String(editor.time || '').trim();
+    if (!/^\d{2}:\d{2}$/.test(time)) return alert('시각을 HH:MM 형식으로 입력하세요. (예: 19:20)');
+    if (time === editor.originalTime) return closeAttendanceEventTimeEditor();
+
+    const label = getAttendanceEventLabel(event.event_type);
+
+    async function submit(confirmed) {
+      return apiFetch('/api/attendance-event-time', {
+        method: 'POST',
+        body: JSON.stringify({
+          eventId: event.id,
+          time,
+          confirm: confirmed,
+          adminName: currentUser?.displayName || '관리자',
+        }),
+      });
+    }
+
+    try {
+      setAttendanceEventTimeEditor((prev) => (prev ? { ...prev, saving: true } : prev));
+      setMessage('출결 시각 확인 중...');
+
+      let result = await submit(false);
+
+      // 경고가 있으면 무엇이 달라지는지 보여 주고 한 번 더 확인받습니다.
+      if (result?.needsConfirm) {
+        const lines = (result.warnings || []).map((item, index) => `${index + 1}. ${item}`).join('\n');
+        const ok = confirm(
+          `${label} 시각을 ${result.before?.time || '-'} → ${result.after?.time || time} 로 바꾸면 아래와 같이 됩니다.\n\n${lines}\n\n그래도 이대로 저장할까요?`
+        );
+        if (!ok) {
+          setMessage('출결 시각 수정을 취소했습니다.');
+          setAttendanceEventTimeEditor((prev) => (prev ? { ...prev, saving: false } : prev));
+          return;
+        }
+        result = await submit(true);
+      }
+
+      closeAttendanceEventTimeEditor();
+      await loadDashboard({ silent: true, suppressChangeNotice: true });
+
+      if (result?.unchanged) {
+        setMessage('시각이 같아 변경하지 않았습니다.');
+        return;
+      }
+
+      setMessage('출결 시각이 수정되었습니다.');
+      setAttendanceActionNotice({
+        type: 'success',
+        title: '출결 시각 수정 완료',
+        message: `${label} ${result?.before?.time || '-'} → ${result?.after?.time || time}. 순공시간은 ${formatMinutes(result?.after?.pureStudyMinutes || 0)}로 다시 계산했습니다.`,
+      });
+    } catch (error) {
+      setMessage(error.message || '출결 시각 수정 실패');
+      setAttendanceEventTimeEditor((prev) => (prev ? { ...prev, saving: false } : prev));
+      setAttendanceActionNotice({
+        type: 'failed',
+        title: '출결 시각 수정 실패',
+        message: error.message || '출결 시각을 수정하지 못했습니다.',
       });
     }
   }
@@ -6456,17 +6559,44 @@ export default function Page() {
 
           {selectedRecentAttendanceEvents.length ? selectedRecentAttendanceEvents.map((event) => {
             const memo = getAttendanceHistoryMemo(event);
+            const canEditTime = isTimeEditableEvent(event);
+            const timeEditing = attendanceEventTimeEditor?.id === event.id;
             return (
-              <div key={event.id || `${event.event_type}-${event.event_at}`} className="history-item attendance-event-item">
+              <div key={event.id || `${event.event_type}-${event.event_at}`} className={`history-item attendance-event-item${timeEditing ? ' editing' : ''}`}>
                 <strong>{formatKstTime(event.event_at || event.created_at)} · {getAttendanceHistoryLabel(event)}</strong>
                 {memo ? <span className="history-memo">사유/메모: {memo}</span> : <span className="history-memo muted">사유/메모 없음</span>}
                 <span className={`attendance-source-badge ${event.source_type === 'kiosk' ? 'kiosk' : 'manual'}`}>{getAttendanceEventSourceLabel(event)}</span>
+                {timeEditing ? (
+                  <div className="attendance-event-time-edit">
+                    <label>
+                      <span>바꿀 시각</span>
+                      <input
+                        type="time"
+                        step="60"
+                        value={attendanceEventTimeEditor.time}
+                        disabled={attendanceEventTimeEditor.saving}
+                        onChange={(e) => setAttendanceEventTimeEditor((prev) => (prev ? { ...prev, time: e.target.value } : prev))}
+                      />
+                    </label>
+                    <div className="btn-row">
+                      <button type="button" className="primary tiny-action" disabled={attendanceEventTimeEditor.saving} onClick={() => saveAttendanceEventTime(event)}>
+                        {attendanceEventTimeEditor.saving ? '확인 중...' : '저장'}
+                      </button>
+                      <button type="button" className="secondary tiny-action" disabled={attendanceEventTimeEditor.saving} onClick={closeAttendanceEventTimeEditor}>취소</button>
+                    </div>
+                    <em>저장하면 입실/퇴실·외출 누적·순공시간을 이 기록들로 다시 계산합니다. 결과가 이상하면 저장 전에 경고가 뜹니다.</em>
+                  </div>
+                ) : null}
                 <div className="attendance-event-actions">
+                  {canEditTime && !timeEditing ? (
+                    <button type="button" className="secondary tiny-action" onClick={() => openAttendanceEventTimeEditor(event)}>시간 수정</button>
+                  ) : null}
                   <button type="button" className="secondary tiny-action" onClick={() => editAttendanceEventMemo(event)}>사유 수정</button>
                 </div>
               </div>
             );
           }) : <div className="muted">아직 출결 기록이 없습니다.</div>}
+          <div className="hint">[시간 수정]은 입실 · 외출 · 복귀 · 퇴실 기록에만 있습니다. 고치면 [오늘 출결 요약]의 입실/퇴실 시각과 순공시간도 함께 맞춰집니다.</div>
         </PanelSection>
 
         <PanelSection title="오늘 순찰 기록" defaultMobileOpen={false} className="history patrol-history-section">

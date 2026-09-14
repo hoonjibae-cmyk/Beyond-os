@@ -12178,7 +12178,51 @@ textarea {
 .attendance-event-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
   margin-top: 8px;
+}
+
+/* v41-255 출결 이력 시각 수정 */
+.attendance-event-item.editing {
+  border-color: #b4740d;
+  box-shadow: 0 0 0 2px rgba(180, 116, 13, 0.14);
+}
+.attendance-event-time-edit {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #e6ddcc;
+  border-radius: 10px;
+  background: #fffaf0;
+}
+.attendance-event-time-edit label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.attendance-event-time-edit label > span {
+  font-size: 12px;
+  font-weight: 900;
+  color: #6d655a;
+}
+.attendance-event-time-edit input[type='time'] {
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid #d8cfbe;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.attendance-event-time-edit .btn-row {
+  margin-top: 8px;
+}
+.attendance-event-time-edit em {
+  display: block;
+  margin-top: 8px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #8a8178;
 }
 .tiny-action {
   min-height: 28px;

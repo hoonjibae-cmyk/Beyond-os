@@ -3,7 +3,8 @@ import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getClosingOffsetMinutes } from '../../../lib/businessDateServer';
-import { getOperatingDayString } from '../../../lib/businessDate';
+import { getOperatingDayString, getDayBoundaryMinutes } from '../../../lib/businessDate';
+import { parseTimeOfDay, resolveEventIso } from '../../../lib/attendanceEventTime';
 
 async function getOperatingDate(supabase) {
   return getOperatingDayString(await getClosingOffsetMinutes(supabase));
@@ -24,9 +25,17 @@ function validateTimeInput(label, value, { required = false } = {}) {
   return null;
 }
 
-function toIso(dateString, timeValue) {
+// v41-255: 운영일 경계를 넘긴 새벽 시각을 바로잡습니다.
+//
+// 예전에는 무조건 session_date 를 붙였습니다. 마감이 새벽 1시가 되면서
+// 운영일은 02:00 ~ 다음 날 01:59 인데, 00:30 퇴실을 입력하면 그 운영일의
+// '전날 새벽 00:30' 으로 24시간 어긋나게 저장됐습니다.
+// 이제 경계보다 이른 시각은 다음 달력 날짜로 붙입니다.
+function toIso(dateString, timeValue, boundaryMinutes = 0) {
   if (!dateString || !timeValue) return null;
-  return new Date(`${dateString}T${timeValue}:00+09:00`).toISOString();
+  const minuteOfDay = parseTimeOfDay(timeValue);
+  if (minuteOfDay === null) return null;
+  return resolveEventIso(dateString, minuteOfDay, boundaryMinutes) || null;
 }
 
 function calculatePureStudyMinutes({ checkInAt, checkOutAt, awayTotalMinutes, awayStartedAt, studyWindows }) {
@@ -124,8 +133,9 @@ export async function POST(request) {
     const targetDate = body.sessionDate || session.session_date;
     const defaultSchedule = await getDefaultScheduleSettings(supabase, targetDate);
 
-    const checkInAt = toIso(targetDate, body.checkInTime);
-    const checkOutAt = body.checkOutTime ? toIso(targetDate, body.checkOutTime) : null;
+    const boundaryMinutes = getDayBoundaryMinutes(await getClosingOffsetMinutes(supabase));
+    const checkInAt = toIso(targetDate, body.checkInTime, boundaryMinutes);
+    const checkOutAt = body.checkOutTime ? toIso(targetDate, body.checkOutTime, boundaryMinutes) : null;
     const awayTotalMinutes = Math.max(0, Number(body.awayTotalMinutes || 0));
 
     const pureStudyMinutes = calculatePureStudyMinutes({
