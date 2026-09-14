@@ -19,7 +19,7 @@ import { resolveScheduleForDate } from '../../../../lib/defaultSchedule';
 import { getKstDateString } from '../../../../lib/date';
 import { loadCohortRange, loadCohortStudentIds } from '../../../../lib/cohortScope';
 import { getPointAutoRules } from '../../../../lib/pointAutoRulesServer';
-import { resolvePointCyclesByStudent } from '../../../../lib/studentPointCycle';
+import { resolvePointCyclesByStudent, resolveWeeklyRewardState } from '../../../../lib/studentPointCycle';
 import { AUTO_TABLE_HINT, getPreviousWeekRange, addDaysToDateString, resolveStudyTier, evaluatePerfectAttendance, formatMinutesKo } from '../../../../lib/pointAutoRules';
 
 export const AUTO_AWARD_ACTOR = '시스템 자동';
@@ -406,6 +406,15 @@ async function scanRewardTargets({ supabase, rules, week, runDate, students, coh
 
   const cycles = resolvePointCyclesByStudent(pointRows || [], rewardRows, { threshold: rules.rewardThreshold });
 
+  // v41-254: 판정은 '그 주 순점수' 로 합니다. 누적(cycle)은 참고로만 남깁니다.
+  const pointsByStudent = {};
+  for (const row of pointRows || []) {
+    const key = String(row.student_id || '');
+    if (!key) continue;
+    if (!pointsByStudent[key]) pointsByStudent[key] = [];
+    pointsByStudent[key].push(row);
+  }
+
   // 직전 스캔 결과 (연속 주 수 계산용)
   let previousByStudent = {};
   try {
@@ -427,7 +436,10 @@ async function scanRewardTargets({ supabase, rules, week, runDate, students, coh
   const payloads = students.map((student) => {
     const key = String(student.id);
     const cycle = cycles[key] || { net: 0, reward: 0, penalty: 0, count: 0 };
-    const isEligible = Number(cycle.net || 0) > rules.rewardThreshold;
+    // 그 주(월~일) 상벌점만 봅니다. 자동 상점은 집계 주의 일요일 날짜로 들어가므로
+    // 같은 주에 포함됩니다.
+    const weekly = resolveWeeklyRewardState(pointsByStudent[key] || [], week, { threshold: rules.rewardThreshold });
+    const isEligible = weekly.eligible;
     const previous = previousByStudent[key];
     // 직전 스캔에서도 대상이었으면 이어서 셉니다.
     // 중간에 배치를 건너뛴 주가 있어도 끊지 않습니다. (연속의 기준은 '스캔 회차'입니다)
@@ -440,10 +452,11 @@ async function scanRewardTargets({ supabase, rules, week, runDate, students, coh
       week_start: week.start,
       week_end: week.end,
       threshold: rules.rewardThreshold,
-      net_points: Number(cycle.net || 0),
-      reward_points: Number(cycle.reward || 0),
-      penalty_points: Number(cycle.penalty || 0),
-      entry_count: Number(cycle.count || 0),
+      // v41-254: 이 네 칸은 '그 주' 값입니다. (예전에는 마지막 지급 이후 누적이었습니다)
+      net_points: Number(weekly.net || 0),
+      reward_points: Number(weekly.reward || 0),
+      penalty_points: Number(weekly.penalty || 0),
+      entry_count: Number(weekly.count || 0),
       study_minutes: Number(minutesByStudent[key] || 0),
       auto_points: Number(autoPointsByStudent[key] || 0),
       is_eligible: isEligible,

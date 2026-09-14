@@ -16445,13 +16445,13 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
           <div className="point-reward-alert-head">
             <strong>상품 지급 대상 {scopeRows(rewardState.eligible).length}명</strong>
             <span>
-              <b>마지막 상품 지급 이후 누적</b> 순점수가 {rewardState.threshold ?? 15}점을 초과한 학생입니다.
-              지급 이력이 없으면 기수 시작부터 셉니다. <b>지난 한 주 점수가 아닙니다</b> — 아래 상벌점 기록을 한 주로 조회하면 그 주 것만 보여 숫자가 달라 보입니다.
+              <b>지난 한 주(월~일) 순점수</b>가 {rewardState.threshold ?? 15}점을 초과한 학생입니다.
+              {rewardState.lastScanWeek?.start ? ` 집계 주 ${rewardState.lastScanWeek.start}~${rewardState.lastScanWeek.end}.` : ''}
               {rewardState.scanFallback
                 ? ' 아직 주간 스캔 기록이 없어 지금 기준으로 판정했습니다.'
                 : ` 명단을 만든 시점: ${rewardState.lastScanDate || '-'}.`}
-              {rewardState.lastScanWeek?.start ? ` (카드의 [그 주 순공]은 ${rewardState.lastScanWeek.start}~${rewardState.lastScanWeek.end} 자동 상점 계산용입니다)` : ''}
-              {' '}<b>[알림톡 발송]을 누르면 학부모·학생에게 상품 지급 안내가 발송</b>되고 카운팅이 리셋됩니다. 상벌점 기록 자체는 그대로 보관됩니다.
+              {' '}아래 상벌점 기록을 같은 기간으로 조회하면 같은 숫자가 나옵니다.
+              {' '}<b>[알림톡 발송]을 누르면 학부모·학생에게 상품 지급 안내가 발송</b>됩니다. 상벌점 기록은 그대로 보관됩니다.
             </span>
             <button type="button" className="secondary" onClick={rescanRewardTargets} disabled={scanning}>
               {scanning ? '스캔 중...' : '지금 다시 스캔'}
@@ -16469,24 +16469,22 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                   {streakHit ? <b className="point-streak-badge">{streak}주 연속</b> : null}
                 </div>
                 <div className="point-reward-alert-score">
-                  <b>순점수 +{item.scanNet ?? item.net}점</b>
+                  <b>그 주 순점수 +{item.scanNet ?? item.net}점</b>
                   <i className="point-reward-cycle-since">
-                    {item.cycleStartAt
-                      ? `${String(item.cycleStartAt).slice(0, 10)} 지급 이후 누적`
-                      : '기수 시작 이후 누적'}
+                    {item.weekStart ? `${item.weekStart} ~ ${item.weekEnd}` : '지난 한 주'}
                   </i>
                   <em>
-                    상 {item.reward} · 벌 {item.penalty} · {item.count}건{item.grantCount ? ` · 지급 ${item.grantCount}회` : ''}
+                    상 {item.weekReward ?? item.reward} · 벌 {item.weekPenalty ?? item.penalty} · {item.weekCount ?? item.count}건
                     {Number(item.autoPoints || 0) ? ` · 자동 +${item.autoPoints}` : ''}
-                    {Number(item.studyMinutes || 0) ? ` · 그 주 순공 ${formatMinutesKo(item.studyMinutes)}` : ''}
+                    {Number(item.studyMinutes || 0) ? ` · 순공 ${formatMinutesKo(item.studyMinutes)}` : ''}
+                  </em>
+                  <em className="point-reward-lifetime">
+                    누적 {item.net > 0 ? '+' : ''}{item.net}점 (상 {item.reward} · 벌 {item.penalty}){item.grantCount ? ` · 지급 ${item.grantCount}회` : ''}
                   </em>
                 </div>
                 <p>
                   {item.message}
                   {streakHit ? ` — ${streak}주 연속 대상입니다. 별도 상품 검토 대상입니다.` : ''}
-                  {!rewardState.scanFallback && (item.scanNet ?? item.net) !== item.net
-                    ? ` (스캔 이후 변동: 현재 순점수 ${item.net > 0 ? '+' : ''}${item.net}점)`
-                    : ''}
                 </p>
                 <div className="point-reward-alert-actions">
                   <button
@@ -16625,13 +16623,10 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                   </div>
                 </div>
                 {cycle ? (
-                  <div className={cycle.eligible ? 'points-cycle-line is-eligible' : 'points-cycle-line'}>
-                    <span>현재 누적 {cycle.net > 0 ? '+' : ''}{cycle.net}점</span>
-                    {cycle.eligible
-                      ? <b>상품 지급 대상</b>
-                      : <em>지급 기준까지 {cycle.remainingToTarget}점</em>}
+                  <div className="points-cycle-line">
+                    <span>최근 지급 이후 누적 {cycle.net > 0 ? '+' : ''}{cycle.net}점</span>
+                    {cycle.grantCount ? <em>지금까지 {cycle.grantCount}회 지급</em> : <em>지급 이력 없음</em>}
                     {cycle.lastGrant ? <i>최근 지급 {String(cycle.lastGrant.created_at || '').slice(0, 10)} · 당시 {cycle.lastGrant.net_points > 0 ? '+' : ''}{cycle.lastGrant.net_points}점</i> : null}
-                    {cycle.grantCount ? <u>지급 {cycle.grantCount}회</u> : null}
                   </div>
                 ) : null}
                 <div className="points-row-list">

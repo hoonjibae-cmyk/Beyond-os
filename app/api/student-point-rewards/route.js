@@ -13,12 +13,13 @@ import { writeUserActionLog } from '../../../lib/actionLog';
 import { sendPointNotification } from '../../../lib/pointNotifications';
 import { getCohortIdFromRequest, loadCohortRange } from '../../../lib/cohortScope';
 import { getPointAutoRules } from '../../../lib/pointAutoRulesServer';
-import { AUTO_TABLE_HINT } from '../../../lib/pointAutoRules';
+import { AUTO_TABLE_HINT, getPreviousWeekRange } from '../../../lib/pointAutoRules';
 import { getKstDateString } from '../../../lib/date';
 import {
   PENALTY_STAGES,
   resolvePointCycle,
   resolvePointCyclesByStudent,
+  resolveWeeklyRewardState,
   resolvePenaltyStages,
   resolvePenaltyStagesByStudent,
   getPenaltyStageDef,
@@ -253,28 +254,66 @@ export async function GET(request) {
       penalty: cycles[id]?.penalty ?? 0,
       count: cycles[id]?.count ?? 0,
       grantCount: cycles[id]?.grantCount ?? 0,
-      message: cycles[id]?.alertMessage || `상벌점 누적 ${threshold}점 초과하여 상품 지급 대상입니다`,
+      message: `그 주 순점수가 ${threshold}점을 초과해 상품 지급 대상입니다`,
       ...extra,
     });
 
+    // v41-254: 판정 기준을 '지난 한 주(월~일) 순점수'로 바꿨습니다.
+    //
+    // 화면에 쓰는 숫자는 저장된 스캔 칸을 그대로 믿지 않고, 스캔이 집계한 주를
+    // 상벌점 원본에서 다시 더해 만듭니다. 이유는 두 가지입니다.
+    //   - v41-253 이전 스캔 행에는 '마지막 지급 이후 누적'이 들어 있습니다.
+    //     다시 계산하면 재스캔을 기다리지 않아도 그 주 숫자로 보입니다.
+    //   - 스캔 이후 상벌점을 고쳐도 화면 숫자와 아래 기록 조회가 어긋나지 않습니다.
+    // 대상 여부(is_eligible)와 연속 주 수는 스캔 결과를 그대로 씁니다.
+    const pointsByStudent = {};
+    for (const row of pointRows) {
+      const key = String(row.student_id || '');
+      if (!key) continue;
+      if (!pointsByStudent[key]) pointsByStudent[key] = [];
+      pointsByStudent[key].push(row);
+    }
+    const weeklyFor = (id, week) => resolveWeeklyRewardState(pointsByStudent[id] || [], week, { threshold });
+
+    const fallbackWeek = getPreviousWeekRange(getKstDateString());
+    const fallbackWeekly = {};
+    if (scanFallback) {
+      for (const id of studentIds) fallbackWeekly[id] = weeklyFor(id, fallbackWeek);
+    }
+
     const eligible = (scanFallback
       ? studentIds
-        .filter((id) => cycles[id]?.eligible)
-        .map((id) => buildEligibleRow(id, { scanDate: '', streakWeeks: 1, scanNet: cycles[id].net, studyMinutes: 0, autoPoints: 0 }))
+        .filter((id) => fallbackWeekly[id]?.eligible)
+        .map((id) => buildEligibleRow(id, {
+          scanDate: '', streakWeeks: 1,
+          scanNet: fallbackWeekly[id].net,
+          weekReward: fallbackWeekly[id].reward,
+          weekPenalty: fallbackWeekly[id].penalty,
+          weekCount: fallbackWeekly[id].count,
+          weekStart: fallbackWeek.start, weekEnd: fallbackWeek.end,
+          studyMinutes: 0, autoPoints: 0,
+        }))
       : Object.values(scanByStudent)
         // 이미 [알림톡 발송]/[미지급]으로 처리한 건은 명단에서 내립니다.
         // is_eligible 자체는 그대로 두어야 연속 주 수가 어긋나지 않습니다.
         .filter((row) => row.is_eligible && !row.handled_at)
         .map((row) => {
           const id = String(row.student_id);
+          const weekStart = String(row.week_start || '').slice(0, 10);
+          const weekEnd = String(row.week_end || '').slice(0, 10);
+          // 스캔이 집계한 주를 원본에서 다시 더합니다. 주 구간을 모르면 저장값을 씁니다.
+          const weekly = weekStart && weekEnd ? weeklyFor(id, { start: weekStart, end: weekEnd }) : null;
           return buildEligibleRow(id, {
             scanDate: String(row.scan_date || '').slice(0, 10),
-            scanNet: Number(row.net_points || 0),
+            scanNet: weekly ? weekly.net : Number(row.net_points || 0),
+            weekReward: weekly ? weekly.reward : Number(row.reward_points || 0),
+            weekPenalty: weekly ? weekly.penalty : Number(row.penalty_points || 0),
+            weekCount: weekly ? weekly.count : Number(row.entry_count || 0),
             streakWeeks: Number(row.streak_weeks || 1),
             studyMinutes: Number(row.study_minutes || 0),
             autoPoints: Number(row.auto_points || 0),
-            weekStart: String(row.week_start || '').slice(0, 10),
-            weekEnd: String(row.week_end || '').slice(0, 10),
+            weekStart,
+            weekEnd,
           });
         }))
       .filter((row) => studentMap[row.studentId]?.status !== 'inactive')
@@ -468,9 +507,11 @@ export async function POST(request) {
     // 더 나쁜 상황입니다. 반대로 스캔에는 없지만 지금 기준을 넘었다면 그것도 허용합니다.
     const scanForStudent = await loadLatestScan(supabase, studentId);
     const scanEligible = scanForStudent.rows.some((row) => row.is_eligible);
-    if (!cycle.eligible && !scanEligible) {
+    // 스캔이 없으면 지난 한 주를 그 자리에서 계산해 봅니다.
+    const weeklyNow = resolveWeeklyRewardState(pointRows, getPreviousWeekRange(getKstDateString()), { threshold: autoRules.rewardThreshold });
+    if (!scanEligible && !weeklyNow.eligible) {
       return Response.json({
-        error: `현재 순점수는 ${cycle.net}점으로 상품 지급 대상이 아닙니다. (기준 ${cycle.threshold}점 초과 · 매주 월요일 스캔)`,
+        error: `지난 한 주 순점수는 ${weeklyNow.net}점으로 상품 지급 대상이 아닙니다. (기준 ${weeklyNow.threshold}점 초과 · 매주 월요일 스캔)`,
       }, { status: 400 });
     }
 
