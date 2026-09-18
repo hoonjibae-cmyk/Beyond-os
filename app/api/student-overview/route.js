@@ -405,13 +405,17 @@ export async function GET(request) {
     const reward = pointCycle.reward;
     const penalty = pointCycle.penalty;
 
-    // v41-156: 누적 벌점 단계(10/20/30점 초과)는 상품 지급 리셋과 무관하게 계산합니다.
+    // v41-156: 누적 벌점 단계는 상품 지급 리셋과 무관하게 계산합니다.
+    // v41-256: 1단계(학부모 알림) 기준은 상벌점 관리 설정을 따릅니다.
     const penaltyActionResult = await safeSelect('벌점 단계 조치 기록', () => supabase
       .from('student_penalty_actions')
       .select('*')
       .eq('student_id', String(studentId))
       .order('created_at', { ascending: true }));
-    const penaltyState = resolvePenaltyStages(pointRows, penaltyActionResult.rows, { rewardRows: rewardHistoryResult.rows });
+    const penaltyState = resolvePenaltyStages(pointRows, penaltyActionResult.rows, {
+      rewardRows: rewardHistoryResult.rows,
+      penaltyAlertThreshold: autoRules.penaltyAlertThreshold,
+    });
 
     const dailySentCount = dailyReports.filter((report) => report.sent_at).length;
 

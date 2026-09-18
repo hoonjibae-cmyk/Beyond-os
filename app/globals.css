@@ -22559,3 +22559,46 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .mentoring-policy-fixed span { font-size: 11.5px; font-weight: 700; color: #8a8479; line-height: 1.45; }
 .mentoring-policy-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .mentoring-policy-actions button { width: auto; min-height: 36px; padding: 0 14px; font-size: 12.5px; }
+
+/* v41-256 상벌점 주간 보기 */
+.points-week-field {
+  grid-column: span 2;
+}
+.points-week-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.points-week-nav > b {
+  flex: 1;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 900;
+  color: #3f3a33;
+  white-space: nowrap;
+}
+.points-week-nav > button {
+  min-height: 34px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.points-week-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.points-week-sub > em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 850;
+  color: #8a8178;
+}
+@media (max-width: 760px) {
+  .points-week-field { grid-column: span 1; }
+  .points-week-nav > b { font-size: 12px; white-space: normal; }
+}

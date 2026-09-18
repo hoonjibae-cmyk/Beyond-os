@@ -1755,6 +1755,20 @@ function groupBreaksBySchedule(breaks) {
   return grouped;
 }
 
+// v41-256: 주간 보기 표시용. 주 시작은 월요일입니다.
+function isSameWeekAsToday(dateString) {
+  return startOfWeek(dateString) === startOfWeek(getKstDateString());
+}
+
+function weeksFromThisWeek(dateString) {
+  const base = new Date(`${startOfWeek(getKstDateString())}T00:00:00`).getTime();
+  const target = new Date(`${startOfWeek(dateString)}T00:00:00`).getTime();
+  if (!Number.isFinite(base) || !Number.isFinite(target)) return '';
+  const diff = Math.round((target - base) / (7 * 24 * 60 * 60 * 1000));
+  if (!diff) return '이번 주';
+  return diff < 0 ? `${Math.abs(diff)}주 전` : `${diff}주 후`;
+}
+
 function getThisWeekRange() {
   const start = startOfWeek(getKstDateString());
   return { start, end: getKstDateString() };
@@ -16012,6 +16026,9 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   const [studentId, setStudentId] = useState('');
   const [start, setStart] = useState(week.start);
   const [end, setEnd] = useState(week.end);
+  // v41-256: 조회 기간을 '주간 보기'로 바꿀 수 있습니다. 주 시작은 월요일입니다.
+  //   'range' 직접 지정(기존) / 'week' 월~일 한 주 단위
+  const [rangeMode, setRangeMode] = useState('range');
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ reward: 0, penalty: 0, net: 0, count: 0 });
   const [loading, setLoading] = useState(false);
@@ -16284,6 +16301,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   function setPreset(type) {
     const todayValue = getKstDateString();
     if (type === 'today') {
+      setRangeMode('range');
       setStart(todayValue);
       setEnd(todayValue);
       loadPoints({ start: todayValue, end: todayValue });
@@ -16291,6 +16309,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
     }
     if (type === 'week') {
       const range = getThisWeekRange();
+      setRangeMode('range');
       setStart(range.start);
       setEnd(range.end);
       loadPoints({ start: range.start, end: range.end });
@@ -16298,10 +16317,37 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
     }
     if (type === 'month') {
       const firstDay = todayValue.slice(0, 8) + '01';
+      setRangeMode('range');
       setStart(firstDay);
       setEnd(todayValue);
       loadPoints({ start: firstDay, end: todayValue });
     }
+  }
+
+  // v41-256: 주간 보기 — 월요일부터 일요일까지 한 주를 통째로 조회합니다.
+  //
+  // 기존 [이번 주]는 '월요일 ~ 오늘' 이라 주 중간에 보면 남은 요일이 빠집니다.
+  // 주간 보기는 항상 월~일 7일을 채우고, 화살표로 주 단위로 옮겨 다닙니다.
+  // 자동 상점은 집계 주의 일요일 날짜로 들어가므로 이 보기에서 같이 잡힙니다.
+  function applyWeekRange(baseDate) {
+    const range = getFullWeekRange(baseDate);
+    setRangeMode('week');
+    setStart(range.start);
+    setEnd(range.end);
+    loadPoints({ start: range.start, end: range.end });
+  }
+
+  function shiftWeek(offsetWeeks) {
+    applyWeekRange(addDays(getFullWeekRange(start).start, offsetWeeks * 7));
+  }
+
+  function toggleRangeMode() {
+    if (rangeMode === 'week') {
+      setRangeMode('range');
+      return;
+    }
+    // 지금 보고 있는 시작일이 속한 주로 맞춰 줍니다.
+    applyWeekRange(start || getKstDateString());
   }
 
   const selectedStudent = activeStudents.find((student) => String(student.id) === String(studentId));
@@ -16317,6 +16363,12 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
           <button className="secondary section-action" onClick={() => setPreset('today')}>오늘</button>
           <button className="secondary section-action" onClick={() => setPreset('week')}>이번 주</button>
           <button className="secondary section-action" onClick={() => setPreset('month')}>이번 달</button>
+          <button
+            className={rangeMode === 'week' ? 'primary section-action' : 'secondary section-action'}
+            onClick={toggleRangeMode}
+          >
+            주간 보기
+          </button>
           <button
             className={autoRulesOpen ? 'primary section-action' : 'secondary section-action'}
             onClick={() => setAutoRulesOpen((prev) => !prev)}
@@ -16505,6 +16557,23 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
               />
               <em>{autoRules.streakWeeks}주 연속으로 명단에 오르면 따로 표시합니다.</em>
             </div>
+            <div className="field">
+              <label>학부모 경고 알림 기준 순벌점</label>
+              <input
+                type="number"
+                min="1"
+                max="200"
+                value={autoRules.penaltyAlertThreshold}
+                onChange={(e) => updateAutoRules({ penaltyAlertThreshold: Number(e.target.value || 0) })}
+              />
+              <em>
+                순벌점(벌점 - 상점)이 이 점수 <b>이상</b>이면 경고가 뜹니다.
+                {' '}({autoRules.penaltyAlertThreshold}점 설정 → 화면의 <b>순점수 -{autoRules.penaltyAlertThreshold}점 이하</b>부터)
+                {Number(autoRules.penaltyAlertThreshold || 0) > 20
+                  ? ' 20점보다 높게 두면 센터장 면담(20점 초과) 단계가 먼저 뜹니다.'
+                  : ''}
+              </em>
+            </div>
           </div>
 
           <div className="point-auto-rules-actions">
@@ -16514,7 +16583,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
             <button type="button" className="secondary" onClick={loadAutoRules} disabled={autoRulesSaving}>되돌리기</button>
           </div>
           <p className="point-auto-rules-note">
-            벌점 단계 알림(순벌점 10 / 20 / 30점 초과)은 이 설정과 무관하게 예전 그대로 동작합니다.
+            벌점 단계는 <b>학부모 알림(위 설정값 이상)</b> · 센터장 면담(순벌점 20점 초과) · 제적 검토(순벌점 30점 초과) 세 단계입니다.
+            센터장 면담과 제적 검토는 설정과 무관하게 예전 그대로입니다.
           </p>
         </div>
       ) : null}
@@ -16525,7 +16595,11 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
         <div className="penalty-stage-alert-card">
           <div className="penalty-stage-alert-head">
             <strong>벌점 단계 조치 대상 {scopeRows(rewardState.penaltyAlerts).length}명</strong>
-            <span>순벌점(벌점 - 상점) 10점 초과 → 학부모 알림 · 20점 초과 → 센터장 면담 · 30점 초과 → 제적 검토. 상점을 받으면 그만큼 상계됩니다. <b>[알림톡 발송]을 누르면 학부모·학생에게 상벌점 누적 안내가 발송</b>되고 이 단계 알림이 내려갑니다.</span>
+            <span>
+              순벌점(벌점 - 상점) {rewardState?.autoRules?.penaltyAlertThreshold ?? 15}점 <b>이상</b>(화면의 순점수 -{rewardState?.autoRules?.penaltyAlertThreshold ?? 15}점 이하) → 학부모 알림 · 20점 초과 → 센터장 면담 · 30점 초과 → 제적 검토.
+              {' '}상점을 받으면 그만큼 상계됩니다. <b>[알림톡 발송]을 누르면 학부모·학생에게 상벌점 누적 안내가 한 번 발송</b>되고 이 경고가 내려갑니다.
+              {' '}기준은 [자동 상점 기준]에서 바꿀 수 있습니다.
+            </span>
           </div>
           <div className="penalty-stage-alert-list">
             {scopeRows(rewardState.penaltyAlerts).map((item) => (
@@ -16535,13 +16609,13 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                   <span>{item.subtitle || '학교/학년 미입력'}</span>
                 </div>
                 <div className="penalty-stage-alert-score">
-                  <b className={`penalty-stage-badge tone-${item.tone}`}>{item.stage}점 · {item.stageLabel}</b>
+                  <b className={`penalty-stage-badge tone-${item.tone}`}>{item.thresholdLabel || `${item.stage}점 초과`} · {item.stageLabel}</b>
                   <em>순벌점 {item.penaltyNet}점 (벌 {item.penalty} - 상 {item.reward}){item.deferred ? ' · 보류 중' : ''}</em>
                 </div>
                 <p>{item.message}. {item.actionHint}</p>
                 {item.pendingStages.length > 1 ? (
                   <em className="penalty-stage-pending">
-                    미조치 단계: {item.pendingStages.map((stage) => `${stage.stage}점 ${stage.label}${stage.deferred ? '(보류)' : ''}`).join(' · ')}
+                    미조치 단계: {item.pendingStages.map((stage) => `${stage.thresholdLabel || `${stage.stage}점 초과`} ${stage.label}${stage.deferred ? '(보류)' : ''}`).join(' · ')}
                   </em>
                 ) : null}
                 <div className="penalty-stage-alert-actions">
@@ -16710,8 +16784,33 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
             ))}
           </select>
         </div>
-        <div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={start} onChange={(e) => setStart(e.target.value)} /></div>
-        <div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+        {rangeMode === 'week' ? (
+          <div className="field points-week-field">
+            <label>조회 주 (월~일)</label>
+            <div className="points-week-nav">
+              <button type="button" className="secondary" onClick={() => shiftWeek(-1)} disabled={loading}>◀ 이전 주</button>
+              <b>{start} ~ {end}</b>
+              <button type="button" className="secondary" onClick={() => shiftWeek(1)} disabled={loading}>다음 주 ▶</button>
+            </div>
+            <div className="points-week-sub">
+              <button type="button" className="secondary tiny-action" onClick={() => applyWeekRange(getKstDateString())} disabled={loading}>이번 주</button>
+              <input
+                type="date"
+                aria-label="주 선택"
+                onClick={openNativePicker}
+                onFocus={openNativePicker}
+                value={start}
+                onChange={(e) => { if (e.target.value) applyWeekRange(e.target.value); }}
+              />
+              <em>{isSameWeekAsToday(start) ? '이번 주' : `${weeksFromThisWeek(start)}`}</em>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={start} onChange={(e) => setStart(e.target.value)} /></div>
+            <div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+          </>
+        )}
       </div>
 
       <div className="points-form-card clean-panel">

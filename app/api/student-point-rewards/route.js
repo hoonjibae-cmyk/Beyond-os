@@ -23,6 +23,8 @@ import {
   resolvePenaltyStages,
   resolvePenaltyStagesByStudent,
   getPenaltyStageDef,
+  isPenaltyStageReached,
+  formatPenaltyStageThreshold,
 } from '../../../lib/studentPointCycle';
 
 export const dynamic = 'force-dynamic';
@@ -191,6 +193,8 @@ export async function GET(request) {
     // v41-241: 지급 기준 순점수는 상벌점 관리 화면에서 설정합니다. (기본 15점)
     const autoRules = await getPointAutoRules(supabase);
     const threshold = autoRules.rewardThreshold;
+    // v41-256: 학부모 경고 알림 기준(순벌점 N점 이상). 상벌점 관리 화면에서 설정합니다.
+    const penaltyAlertThreshold = autoRules.penaltyAlertThreshold;
     const [pointRows, rewardResult, penaltyResult] = await Promise.all([
       loadPointRows(supabase, studentId, cohortRange),
       loadRewardRows(supabase, studentId, cohortRange),
@@ -199,7 +203,7 @@ export async function GET(request) {
 
     if (studentId) {
       const cycle = resolvePointCycle(pointRows, rewardResult.rows, { threshold });
-      const penalty = resolvePenaltyStages(pointRows, penaltyResult.rows, { rewardRows: rewardResult.rows });
+      const penalty = resolvePenaltyStages(pointRows, penaltyResult.rows, { rewardRows: rewardResult.rows, penaltyAlertThreshold });
       const autoAwardResult = await loadAutoAwards(supabase, studentId, cohortRange, 60);
       return Response.json({
         ok: true,
@@ -215,7 +219,7 @@ export async function GET(request) {
     }
 
     const cycles = resolvePointCyclesByStudent(pointRows, rewardResult.rows, { threshold });
-    const penaltyByStudent = resolvePenaltyStagesByStudent(pointRows, penaltyResult.rows, { rewardRows: rewardResult.rows });
+    const penaltyByStudent = resolvePenaltyStagesByStudent(pointRows, penaltyResult.rows, { rewardRows: rewardResult.rows, penaltyAlertThreshold });
     const studentIds = [...new Set([...Object.keys(cycles), ...Object.keys(penaltyByStudent)])];
 
     // 알림 배너에 이름을 함께 보여주기 위해 학생 표시 정보를 붙입니다.
@@ -341,12 +345,16 @@ export async function GET(request) {
           stage: state.currentStage.stage,
           stageKey: state.currentStage.key,
           stageLabel: state.currentStage.label,
+          // v41-256: stage 는 단계 번호이므로 화면에는 실제 기준을 씁니다.
+          threshold: state.currentStage.threshold,
+          thresholdLabel: state.currentStage.thresholdLabel,
           tone: state.currentStage.tone,
           actionHint: state.currentStage.action,
           deferred: state.currentStage.deferred,
           message: state.currentStage.message,
           pendingStages: state.pendingStages.map((item) => ({
             stage: item.stage, label: item.label, deferred: item.deferred,
+            threshold: item.threshold, thresholdLabel: item.thresholdLabel,
           })),
         };
       })
@@ -422,10 +430,14 @@ export async function POST(request) {
         return Response.json({ error: penaltyRows.warning }, { status: 400 });
       }
 
-      const state = resolvePenaltyStages(points, penaltyRows.rows, { rewardRows: rewardsForStage.rows });
-      if (state.penaltyNet <= stage) {
+      // 이 분기는 아래 상품 지급 경로보다 먼저 반환되므로 설정을 여기서 읽습니다.
+      const penaltyRules = await getPointAutoRules(supabase);
+      const penaltyAlertThreshold = penaltyRules.penaltyAlertThreshold;
+      const state = resolvePenaltyStages(points, penaltyRows.rows, { rewardRows: rewardsForStage.rows, penaltyAlertThreshold });
+      // v41-256: stage 는 단계 번호이고, 실제 기준 점수는 따로입니다.
+      if (!isPenaltyStageReached(state.penaltyNet, stageDef, { penaltyAlertThreshold })) {
         return Response.json({
-          error: `현재 순벌점은 ${state.penaltyNet}점(벌 ${state.penalty} - 상 ${state.reward})으로 ${stage}점 단계 대상이 아닙니다. (${stage}점 초과부터)`,
+          error: `현재 순벌점은 ${state.penaltyNet}점(벌 ${state.penalty} - 상 ${state.reward})으로 ${stageDef.label} 단계 대상이 아닙니다. (${formatPenaltyStageThreshold(stageDef, { penaltyAlertThreshold })}부터)`,
         }, { status: 400 });
       }
 
@@ -443,7 +455,7 @@ export async function POST(request) {
         .single();
       if (error) throw error;
 
-      const nextState = resolvePenaltyStages(points, [...penaltyRows.rows, data], { rewardRows: rewardsForStage.rows });
+      const nextState = resolvePenaltyStages(points, [...penaltyRows.rows, data], { rewardRows: rewardsForStage.rows, penaltyAlertThreshold });
 
       // v41-161: [조치 완료]는 이제 실제로 학부모·학생에게 알림톡을 보냅니다.
       // 보류는 아직 안내하지 않은 상태이므로 보내지 않습니다.
@@ -455,6 +467,7 @@ export async function POST(request) {
           supabase,
           studentId,
           stage,
+          stageThresholdLabel: formatPenaltyStageThreshold(stageDef, { penaltyAlertThreshold }),
           penaltyState: state,
           recentRows: points.slice().reverse(),
           actorName,
