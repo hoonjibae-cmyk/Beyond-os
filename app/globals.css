@@ -22668,11 +22668,27 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .nav button{ padding:8px 12px !important; font-size:13.5px !important; font-weight:var(--ui-w) !important; border-radius:var(--ui-r-sm) !important; line-height:1.3; }
 .nav button.active{ font-weight:var(--ui-w-med) !important; box-shadow:none !important; border:1px solid var(--ap-sep) !important; }
 
-/* ── 3. 버튼: 42px/최소폭 130 → 34px/내용폭 ── */
+/* ── 3. 버튼: 42px/최소폭 130 → 34px/내용폭 ──
+   v41-257.1: 처음에는 .main button 전부에 크기를 걸었는데, 위클리 학생 카드·
+   간트 블록·달력 칸처럼 "버튼이지만 카드"인 요소까지 34px/좌우 12px 로 눌려
+   내용이 넘쳤습니다. 크기는 명시적인 조작 버튼에만 걸고, 나머지 버튼은
+   굵기·그림자만 정리합니다. */
 .main button, .panel button, .modal-backdrop button{
+  font-weight:var(--ui-w-med) !important; letter-spacing:-.01em; box-shadow:none !important;
+}
+.main button.primary, .main button.secondary, .main button.danger, .main button.danger-lite,
+.main .section-action, .main .btn-row button, .main .popup-bottom-actions button,
+.main .planner-head-actions button, .main .toolbar button, .main .weekly-head-actions button,
+.main .compact-actions button, .main .report-action-row button, .main .date-filter-grid button,
+.main .student-care-picker-presets button, .main .student-history-preset-row button,
+.main .weekly-auto-compose-actions button, .main .point-auto-rules-actions button,
+.main .penalty-stage-alert-actions button, .main .point-reward-alert-actions button,
+.main .attendance-event-actions button,
+.panel button.primary, .panel button.secondary, .panel button.danger, .panel .btn-row button,
+.panel .popup-bottom-actions button, .panel .attendance-event-actions button,
+.modal-backdrop button.primary, .modal-backdrop button.secondary, .modal-backdrop .popup-bottom-actions button{
   min-height:var(--ui-ctl) !important; padding:0 12px !important; border-radius:var(--ui-r-sm) !important;
-  font-size:var(--ui-fs) !important; font-weight:var(--ui-w-med) !important; line-height:1.2 !important; letter-spacing:-.01em;
-  box-shadow:none !important; transform:none !important;
+  font-size:var(--ui-fs) !important; line-height:1.2 !important; transform:none !important;
 }
 .main .section-action, .main .planner-head-actions button{ min-width:0 !important; width:auto !important; }
 .main .primary, .panel .primary, .modal-backdrop .primary,
@@ -22873,3 +22889,15 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .toolbar.utility-toolbar .utility-icon{ width:16px; height:16px; font-size:15px; }
   .main .header-pill-row > *{ height:22px !important; min-height:22px !important; font-size:11px !important; }
 }
+
+/* v41-257.1: 카드형 버튼은 원래 크기로 (위클리 학생 카드 · 간트) */
+.main .weekly-student-card{ min-height:0 !important; padding:10px 11px !important; line-height:1.3 !important; border-radius:var(--ui-r) !important; display:grid !important; gap:6px !important; }
+.main .weekly-student-card strong{ font-size:14px !important; }
+.main .weekly-student-card > span, .main .weekly-student-meta-line{ font-size:11.5px !important; font-weight:var(--ui-w) !important; }
+.main .gantt-block{ min-height:0 !important; padding:0 6px !important; line-height:1 !important; font-size:11.5px !important; border-radius:7px !important; }
+.main .schedule-gantt-name{ min-height:0 !important; padding:6px 8px !important; border-radius:9px !important; font-size:13px !important; }
+.main .schedule-gantt-wrap{ overflow:visible !important; overflow-x:auto !important; padding:10px 12px 12px !important; border-radius:var(--ui-r) !important; }
+.main .schedule-gantt-legend{ font-weight:var(--ui-w) !important; }
+/* v41-257.1: 위클리 학생 카드 목록 — 260px 상자 안에서 셋째 줄이 잘려 보이던 것.
+   26석이면 카드가 최대 26장이라 다 펼쳐도 세 줄입니다. 스크롤 상자를 없앱니다. */
+.main .weekly-student-card-grid{ max-height:none !important; overflow:visible !important; }
