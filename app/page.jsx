@@ -16360,22 +16360,12 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
           <p>학생별 상점·벌점을 수시로 기록하고, 데일리/위클리 리포트에 반영합니다.</p>
         </div>
         <div className="planner-head-actions">
-          <button className="secondary section-action" onClick={() => setPreset('today')}>오늘</button>
-          <button className="secondary section-action" onClick={() => setPreset('week')}>이번 주</button>
-          <button className="secondary section-action" onClick={() => setPreset('month')}>이번 달</button>
-          <button
-            className={rangeMode === 'week' ? 'primary section-action' : 'secondary section-action'}
-            onClick={toggleRangeMode}
-          >
-            주간 보기
-          </button>
           <button
             className={autoRulesOpen ? 'primary section-action' : 'secondary section-action'}
             onClick={() => setAutoRulesOpen((prev) => !prev)}
           >
             자동 상점 기준
           </button>
-          <button className="primary section-action" onClick={() => loadPoints()} disabled={loading}>{loading ? '조회 중...' : '조회'}</button>
         </div>
       </div>
 
@@ -16774,8 +16764,9 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
         <div><span>기록 수</span><strong>{summary.count || 0}건</strong></div>
       </div>
 
-      <div className="points-control-grid clean-panel">
-        <div className="field">
+      {/* v41-257: 조회 조건을 한 줄로. 학생 · 기간 프리셋 · 날짜 · 조회 */}
+      <div className="points-filter-bar clean-panel">
+        <div className="field points-filter-student">
           <label>학생</label>
           <select value={studentId} onChange={(e) => { setStudentId(e.target.value); loadPoints({ studentId: e.target.value }); }}>
             <option value="">전체 학생</option>
@@ -16784,16 +16775,20 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
             ))}
           </select>
         </div>
+        <div className="field points-filter-preset">
+          <label>기간</label>
+          <div className="seg" role="group" aria-label="조회 기간">
+            <button type="button" className={rangeMode === 'range' && start === today && end === today ? 'active' : ''} onClick={() => setPreset('today')}>오늘</button>
+            <button type="button" className={rangeMode === 'range' && start === week.start && end === week.end ? 'active' : ''} onClick={() => setPreset('week')}>이번 주</button>
+            <button type="button" className={rangeMode === 'range' && start === `${today.slice(0, 8)}01` && end === today ? 'active' : ''} onClick={() => setPreset('month')}>이번 달</button>
+            <button type="button" className={rangeMode === 'week' ? 'active' : ''} onClick={() => { if (rangeMode !== 'week') toggleRangeMode(); }}>주간</button>
+          </div>
+        </div>
         {rangeMode === 'week' ? (
-          <div className="field points-week-field">
-            <label>조회 주 (월~일)</label>
+          <div className="field points-filter-range">
+            <label>조회 주 (월~일) · {isSameWeekAsToday(start) ? '이번 주' : weeksFromThisWeek(start)}</label>
             <div className="points-week-nav">
-              <button type="button" className="secondary" onClick={() => shiftWeek(-1)} disabled={loading}>◀ 이전 주</button>
-              <b>{start} ~ {end}</b>
-              <button type="button" className="secondary" onClick={() => shiftWeek(1)} disabled={loading}>다음 주 ▶</button>
-            </div>
-            <div className="points-week-sub">
-              <button type="button" className="secondary tiny-action" onClick={() => applyWeekRange(getKstDateString())} disabled={loading}>이번 주</button>
+              <button type="button" className="secondary icon-btn" onClick={() => shiftWeek(-1)} disabled={loading} aria-label="이전 주">◀</button>
               <input
                 type="date"
                 aria-label="주 선택"
@@ -16802,15 +16797,27 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                 value={start}
                 onChange={(e) => { if (e.target.value) applyWeekRange(e.target.value); }}
               />
-              <em>{isSameWeekAsToday(start) ? '이번 주' : `${weeksFromThisWeek(start)}`}</em>
+              <span className="points-week-end">~ {end}</span>
+              <button type="button" className="secondary icon-btn" onClick={() => shiftWeek(1)} disabled={loading} aria-label="다음 주">▶</button>
+              {!isSameWeekAsToday(start) ? (
+                <button type="button" className="secondary" onClick={() => applyWeekRange(getKstDateString())} disabled={loading}>이번 주</button>
+              ) : null}
             </div>
           </div>
         ) : (
-          <>
-            <div className="field"><label>시작일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={start} onChange={(e) => setStart(e.target.value)} /></div>
-            <div className="field"><label>종료일</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={end} onChange={(e) => setEnd(e.target.value)} /></div>
-          </>
+          <div className="field points-filter-range">
+            <label>기간 직접 지정</label>
+            <div className="points-range-inputs">
+              <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={start} onChange={(e) => { setRangeMode('range'); setStart(e.target.value); }} />
+              <span>~</span>
+              <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={end} onChange={(e) => { setRangeMode('range'); setEnd(e.target.value); }} />
+            </div>
+          </div>
         )}
+        <div className="field points-filter-go">
+          <label>&nbsp;</label>
+          <button className="primary" onClick={() => loadPoints()} disabled={loading}>{loading ? '조회 중...' : '조회'}</button>
+        </div>
       </div>
 
       <div className="points-form-card clean-panel">

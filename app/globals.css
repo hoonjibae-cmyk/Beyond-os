@@ -22602,3 +22602,274 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .points-week-field { grid-column: span 1; }
   .points-week-nav > b { font-size: 12px; white-space: normal; }
 }
+
+/* ═════════════════════════════════════════════════════════════════════
+   v41-257: UI 정돈 레이어 (전 화면 공통)
+   ─────────────────────────────────────────────────────────────────────
+   이 파일에는 웜/골드(v40) → 애플 라이트(v41-38) → 타이포 통일 → 반경 통일
+   레이어가 겹쳐 있고 !important 가 1,700개 넘게 서로 싸웁니다. 그 위에 하나씩
+   덧대는 대신, 맨 끝에서 "밀도·굵기·간격"만 한 번에 다시 정합니다.
+
+   원칙
+   - 색은 애플 레이어의 --ap-* 변수를 그대로 씁니다. (파랑 액센트 · 무채도 상태색)
+   - 바꾸는 것은 크기입니다: 글자 굵기 900→600, 버튼 42→34px, 입력칸 46→36px,
+     카드 모서리 22→12px, 카드 안 카드의 이중 테두리 제거.
+   - 이 블록이 마지막이라 같은 우선순위면 여기가 이깁니다. 앞선 레이어가
+     !important 로 박아 둔 값을 넘기 위해 여기서도 !important 를 씁니다.
+     겉모습을 손볼 때는 이 블록만 고치면 됩니다.
+   ═════════════════════════════════════════════════════════════════════ */
+:root{
+  --ui-r-sm:8px; --ui-r:10px; --ui-r-lg:12px;
+  --ui-ctl:34px;      /* 버튼 높이 */
+  --ui-input:36px;    /* 입력칸 높이 */
+  --ui-gap:8px;
+  --ui-pad:14px;      /* 카드 안쪽 여백 */
+  --ui-fs:13.5px; --ui-fs-sm:12px; --ui-fs-lg:15px;
+  --ui-w:500; --ui-w-med:600; --ui-w-bold:700;
+}
+
+/* ── 0. 글자 굵기: 900/950 남발 → 본문 500 / 강조 600 / 제목 700 ── */
+.app, .app button, .app input, .app select, .app textarea{ font-weight:var(--ui-w); letter-spacing:-.005em; }
+.main strong, .main b, .panel strong, .panel b,
+.main em, .panel em, .main label, .panel label,
+.main .hint, .panel .hint, .main .muted, .panel .muted,
+.main span, .panel span, .main i, .panel i, .main p, .panel p, .main td, .main th, .main li{ font-weight:inherit; }
+.main strong, .main b, .panel strong, .panel b{ font-weight:var(--ui-w-med) !important; }
+.main h1, .main h2, .main h3, .main h4, .panel h2, .panel h3{ font-weight:var(--ui-w-bold) !important; letter-spacing:-.02em; }
+.main .hint, .panel .hint{ font-weight:var(--ui-w) !important; line-height:1.5; }
+.main .field label, .panel .field label, .main label, .panel label{ font-weight:var(--ui-w-med) !important; }
+
+/* ── 1. 앱 헤더: 세로 120px → 한 줄 ── */
+.main{ padding:18px 22px 40px !important; }
+.main .header{ align-items:center !important; gap:12px !important; margin:0 0 14px !important; padding-bottom:12px !important; border-bottom:1px solid var(--ap-sep); flex-wrap:wrap; }
+.main .header > div:first-child{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-width:0; }
+.main .header h1{ font-size:20px !important; margin:0 !important; }
+.main .header .sub{ display:none !important; }
+.main .header-pill-row{ margin:0 !important; gap:6px !important; }
+.main .header-pill-row > *{ height:24px !important; min-height:24px !important; font-size:11.5px !important; font-weight:var(--ui-w-med) !important; padding:0 9px !important; border-radius:999px !important; }
+.main .app-version-badge{ background:var(--ap-accent-tint) !important; color:var(--ap-accent-press) !important; }
+.main .cohort-scope-pill{ padding:0 4px 0 9px !important; gap:5px !important; }
+.main .cohort-scope-pill select{ height:20px !important; min-height:20px !important; font-size:11.5px !important; padding:0 4px !important; border:0 !important; background:transparent !important; box-shadow:none !important; width:auto !important; }
+.main .cohort-scope-pill b{ font-size:11px !important; }
+.toolbar.utility-toolbar{ gap:4px !important; margin-left:auto; }
+.toolbar.utility-toolbar .utility-action{
+  min-width:0 !important; min-height:30px !important; height:30px; padding:0 10px !important; gap:5px !important;
+  border-radius:999px !important; border:1px solid var(--ap-sep) !important; background:var(--ap-surface) !important;
+  box-shadow:none !important; font-size:12px !important; font-weight:var(--ui-w-med) !important; color:var(--ap-text-2) !important; transform:none !important;
+}
+.toolbar.utility-toolbar .utility-action:hover{ background:var(--ap-surface-3) !important; color:var(--ap-text) !important; border-color:var(--ap-sep-strong) !important; transform:none !important; }
+.toolbar.utility-toolbar .utility-icon{ width:14px; height:14px; font-size:13px; color:inherit !important; }
+.toolbar.utility-toolbar .utility-action.logout{ color:var(--ap-attn-text) !important; }
+
+/* ── 2. 사이드바 ── */
+.sidebar{ padding:18px 12px !important; }
+.sidebar-brand{ padding:0 8px 12px !important; margin-bottom:10px !important; }
+.nav{ gap:2px !important; }
+.nav button{ padding:8px 12px !important; font-size:13.5px !important; font-weight:var(--ui-w) !important; border-radius:var(--ui-r-sm) !important; line-height:1.3; }
+.nav button.active{ font-weight:var(--ui-w-med) !important; box-shadow:none !important; border:1px solid var(--ap-sep) !important; }
+
+/* ── 3. 버튼: 42px/최소폭 130 → 34px/내용폭 ── */
+.main button, .panel button, .modal-backdrop button{
+  min-height:var(--ui-ctl) !important; padding:0 12px !important; border-radius:var(--ui-r-sm) !important;
+  font-size:var(--ui-fs) !important; font-weight:var(--ui-w-med) !important; line-height:1.2 !important; letter-spacing:-.01em;
+  box-shadow:none !important; transform:none !important;
+}
+.main .section-action, .main .planner-head-actions button{ min-width:0 !important; width:auto !important; }
+.main .primary, .panel .primary, .modal-backdrop .primary,
+.main button.primary, .panel button.primary{ background:var(--ap-accent) !important; color:#fff !important; border:1px solid transparent !important; }
+.main .primary:hover, .panel .primary:hover{ background:var(--ap-accent-press) !important; }
+.main .secondary, .panel .secondary, .modal-backdrop .secondary,
+.main button.secondary, .panel button.secondary{ background:var(--ap-surface) !important; color:var(--ap-text) !important; border:1px solid var(--ap-sep-strong) !important; }
+.main .secondary:hover, .panel .secondary:hover{ background:var(--ap-surface-3) !important; }
+.main button:disabled, .panel button:disabled{ opacity:.45 !important; cursor:not-allowed; }
+.main .tiny-action, .panel .tiny-action{ min-height:26px !important; padding:0 9px !important; font-size:var(--ui-fs-sm) !important; border-radius:999px !important; }
+.main .icon-btn, .panel .icon-btn{ min-width:var(--ui-ctl); padding:0 8px !important; }
+.main .btn-row, .panel .btn-row{ gap:6px !important; margin:10px 0 !important; }
+.main .btn-row button, .panel .btn-row button{ flex:0 1 auto !important; }
+.main .popup-bottom-actions button, .modal-backdrop .popup-bottom-actions button{ min-width:110px !important; }
+.main .planner-head-actions{ gap:6px !important; }
+/* 좌석 상태 버튼(입실/외출/퇴실/결석)은 크기만 맞추고 색은 그대로 둡니다 */
+.panel .status-btn{ min-height:38px !important; font-size:var(--ui-fs) !important; }
+
+/* 세그먼트(기간 프리셋·모드 전환) — 여러 탭에 흩어진 탭바를 같은 모양으로 */
+.seg, .main .report-page-tabs, .main .settings-tabs, .main .ranking-mode-tabs, .main .mentoring-mode-toggle,
+.main .send-mode-tabs, .main .notice-mode-tabs, .main .user-sub-tabs, .main .student-overview-detail-tabs,
+.main .student-history-summary-type-tabs, .login-mode-tabs{
+  display:inline-flex !important; flex-wrap:wrap; gap:2px !important; padding:3px !important; width:auto !important; max-width:100%;
+  border-radius:var(--ui-r) !important; background:var(--ap-surface-3) !important; border:1px solid var(--ap-sep) !important; box-shadow:none !important;
+  margin-bottom:0; align-items:center;
+}
+.seg > button, .main .report-page-tabs button, .main .settings-tabs button, .main .ranking-mode-tabs button, .main .mentoring-mode-toggle button,
+.main .send-mode-tabs button, .main .notice-mode-tabs button, .main .user-sub-tabs button, .main .student-overview-detail-tabs button,
+.main .student-history-summary-type-tabs button, .login-mode-tabs button{
+  min-height:28px !important; height:28px; padding:0 11px !important; border:0 !important; border-radius:calc(var(--ui-r) - 3px) !important;
+  background:transparent !important; color:var(--ap-text-2) !important; font-size:var(--ui-fs-sm) !important; font-weight:var(--ui-w-med) !important;
+  box-shadow:none !important; white-space:nowrap; line-height:1 !important;
+}
+.seg > button.active, .main .report-page-tabs button.active, .main .settings-tabs button.active, .main .ranking-mode-tabs button.active,
+.main .mentoring-mode-toggle button.active, .main .send-mode-tabs button.active, .main .notice-mode-tabs button.active,
+.main .user-sub-tabs button.active, .main .student-overview-detail-tabs button.active, .main .student-history-summary-type-tabs button.active,
+.login-mode-tabs button.active{
+  background:var(--ap-surface) !important; color:var(--ap-text) !important; box-shadow:0 1px 2px rgba(0,0,0,.08) !important;
+}
+.main .report-page-tabs button b, .main .report-page-tabs button em, .main .settings-tabs button b{ font-size:11px !important; color:var(--ap-text-3) !important; }
+.main .settings-tabs.clean-panel{ margin:0 0 12px !important; }
+.main .settings-tabs button.active{ background:var(--ap-surface) !important; color:var(--ap-accent-press) !important; }
+
+/* 대시보드 좌석 필터 칩 */
+.main .seat-filter-row{ gap:4px !important; }
+.main .seat-filter-row button{ min-height:26px !important; padding:0 9px !important; border-radius:999px !important; font-size:var(--ui-fs-sm) !important; }
+
+/* ── 4. 입력칸: 46px → 36px ── */
+.main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+.main select, .panel input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), .panel select,
+.modal-backdrop input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .modal-backdrop select{
+  height:var(--ui-input) !important; min-height:var(--ui-input) !important; padding:0 10px !important;
+  border-radius:var(--ui-r-sm) !important; font-size:var(--ui-fs) !important; line-height:1.2 !important;
+}
+.main input[type="file"], .panel input[type="file"]{ min-height:var(--ui-input) !important; padding:6px 10px !important; border-radius:var(--ui-r-sm) !important; font-size:var(--ui-fs-sm) !important; }
+.main textarea, .panel textarea, .modal-backdrop textarea{ padding:8px 10px !important; border-radius:var(--ui-r-sm) !important; font-size:var(--ui-fs) !important; line-height:1.45 !important; }
+.main input:focus, .main select:focus, .main textarea:focus, .panel input:focus, .panel select:focus, .panel textarea:focus{
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--ap-accent) 18%, transparent) !important;
+}
+.main .field, .panel .field{ margin-bottom:10px !important; }
+.main .field label, .panel .field label, .main .login-label{ display:block; margin-bottom:4px !important; font-size:var(--ui-fs-sm) !important; color:var(--ap-text-2) !important; }
+.main .field > em, .main .field > .hint{ margin-top:4px; font-size:11.5px !important; color:var(--ap-text-3) !important; line-height:1.45; }
+.main .time-grid, .main .info-grid{ gap:8px !important; }
+
+/* ── 5. 카드: 안에 카드 3중 → 겉 카드 하나 + 옅은 구역 ── */
+.main .content-card, .main .summary-card{ border-radius:var(--ui-r-lg) !important; padding:var(--ui-pad) 16px !important; margin-bottom:12px !important; box-shadow:none !important; border:1px solid var(--ap-sep) !important; }
+.main .clean-panel{ background:var(--ap-surface-2) !important; border:1px solid var(--ap-sep) !important; border-radius:var(--ui-r) !important; padding:12px !important; margin:10px 0 !important; box-shadow:none !important; }
+.main .clean-panel .clean-panel{ background:transparent !important; border:0 !important; padding:0 !important; margin:8px 0 !important; }
+.main .content-card > .clean-panel:first-child{ margin-top:0 !important; }
+.main .section-head{ margin-bottom:12px !important; gap:12px !important; align-items:center !important; }
+.main .section-head h2{ font-size:17px !important; margin:0 0 2px !important; }
+.main .section-head p{ font-size:var(--ui-fs-sm) !important; color:var(--ap-text-2) !important; margin:0 !important; line-height:1.45; }
+.main .content-card p{ font-size:var(--ui-fs) !important; line-height:1.5 !important; }
+.main .content-card h2{ font-size:17px !important; }
+.main .content-card h3{ font-size:var(--ui-fs-lg) !important; }
+.main .points-form-head strong, .main .points-list-head strong, .main .point-auto-award-head strong, .main .point-auto-rules-head strong{ font-size:var(--ui-fs-lg) !important; }
+.main .points-form-head span, .main .points-list-head span, .main .point-auto-award-head span{ font-size:var(--ui-fs-sm) !important; font-weight:var(--ui-w) !important; }
+
+/* 통계 타일: 큰 숫자 26px·두꺼운 여백 → 20px·촘촘하게 */
+.main .points-summary-grid, .main .attention-history-summary, .main .summary, .main .dashboard-summary-v4111, .main .integrity-summary-grid, .main .kiosk-log-summary-grid{ gap:8px !important; margin-bottom:10px !important; }
+.main .points-summary-grid > div, .main .attention-history-summary > div, .main .summary-card, .main .integrity-summary-grid > div,
+.main .kiosk-log-summary-grid > div, .main .planner-status-summary > div, .main .student-db-stat, .main .user-management-summary > div{
+  padding:9px 12px !important; border-radius:var(--ui-r) !important; gap:2px !important; box-shadow:none !important; border:1px solid var(--ap-sep) !important;
+}
+.main .points-summary-grid span, .main .attention-history-summary span, .main .summary-card span, .main .integrity-summary-grid span, .main .kiosk-log-summary-grid span, .main .planner-status-summary span{
+  font-size:11.5px !important; font-weight:var(--ui-w) !important; color:var(--ap-text-2) !important; margin:0 !important;
+}
+.main .points-summary-grid strong, .main .attention-history-summary strong, .main .summary-card strong, .main .integrity-summary-grid strong, .main .kiosk-log-summary-grid strong, .main .planner-status-summary strong{
+  font-size:20px !important; font-weight:var(--ui-w-bold) !important; line-height:1.15 !important; letter-spacing:-.02em;
+}
+.main .dashboard-summary-v4111 .summary-card.active{ box-shadow:none !important; border-color:var(--ap-accent) !important; transform:none !important; }
+
+/* 상태 알림/빈 상태/안내 상자: 노란·보라·분홍 면 → 옅은 회색 + 왼쪽 선 */
+.main .alert-center{ background:var(--ap-surface) !important; border:1px solid var(--ap-sep) !important; border-left:3px solid var(--ap-away) !important; border-radius:var(--ui-r) !important; padding:10px 12px !important; margin-bottom:12px !important; }
+.main .alert-center h2{ font-size:var(--ui-fs-lg) !important; margin:0 0 4px !important; }
+.main .alert-center-head span{ font-size:11.5px !important; font-weight:var(--ui-w) !important; }
+.main .all-clear, .main .today-comment-empty, .main .empty-student-list, .main .point-reward-empty-line, .main .empty-mini,
+.main .student-history-empty, .main .attention-history-empty, .main .report-empty, .main .empty-table-cell{
+  background:var(--ap-surface-2) !important; border:1px dashed var(--ap-sep-strong) !important; border-radius:var(--ui-r) !important;
+  color:var(--ap-text-2) !important; font-size:var(--ui-fs) !important; font-weight:var(--ui-w) !important; padding:10px 12px !important; box-shadow:none !important;
+}
+.main .all-clear{ color:var(--ap-ok-text) !important; border-style:solid !important; border-color:rgba(52,199,89,.35) !important; background:var(--ap-ok-fill) !important; }
+.main .status-alert, .main .point-reward-warning, .main .cross-cohort-note, .main .schedule-import-notice, .main .student-care-picker-note{
+  border-radius:var(--ui-r) !important; padding:8px 12px !important; font-size:var(--ui-fs-sm) !important; font-weight:var(--ui-w) !important; line-height:1.45 !important;
+}
+.main .status-pill, .panel .status-pill{ min-width:0 !important; padding:2px 8px !important; font-size:11.5px !important; font-weight:var(--ui-w-med) !important; border-width:1px !important; }
+
+/* 상벌점 탭 세부 (지적받은 화면) */
+.main .points-filter-bar{ display:grid !important; grid-template-columns:minmax(200px,1.1fr) auto minmax(280px,1.4fr) auto; gap:10px; align-items:end; }
+.main .points-filter-bar .field{ margin-bottom:0 !important; min-width:0; }
+.main .points-filter-bar .points-filter-go button{ width:auto; min-width:76px; }
+.main .points-week-nav, .main .points-range-inputs{ display:flex; align-items:center; gap:6px; }
+.main .points-week-nav input[type="date"], .main .points-range-inputs input[type="date"]{ width:auto !important; flex:0 1 150px; }
+.main .points-week-end, .main .points-range-inputs > span{ font-size:var(--ui-fs) !important; color:var(--ap-text-2); white-space:nowrap; }
+.main .points-week-nav > button.secondary{ white-space:nowrap; }
+.main .point-reward-empty-line{ display:flex; align-items:center; justify-content:space-between; margin:0 0 8px !important; padding:8px 12px !important; }
+.main .point-auto-award-card{ margin:0 0 10px !important; padding:8px 12px !important; gap:8px !important; }
+.main .point-auto-award-head span{ margin-top:1px !important; }
+.main .points-form-card, .main .points-list-card{ padding:12px !important; gap:10px !important; }
+.main .points-form-grid{ gap:8px !important; }
+.main .points-form-card > button.primary{ min-width:120px !important; }
+.main .points-student-group{ border-radius:var(--ui-r) !important; }
+.main .points-cycle-line{ font-size:11.5px !important; }
+.main .points-row{ padding:8px 10px !important; border-radius:var(--ui-r-sm) !important; }
+.main .points-row strong{ font-size:var(--ui-fs) !important; }
+.main .penalty-stage-alert-card, .main .point-reward-alert-card{ padding:12px !important; border-radius:var(--ui-r) !important; }
+.main .penalty-stage-alert-head span, .main .point-reward-alert-head span{ font-size:var(--ui-fs-sm) !important; font-weight:var(--ui-w) !important; line-height:1.5; }
+@media (max-width:1100px){ .main .points-filter-bar{ grid-template-columns:1fr 1fr; } .main .points-filter-bar .points-filter-range{ grid-column:1 / -1; } }
+@media (max-width:760px){ .main .points-filter-bar{ grid-template-columns:1fr; } .main .points-filter-bar .points-filter-go button{ width:100%; } }
+
+/* ── 6. 오른쪽 패널 ── */
+.panel{ padding:18px 16px !important; }
+.panel h2{ font-size:17px !important; margin:0 0 4px !important; }
+.panel .muted{ font-size:var(--ui-fs-sm) !important; margin-bottom:10px !important; }
+.panel .info-card, .panel .panel-section{ border-radius:var(--ui-r) !important; padding:10px 12px !important; margin:8px 0 10px !important; box-shadow:none !important; }
+.panel .panel-section.is-open, .panel .panel-section[open]{ box-shadow:none !important; background:var(--ap-surface) !important; border-color:var(--ap-sep) !important; }
+.panel .panel-section-summary{ font-size:var(--ui-fs) !important; font-weight:var(--ui-w-med) !important; }
+.panel .panel-section-toggle{ min-height:24px !important; min-width:0 !important; padding:0 6px 0 9px !important; font-size:11px !important; font-weight:var(--ui-w-med) !important; background:var(--ap-surface-3) !important; border:1px solid var(--ap-sep) !important; color:var(--ap-text-2) !important; }
+.panel .panel-section-chevron{ width:14px !important; height:14px !important; background:transparent !important; }
+.panel .panel-section-chevron::before{ left:4px !important; top:2px !important; width:5px !important; height:5px !important; }
+.panel .info-card h3{ margin:0 0 8px !important; font-size:11.5px !important; }
+.panel .info-item span{ font-size:11px !important; margin-bottom:2px !important; }
+.panel .info-item strong{ font-size:var(--ui-fs) !important; }
+.panel .history-item{ padding:9px 10px !important; border-radius:var(--ui-r-sm) !important; margin-bottom:6px !important; font-size:var(--ui-fs-sm) !important; box-shadow:none !important; }
+.panel .history-item strong{ font-size:var(--ui-fs) !important; }
+.panel .attendance-summary-note{ font-size:var(--ui-fs-sm) !important; padding:8px 10px !important; border-radius:var(--ui-r-sm) !important; }
+/* 학생 미배정 검정 상자 → 회색 안내 */
+.panel .empty-readonly, .panel .readonly-student-empty, .panel .panel-empty-box, .panel .readonly-empty{
+  background:var(--ap-surface-3) !important; color:var(--ap-text-2) !important; border:1px dashed var(--ap-sep-strong) !important; border-radius:var(--ui-r-sm) !important;
+}
+
+/* ── 7. 팝업/모달 ── */
+.modal-backdrop > *{ border-radius:var(--ui-r-lg) !important; }
+.main .popup-head, .modal-backdrop .popup-head{ margin-bottom:10px !important; }
+.main .popup-head h2, .modal-backdrop .popup-head h2{ font-size:17px !important; }
+.main .popup-head p, .modal-backdrop .popup-head p{ font-size:var(--ui-fs-sm) !important; }
+
+/* ── 8. 표 ── */
+.main table th{ font-size:11.5px !important; font-weight:var(--ui-w-med) !important; color:var(--ap-text-3) !important; }
+.main table td{ font-size:var(--ui-fs) !important; }
+
+/* ── 9. 로그인 ── */
+.login-card{ border-radius:var(--ui-r-lg) !important; box-shadow:0 8px 30px rgba(0,0,0,.06) !important; padding:22px !important; }
+.login-card h1{ font-size:22px; font-weight:var(--ui-w-bold); }
+.login-card input{ height:40px; padding:0 12px !important; border-radius:var(--ui-r-sm) !important; margin-bottom:10px; }
+.login-card button{ min-height:40px; padding:0 12px !important; border-radius:var(--ui-r-sm) !important; font-weight:var(--ui-w-med); }
+.login-mode-tabs{ display:inline-grid !important; grid-template-columns:repeat(2, minmax(0,1fr)); width:100% !important; }
+.login-mode-tabs.four{ grid-template-columns:repeat(4, minmax(0,1fr)); }
+
+/* ── 10. 좁은 화면 ── */
+@media (max-width:760px){
+  .main{ padding:12px 14px 40px !important; }
+  .main .header{ margin-bottom:10px !important; }
+  .main .header h1{ font-size:18px !important; }
+  .main .section-action{ min-height:38px !important; font-size:var(--ui-fs) !important; }
+  .main .planner-head-actions button{ flex:1 1 auto !important; }
+  .main .content-card{ padding:12px !important; }
+  .main .clean-panel{ padding:10px !important; }
+}
+
+/* v41-257 보정 1: 상벌점 입력폼 빈 공간 — 6칸 격자로 꽉 채웁니다 */
+.main .points-form-grid{ grid-template-columns:repeat(6, minmax(0,1fr)) !important; }
+.main .points-form-grid .field{ grid-column:span 2 !important; }
+.main .points-form-grid .field.full{ grid-column:span 3 !important; }
+@media (max-width:980px){ .main .points-form-grid .field, .main .points-form-grid .field.full{ grid-column:span 3 !important; } }
+@media (max-width:760px){ .main .points-form-grid .field, .main .points-form-grid .field.full{ grid-column:span 6 !important; } }
+/* 보정 2: 대시보드처럼 오른쪽 패널이 있어 헤더가 좁을 때는 사용자 배지를 숨깁니다 */
+@media (max-width:1700px){ .app:not(.report-mode) .main .current-user-pill{ display:none !important; } }
+@media (max-width:1200px){ .main .current-user-pill{ display:none !important; } }
+/* 보정 3: 주간 모드 화살표가 양끝으로 벌어지던 것 — 왼쪽부터 붙입니다 */
+.main .points-week-nav{ justify-content:flex-start !important; flex-wrap:wrap; }
+/* 보정 4: 좁은 화면의 우상단 도구 버튼 — 아이콘만 남기고 줄바꿈 허용 */
+@media (max-width:760px){
+  .toolbar.utility-toolbar{ flex-wrap:wrap !important; justify-content:flex-start !important; margin-left:0 !important; overflow:visible !important; width:100%; }
+  .toolbar.utility-toolbar .utility-action{ min-width:32px !important; width:32px; height:32px; padding:0 !important; justify-content:center !important; }
+  .toolbar.utility-toolbar .utility-action.logout, .toolbar.utility-toolbar .utility-action.view-toggle{ width:auto; padding:0 10px !important; }
+  .toolbar.utility-toolbar .utility-action:not(.logout):not(.view-toggle) .utility-label{ display:none !important; }
+  .toolbar.utility-toolbar .utility-icon{ width:16px; height:16px; font-size:15px; }
+  .main .header-pill-row > *{ height:22px !important; min-height:22px !important; font-size:11px !important; }
+}
