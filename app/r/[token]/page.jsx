@@ -279,7 +279,10 @@ function overlapWithStudyWindows(startIso, endIso, studyWindows = []) {
   if (!windows.length) return null; // 차시 정보를 모르면 판단하지 않습니다.
   const startMin = getKstMinutesFromIso(startIso);
   if (startMin === null) return 0;
-  const endMin = endIso ? (getKstMinutesFromIso(endIso) ?? startMin) : startMin;
+  let endMin = endIso ? (getKstMinutesFromIso(endIso) ?? startMin) : startMin;
+  // v41-258: 끝이 다음 날 새벽(자정 넘김)이면 그날 자정까지로 봅니다.
+  // 차시는 하루 안에서만 정의되므로, 자정 이후 구간은 어차피 겹치는 차시가 없습니다.
+  if (endIso && endMin < startMin) endMin = 24 * 60;
   if (endMin <= startMin) return 0;
   let total = 0;
   for (const window of windows) {
@@ -307,6 +310,17 @@ function buildAwayIntervalsFromEvents(events = [], scheduleBreaks = [], isClosed
     intervals.push({ start: event.event_at, end: endAt, reason });
   });
   return intervals;
+}
+
+// v41-258: 아직 복귀하지 않은 외출(끝 시각 없음)은 '지금'까지로 봅니다.
+//
+// 지금까지는 끝 시각이 없으면 차시 겹침 계산이 0분을 돌려줘서, 외출 중인 학생의
+// 리포트에 [외출 없음]이 찍혔습니다. 같은 화면의 총 체류·순공시간은
+// [(미퇴실 기준)]으로 현재 시각까지 세고 있어 앞뒤가 맞지 않았습니다.
+// 퇴실이 찍혀 있으면 퇴실 시각까지입니다. (그 경우 buildAwayIntervalsFromEvents
+// 가 복귀 없는 외출을 이미 제외하므로 실제로는 거의 오지 않습니다)
+function resolveAwayIntervalEnd(interval = {}, session = {}, nowIso = new Date().toISOString()) {
+  return interval.end || session?.check_out_at || nowIso;
 }
 
 function calculateLivePureStudyMinutes(session = {}, events = [], studyWindows = undefined) {
@@ -550,7 +564,7 @@ function getDailyCheckSummary(session = {}, variables = {}, events = [], dailyPo
     const hasWindows = Array.isArray(studyWindows) && studyWindows.length > 0;
     const awayMinutes = hasWindows
       ? buildAwayIntervalsFromEvents(events, [], Boolean(session?.check_out_at))
-        .reduce((sum, item) => sum + (overlapWithStudyWindows(item.start, item.end, studyWindows) ?? 0), 0)
+        .reduce((sum, item) => sum + (overlapWithStudyWindows(item.start, resolveAwayIntervalEnd(item, session), studyWindows) ?? 0), 0)
       : calculateLiveAwayMinutes(session);
     const pureMinutes = calculateLivePureStudyMinutes(session, events, studyWindows);
     if (session.seat_status === 'absent') upsertAttendanceIssue(issues, formatIssueWithReason('결석', getEventReason(events, 'absent', '결석')));
@@ -1162,14 +1176,21 @@ export default async function PublicReportPage({ params }) {
   // v41-133: 학부모 리포트의 '외출'은 실제 차시(학습 시간)를 비운 시간만 집계합니다.
   // 저녁식사 등 차시 사이 쉬는 시간에 다녀온 외출은 학습 시간을 비운 것이 아니므로 제외합니다.
   // (차시 정보를 알 수 없으면 기존처럼 전체 외출 시간을 사용합니다.)
+  // v41-258: 복귀 전 외출은 지금까지로 계산합니다. (총 체류·순공시간과 같은 기준)
+  const dailyAwayOpen = !isWeekly && dailyAwayIntervals.some((item) => !item.end);
   const dailyAwayStudyMinutes = !isWeekly
-    ? dailyAwayIntervals.reduce((sum, item) => sum + (overlapWithStudyWindows(item.start, item.end, studyWindows) ?? 0), 0)
+    ? dailyAwayIntervals.reduce((sum, item) => sum + (overlapWithStudyWindows(item.start, resolveAwayIntervalEnd(item, session || {}), studyWindows) ?? 0), 0)
     : 0;
   const hasStudyWindowInfo = Array.isArray(studyWindows) && studyWindows.length > 0;
   const dailyAwayMinutes = !isWeekly
     ? (hasStudyWindowInfo ? dailyAwayStudyMinutes : calculateLiveAwayMinutes(session || {}))
     : 0;
-  const dailyAwayDisplay = !isWeekly ? (dailyAwayMinutes ? formatMinutesKo(dailyAwayMinutes) : '외출 없음') : '';
+  // 외출 중이면 분이 0이어도(차시 밖 외출 등) '외출 없음'이라고 적지 않습니다.
+  const dailyAwayDisplay = !isWeekly
+    ? (dailyAwayMinutes
+      ? `${formatMinutesKo(dailyAwayMinutes)}${dailyAwayOpen ? ' (외출 중)' : ''}`
+      : (dailyAwayOpen ? '외출 중' : '외출 없음'))
+    : '';
 
   // v41-113: 10분을 넘지 않는 짧은 외출은 "주요 외출 내역"에서 제외(횟수 산정에서도 제외).
   // v41-133: 차시와 겹치지 않는(쉬는 시간) 외출도 목록에서 제외합니다.
