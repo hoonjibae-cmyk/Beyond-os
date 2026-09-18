@@ -22748,7 +22748,10 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .main input:focus, .main select:focus, .main textarea:focus, .panel input:focus, .panel select:focus, .panel textarea:focus{
   box-shadow:0 0 0 3px color-mix(in srgb, var(--ap-accent) 18%, transparent) !important;
 }
-.main .field, .panel .field{ margin-bottom:10px !important; }
+/* v41-258.1: 여백은 !important 없이 :where 로 낮은 우선순위로 둡니다.
+   버튼과 한 줄에 놓인 .field (.base-date-nav, .student-care-picker-row 등) 가
+   "margin-bottom:0" 으로 맞춰 둔 것을 덮어 입력칸만 떠 보이던 문제. */
+.main :where(.field), .panel :where(.field){ margin-bottom:10px; }
 .main .field label, .panel .field label, .main .login-label{ display:block; margin-bottom:4px !important; font-size:var(--ui-fs-sm) !important; color:var(--ap-text-2) !important; }
 .main .field > em, .main .field > .hint{ margin-top:4px; font-size:11.5px !important; color:var(--ap-text-3) !important; line-height:1.45; }
 .main .time-grid, .main .info-grid{ gap:8px !important; }
