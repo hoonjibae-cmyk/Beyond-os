@@ -13296,17 +13296,6 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
     return { report, url: data.url, token: data.token };
   }
 
-  async function copyDailyPublicLink(session) {
-    try {
-      const result = await ensureDailyReportAndShareLink(session, { silent: true });
-      await navigator.clipboard.writeText(result.url);
-      setCopyNotice(`${session.students?.name || '학생'} 공개 링크 복사 완료`);
-      window.setTimeout(() => setCopyNotice(''), 2500);
-    } catch (error) {
-      alert(error.message || '공개 링크 복사에 실패했습니다.');
-    }
-  }
-
   async function bulkEnsureDailyShareLinks(targets, title = '리포트 링크 생성') {
     const safeTargets = (targets || []).filter((session) => session && !session.is_virtual);
     if (!safeTargets.length) return alert('링크를 생성할 대상이 없습니다.');
@@ -13994,18 +13983,29 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
                 <i className={`report-card-head-caret${isOpen ? ' open' : ''}`} aria-hidden="true">⌄</i>
               </div>
 
-              {(blockers.length || warnings.length || excluded || session.is_virtual || ['ready', 'sent', 'failed'].includes(report?.send_status)) ? (
-                <div className="report-card-statuses compact-statuses unified-report-chips">
-                  {['ready', 'sent', 'failed'].includes(report?.send_status) ? (
-                    <span className={`status-pill ${getSendStatusClass(report?.send_status)}`}>{getSendStatusLabel(report?.send_status)}</span>
-                  ) : null}
-                  {excluded ? <span className="issue-chip excluded">오늘 발송 제외: {exclusionsBySession[session.id]?.reason || '사유 없음'}</span> : null}
-                  {session.is_virtual ? <span className="issue-chip blocker">오늘 리포트 대상 미생성</span> : null}
-                  {blockers.map((issue) => <span key={issue.key} className="issue-chip blocker">{issue.label}</span>)}
-                  {warnings.slice(0, isOpen ? warnings.length : 3).map((issue) => <span key={issue.key} className="issue-chip warning">{issue.label}</span>)}
-                  {!isOpen && warnings.length > 3 ? <span className="issue-chip">+{warnings.length - 3}</span> : null}
-                </div>
-              ) : <div className="all-clear compact-all-clear">발송 준비 완료</div>}
+              {(blockers.length || warnings.length || excluded || session.is_virtual || ['ready', 'sent', 'failed'].includes(report?.send_status)) ? (() => {
+                // v41-261: 접힌 카드는 칩을 한 줄(최대 3개)로 제한하고 나머지는 [+N] 으로 접습니다.
+                // 카드를 펼치면(이름 줄 클릭) 전부 보입니다. 순서는 예전과 같습니다:
+                // 발송 상태 → 발송 제외 → 대상 미생성 → 차단 사유 → 주의 사유.
+                const chips = [];
+                if (['ready', 'sent', 'failed'].includes(report?.send_status)) {
+                  chips.push({ key: 'send', cls: `status-pill ${getSendStatusClass(report?.send_status)}`, label: getSendStatusLabel(report?.send_status) });
+                }
+                if (excluded) chips.push({ key: 'excluded', cls: 'issue-chip excluded', label: `오늘 발송 제외: ${exclusionsBySession[session.id]?.reason || '사유 없음'}` });
+                if (session.is_virtual) chips.push({ key: 'virtual', cls: 'issue-chip blocker', label: '오늘 리포트 대상 미생성' });
+                for (const issue of blockers) chips.push({ key: `b-${issue.key}`, cls: 'issue-chip blocker', label: issue.label });
+                for (const issue of warnings) chips.push({ key: `w-${issue.key}`, cls: 'issue-chip warning', label: issue.label });
+                const limit = 3;
+                const visible = isOpen ? chips : chips.slice(0, limit);
+                const hidden = chips.length - visible.length;
+                const hiddenTitle = hidden ? chips.slice(limit).map((chip) => chip.label).join(' · ') : '';
+                return (
+                  <div className={`report-card-statuses compact-statuses unified-report-chips${isOpen ? ' expanded' : ' one-line'}`}>
+                    {visible.map((chip) => <span key={chip.key} className={chip.cls} title={chip.label}>{chip.label}</span>)}
+                    {hidden ? <span className="issue-chip more" title={hiddenTitle}>+{hidden}</span> : null}
+                  </div>
+                );
+              })() : <div className="all-clear compact-all-clear">발송 준비 완료</div>}
 
               {/* v41-170: 리포트 링크 줄은 아래 [링크 미리보기]·[링크 복사] 버튼과 기능이 겹쳐 없앴습니다.
                   링크가 없으면 두 버튼이 누를 때 자동으로 만들어 줍니다. */}
@@ -14036,7 +14036,6 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
                   <>
                     <button onClick={() => openSendPreview(session.id)} disabled={excluded}>미리보기</button>
                     <button className="secondary link-preview-button" onClick={() => previewDailyPublicLink(session)} disabled={excluded}>링크열기</button>
-                    <button className="secondary" onClick={() => copyDailyPublicLink(session)} disabled={excluded}>링크복사</button>
                     <button className="secondary exclude-button" onClick={() => toggleExclusion(session)}>{excluded ? '제외해제' : '발송제외'}</button>
                     <button className="primary send-button" onClick={() => sendSingleWithDecision(session)} disabled={!canSend}>발송하기</button>
                   </>

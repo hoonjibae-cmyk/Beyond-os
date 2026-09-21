@@ -18611,7 +18611,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* v41-170: 버튼 5개를 한 줄에 놓습니다.
    (.report-card-actions.send-focused-actions 가 4칸으로 고정하고 있어 같은 선택자로 덮습니다) */
 .report-card-actions,
-.report-card-actions.send-focused-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.report-card-actions.send-focused-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); } /* v41-261: 링크복사 제거로 4개 */
 .report-card-actions button,
 .report-card-actions.send-focused-actions button {
   min-width: 0;
@@ -19229,3 +19229,9 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* 3열 고정 → 폭에 맞춰 자동. 300px 이면 버튼 5개가 한 줄에 들어갑니다. */
 .main .report-card-list{ grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)) !important; gap:10px !important; }
 @media (max-width:760px){ .main .report-card-list{ grid-template-columns:1fr !important; } }
+/* v41-261: 접힌 카드의 상태 칩은 한 줄. 칩은 줄어들 수 있고(말줄임), [+N] 은 줄어들지 않습니다. */
+.main .unified-report-chips.one-line{ flex-wrap:nowrap !important; overflow:hidden; gap:4px !important; margin:0 !important; }
+.main .unified-report-chips.one-line > *{ flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.main .unified-report-chips.one-line > .issue-chip.more{ flex:0 0 auto; }
+.main .unified-report-chips.expanded{ flex-wrap:wrap !important; gap:4px !important; margin:0 !important; }
+.main .unified-report-chips .issue-chip, .main .unified-report-chips .status-pill{ min-height:22px !important; padding:2px 7px !important; font-size:11px !important; }
