@@ -466,9 +466,6 @@ textarea { min-height: 78px; resize: vertical; }
   display: grid;
   gap: 10px;
 }
-.week-grid {
-  grid-template-columns: repeat(7, minmax(110px, 1fr));
-}
 .month-grid {
   grid-template-columns: repeat(7, minmax(90px, 1fr));
 }
@@ -493,12 +490,6 @@ textarea { min-height: 78px; resize: vertical; }
 }
 .schedule-chip b { display: block; }
 .confirmed { color: #247c43; font-weight: 900; }
-.not-confirmed { color: #b66a00; font-weight: 900; }
-.schedule-editor {
-  display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
-  gap: 14px;
-}
 .break-row {
   background: #f8f5ef;
   border: 1px solid #e2ded6;
@@ -507,8 +498,7 @@ textarea { min-height: 78px; resize: vertical; }
   margin-bottom: 10px;
 }
 @media (max-width: 900px) {
-  .schedule-editor { grid-template-columns: 1fr; }
-  .week-grid, .month-grid { grid-template-columns: 1fr; }
+    .week-grid, .month-grid { grid-template-columns: 1fr; }
   .alert-card { grid-template-columns: 1fr; }
 }
 
@@ -537,14 +527,7 @@ textarea { min-height: 78px; resize: vertical; }
 .event-dot.break { background: #d99b1d; }
 .event-dot.return { background: #3459c7; }
 .event-dot.checkout { background: #8a8a8a; }
-.event-dot.early-checkout { background: #7a4c34; }
 
-.timeline-wrap {
-  background: #fff;
-  border: 1px solid #e2ded6;
-  border-radius: 18px;
-  overflow: hidden;
-}
 .timeline-title {
   display: flex;
   justify-content: space-between;
@@ -593,13 +576,6 @@ textarea { min-height: 78px; resize: vertical; }
   background: #e8e2d8;
 }
 
-.week-hour-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: #eee8dc;
-}
 .month-summary-chip {
   display: block;
   width: 100%;
@@ -616,9 +592,6 @@ textarea { min-height: 78px; resize: vertical; }
 }
 .month-summary-chip.checkin {
   background: #dff7e8;
-}
-.month-summary-chip.early-checkout {
-  background: #ead7c6;
 }
 
 @media (max-width: 900px) {
@@ -729,16 +702,6 @@ textarea { min-height: 78px; resize: vertical; }
   filter: brightness(.98);
 }
 
-.selected-schedule-banner {
-  margin: -2px 0 14px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #fff1bf;
-  border: 1px solid #f2b600;
-  color: #4f3900;
-  font-weight: 900;
-}
-
 
 /* v17 student selector + quick schedule popup */
 .schedule-target-bar {
@@ -769,20 +732,6 @@ textarea { min-height: 78px; resize: vertical; }
   border-color: #d8d2c6;
 }
 
-.timeline-click-hint {
-  position: absolute;
-  right: 14px;
-  top: 12px;
-  z-index: 4;
-  padding: 7px 10px;
-  border-radius: 999px;
-  background: rgba(255, 241, 191, .92);
-  border: 1px solid #f2b600;
-  color: #5d4300;
-  font-size: 12px;
-  font-weight: 900;
-  pointer-events: none;
-}
 .day-timeline,
 .week-timeline-body {
   cursor: crosshair;
@@ -863,7 +812,6 @@ textarea { min-height: 78px; resize: vertical; }
 .now-line { position: absolute; left: 92px; right: 0; height: 2px; background: #111; z-index: 20; pointer-events: none; }
 .now-line::before { content: ""; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 999px; background: #111; }
 .now-line span { position: absolute; right: 10px; top: -15px; padding: 3px 7px; border-radius: 999px; background: #111; color: white; font-size: 10px; font-weight: 900; }
-.student-timeline-overview { display: grid; gap: 10px; }
 /* v41-74: 개인 시간표 결석 표시 */
 .timeline-absent-tag { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: #af52de; color: #fff; font-size: 12px; font-weight: 900; vertical-align: middle; }
 .timeline-absent-banner { margin: 0 14px 12px; padding: 10px 13px; border-radius: 12px; background: #f6ecfb; border: 1px solid rgba(175,82,222,.4); color: #7d2fb0; font-size: 13px; font-weight: 700; line-height: 1.5; }
@@ -871,21 +819,15 @@ textarea { min-height: 78px; resize: vertical; }
 .week-activity-grid { display: grid; grid-template-columns: repeat(7, minmax(140px, 1fr)); gap: 10px; }
 .activity-chip.break-activity { background: #ffe0a3; border-color: #d99b1d; color: #422d00; }
 .activity-popup { width: min(1180px, 96vw); max-height: 92vh; overflow-y: auto; background: #fff; border: 1px solid #e2ded6; border-radius: 24px; padding: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.28); }
-.activity-popup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .activity-popup-card { border: 1px solid #e2ded6; border-radius: 18px; padding: 16px; background: #fbfaf7; }
 .activity-popup-card h3 { margin: 0 0 14px; }
 .repeat-box { margin: 14px 0; padding: 12px; border-radius: 14px; background: #fff; border: 1px dashed #d8d2c6; }
 .repeat-box h4 { margin: 0 0 10px; }
 .add-break-button { width: 100%; margin-bottom: 12px; }
-.repeat-box.absent-box { border-color: rgba(175,82,222,.4); background: rgba(246,236,251,.55); }
-.repeat-box.absent-box h4 { color: #7d2fb0; }
 .absent-hint { margin: 8px 0 0; font-size: 12px; color: #7d2fb0; line-height: 1.5; }
-.activity-preview { margin-top: 12px; padding: 12px; border-radius: 14px; background: #f5f2ec; border: 1px solid #e2ded6; }
-.activity-preview strong, .activity-preview span { display: block; }
-.activity-preview span { margin-top: 4px; color: #6f6b62; }
 .popup-bottom-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
 .popup-bottom-actions button { min-width: 160px; border: 0; border-radius: 14px; padding: 13px 16px; font-weight: 950; }
-@media (max-width: 980px) { .activity-popup-grid { grid-template-columns: 1fr; } .week-activity-grid { grid-template-columns: 1fr; }  }
+@media (max-width: 980px) {  .week-activity-grid { grid-template-columns: 1fr; }  }
 
 
 /* v19 picker, alignment, readonly student info, mobile UX */
@@ -1461,10 +1403,6 @@ textarea { min-height: 78px; resize: vertical; }
 }
 
 
-/* v23 daily report operation screen */
-.daily-report-table td {
-  vertical-align: middle;
-}
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -1486,10 +1424,7 @@ textarea { min-height: 78px; resize: vertical; }
   border: 1px solid #f2b600;
 }
 @media (max-width: 980px) {
-  .daily-report-table {
-    min-width: 980px;
-  }
-  .content-card:has(.daily-report-table) {
+    .content-card:has(.daily-report-table) {
     overflow-x: auto;
   }
 }
@@ -1789,11 +1724,6 @@ textarea { min-height: 78px; resize: vertical; }
 .report-filter-bar input {
   min-height: 42px;
 }
-.issue-chip-wrap {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-}
 .issue-chip {
   display: inline-flex;
   align-items: center;
@@ -1878,41 +1808,9 @@ textarea { min-height: 78px; resize: vertical; }
   padding: 6px 12px;
   font-size: 12px;
 }
-.report-table-wrap {
-  overflow-x: auto;
-  border: 1px solid #ede5d8;
-  border-radius: 18px;
-}
-.sub-cell {
-  display: block;
-  margin-top: 4px;
-  color: #82776a;
-  font-size: 12px;
-  font-weight: 800;
-}
-.table-action-stack {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px;
-  min-width: 86px;
-}
-.table-action-stack button {
-  min-height: 32px;
-  border-radius: 10px;
-  padding: 4px 8px;
-  font-size: 12px;
-}
 button:disabled {
   opacity: .45;
   cursor: not-allowed;
-}
-.mini-primary {
-  background: #d7bd79;
-  color: #191612;
-  border-color: #d7bd79;
-}
-.issue-chip-wrap {
-  max-width: 180px;
 }
 @media (max-width: 1280px) {
   .report-head-actions {
@@ -2055,9 +1953,6 @@ button:disabled {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-}
-.report-issues {
-  max-width: none;
 }
 .issue-chip.warning {
   background: #fff3cd;
@@ -2253,9 +2148,6 @@ button:disabled {
 .warning-list span {
   color: #6f6658;
   font-size: 13px;
-}
-.muted-stat {
-  background: #f4f1eb;
 }
 @media (max-width: 760px) {
   .report-card-actions {
@@ -2660,28 +2552,12 @@ input[type="time"] {
   color: #fff;
   border-color: #211f1b;
 }
-.attendance-preset-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.attendance-history-card {
-  border: 1px solid #e2ded6;
-  border-radius: 18px;
-  padding: 16px;
-  background: #fff;
-}
 
 .integrity-summary-grid { grid-template-columns: repeat(5, minmax(110px, 1fr)); }
 @media (max-width: 900px) { .integrity-summary-grid { grid-template-columns: repeat(2, minmax(110px, 1fr)); } }
 @media (max-width: 560px) { .integrity-summary-grid { grid-template-columns: 1fr; } }
 
 
-/* v40-2 attendance table mode */
-.attendance-table-mode .table-filter-panel {
-  grid-template-columns: minmax(260px, 1.4fr) minmax(160px, .8fr) minmax(160px, .8fr) auto;
-  align-items: end;
-}
 .attendance-empty-result {
   margin-top: 14px;
 }
@@ -3004,13 +2880,6 @@ button:disabled {
   flex-wrap: wrap;
   margin: 10px 0;
 }
-.compact-status-filter {
-  width: min(260px, 100%);
-  margin: 0;
-}
-.compact-status-filter label {
-  color: #6f6b62;
-}
 .attendance-visible-count {
   color: #6f6b62;
   font-size: 13px;
@@ -3077,10 +2946,6 @@ button:disabled {
 }
 .report-card-actions button {
   white-space: nowrap;
-}
-.report-copy-notice {
-  margin: 8px 0 12px;
-  border-radius: 14px;
 }
 .issue-chip.excluded {
   background: #eeeeee;
@@ -3293,22 +3158,9 @@ button:disabled {
   line-height: 1.45;
   font-size: 13px;
 }
-.mentor-comment-readonly.filled {
-  color: #211f1b;
-}
 .mentor-comment-readonly.empty {
   color: #9a9184;
   font-weight: 850;
-}
-.today-comment-chip {
-  display: inline-flex;
-  margin-bottom: 6px;
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: #eaf7ee;
-  color: #216b38;
-  font-size: 11px;
-  font-weight: 950;
 }
 @media (max-width: 1080px) {
   .today-mentor-comment-panel {
@@ -3795,9 +3647,6 @@ button:disabled {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.report-issues .issue-chip {
-  line-height: 1.2;
 }
 .seat-name {
   min-width: 0;
@@ -5957,18 +5806,7 @@ button.danger {
     line-height: 1.15 !important;
   }
 
-  /* Floating notices should not cover mobile bottom browser controls too much */
-  .send-action-notice,
-  .toast,
-  .floating-notice {
-    left: 12px !important;
-    right: 12px !important;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
-    max-width: none !important;
-    font-size: 12px !important;
-    border-radius: 14px !important;
   }
-}
 
 @media (max-width: 420px) {
   
@@ -6706,10 +6544,6 @@ button.danger {
   font-weight: 900;
 }
 .send-focused-actions .exclude-button {
-  background: #4a463d;
-  color: #fff;
-}
-.send-focused-actions .detail-button {
   background: #4a463d;
   color: #fff;
 }
@@ -7453,11 +7287,6 @@ button.danger {
   display: grid;
   gap: 16px;
 }
-.user-management-layout {
-  display: grid;
-  grid-template-columns: minmax(360px, .9fr) minmax(360px, .8fr);
-  gap: 14px;
-}
 .user-management-card {
   background: #fbfaf7;
   border: 1px solid #e2ded6;
@@ -7604,10 +7433,7 @@ button.danger {
   font-weight: 850;
 }
 @media (max-width: 980px) {
-  .user-management-layout {
-    grid-template-columns: 1fr;
-  }
-  .user-list-grid {
+    .user-list-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -7758,10 +7584,6 @@ button.danger {
 }
 
 
-/* v40-61 personal account login */
-.login-mode-tabs.three {
-  grid-template-columns: 1fr 1fr 1fr;
-}
 .current-user-pill {
   display: inline-flex;
   align-items: center;
@@ -7807,10 +7629,7 @@ button.danger {
   grid-template-columns: 1fr auto auto auto;
 }
 @media (max-width: 760px) {
-  .login-mode-tabs.three {
-    grid-template-columns: 1fr;
-  }
-  .pending-user-row {
+    .pending-user-row {
     grid-template-columns: 1fr;
   }
   .user-admin-actions {
@@ -8318,9 +8137,6 @@ button.danger {
   line-height: 1 !important;
 }
 
-.user-management-tab .user-management-layout {
-  margin-top: 0 !important;
-}
 
 @media (max-width: 760px) {
   .account-close-button {
@@ -9052,14 +8868,6 @@ button.danger {
   line-height: 1.25 !important;
 }
 
-.weekly-student-status-stack {
-  display: grid !important;
-  gap: 7px !important;
-  width: 100%;
-  margin-top: 2px;
-  min-width: 0;
-  overflow: visible !important;
-}
 
 .weekly-status-chip-row {
   display: flex !important;
@@ -9089,16 +8897,6 @@ button.danger {
 
   
   }
-
-
-.weekly-student-status-stack {
-  justify-items: start !important;
-}
-
-
-.weekly-student-status-stack {
-  gap: 5px !important;
-}
 
 
 /* v40-75 weekly send status next to student name */
@@ -9626,17 +9424,6 @@ button.danger {
 .alimtalk-template-management-card {
   display: grid;
   gap: 14px;
-  padding: 16px;
-  border: 1px solid #e2ded6;
-  border-radius: 18px;
-  background: #fffdfa;
-}
-
-
-/* v40-83 public report link foundation */
-.public-report-link-guide {
-  display: grid;
-  gap: 12px;
   padding: 16px;
   border: 1px solid #e2ded6;
   border-radius: 18px;
@@ -12992,11 +12779,6 @@ textarea,
   color: #6f675a;
   font-weight: 800;
 }
-.inline-clear {
-  display: inline-flex;
-  padding: 8px 10px;
-  border-radius: 12px;
-}
 .bulk-send-progress-card {
   margin-top: 14px;
   border: 1px solid #d8cbb7;
@@ -13514,15 +13296,6 @@ textarea,
 }
 .closeout-link-row strong { color: #0f172a; }
 .closeout-link-row span { color: #64748b; font-size: 13px; }
-.text-button {
-  border: none;
-  background: transparent;
-  color: #2563eb;
-  font-weight: 800;
-  padding: 3px 5px;
-  cursor: pointer;
-}
-.text-button:hover { text-decoration: underline; }
 .share-link-confirm-box {
   border-color: rgba(37, 99, 235, 0.18);
   background: #f8fbff;
@@ -13569,14 +13342,6 @@ textarea,
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-.weekly-auto-compose-guide {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(181, 138, 64, .08);
-  border: 1px solid rgba(181, 138, 64, .16);
 }
 .weekly-bulk-result-grid {
   display: grid;
@@ -15651,29 +15416,6 @@ textarea,
   flex-direction: column;
   gap: 14px;
 }
-.student-care-selected-pill {
-  flex: 0 0 auto;
-  border: 1px solid #cdebd5;
-  background: #ffffff;
-  color: #166534;
-  border-radius: 999px;
-  padding: 9px 13px;
-  font-size: 12px;
-  font-weight: 950;
-  box-shadow: 0 6px 18px rgba(22, 101, 52, .08);
-}
-.student-care-nav-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-}
-.student-care-nav-card > span {
-  color: #746b5c;
-  font-size: 12px;
-  font-weight: 850;
-}
 .mentoring-assignment-row .mentoring-assignment-student-button {
   display: block;
   width: 100%;
@@ -15702,36 +15444,10 @@ textarea,
   box-shadow: 0 0 0 3px rgba(37, 99, 235, .16);
 }
 
-@media (max-width: 760px) {
-    .student-care-selected-pill {
-    align-self: flex-start;
-  }
-  }
 
 /* v41-32.1 fully unified student care screen */
 .student-care-unified-page {
   gap: 16px;
-}
-.student-care-anchor-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-.student-care-anchor-actions a {
-  text-decoration: none;
-  border: 1px solid #dfd4c5;
-  background: #ffffff;
-  color: #3f382f;
-  border-radius: 999px;
-  padding: 8px 11px;
-  font-size: 12px;
-  font-weight: 950;
-  box-shadow: 0 4px 12px rgba(39, 32, 22, .06);
-}
-.student-care-anchor-actions a:hover {
-  border-color: #2563eb;
-  color: #1d4ed8;
 }
 .student-care-section-block {
   scroll-margin-top: 88px;
@@ -15745,15 +15461,6 @@ textarea,
 .student-history-hero.embedded {
   background: linear-gradient(135deg, #f8fbff 0%, #ffffff 100%);
   border-color: #d8e6ff;
-}
-.student-history-embedded-notice {
-  margin: -2px 0 0;
-}
-@media (max-width: 760px) {
-    .student-care-anchor-actions a {
-    flex: 1 1 0;
-    text-align: center;
-  }
 }
 
 /* v41-32.2 student care flow polish */
@@ -16112,18 +15819,6 @@ textarea,
   color: #92400e;
 }
 
-.mentoring-assignment-warning {
-  display: block;
-  margin-top: 4px;
-  padding: 4px 6px;
-  border-radius: 9px;
-  background: rgba(245, 158, 11, .16);
-  color: #92400e;
-  font-size: 10.5px;
-  font-style: normal;
-  font-weight: 900;
-  line-height: 1.35;
-}
 
 @media (max-width: 860px) {
   .mentoring-page-v4133 .mentoring-mode-bar,
@@ -16568,22 +16263,6 @@ textarea,
   color: #b91c1c;
 }
 
-.mentoring-date-mini-badge.edited {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.mentoring-assignment-warning[role="button"] {
-  cursor: pointer;
-  user-select: none;
-  outline: none;
-}
-
-.mentoring-assignment-warning[role="button"]:hover,
-.mentoring-assignment-warning[role="button"]:focus-visible {
-  text-decoration: underline;
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, .25);
-}
 
 .mentoring-conflict-hint { font-size: 11.5px; font-weight: 850; color: #9a938a; }
 .mentoring-conflict-outside { color: #b4560d; font-weight: 900; }
@@ -16610,21 +16289,6 @@ textarea,
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
-.mentoring-assignment-row .mentoring-conflict-detail-button {
-  border: 1px solid rgba(245, 158, 11, .28) !important;
-  background: #fef3c7 !important;
-  color: #92400e !important;
-  border-radius: 999px;
-  padding: 7px 9px;
-  font-size: 11px;
-  font-weight: 950;
-  white-space: nowrap;
-}
-
-.mentoring-assignment-row .mentoring-conflict-detail-button:hover,
-.mentoring-assignment-row .mentoring-conflict-detail-button:focus-visible {
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, .22);
-}
 
 @media (max-width: 760px) {
   .mentoring-assignment-row.has-conflict {
@@ -16696,34 +16360,6 @@ textarea,
 .mentoring-assignment-row.drag-enabled.has-conflict {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
 }
-.mentoring-conflict-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-width: max-content;
-  white-space: nowrap;
-}
-.mentoring-conflict-dot {
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  min-width: 26px;
-  border-radius: 999px;
-  background: #fef3c7;
-  color: #b45309 !important;
-  border: 1px solid rgba(245, 158, 11, .32);
-  font-size: 13px !important;
-  font-weight: 1000 !important;
-  line-height: 1;
-}
-.mentoring-assignment-row .mentoring-conflict-detail-button {
-  min-width: 66px;
-  padding: 7px 9px !important;
-  line-height: 1.1;
-}
 .mentoring-assignment-row.schedule-conflict .mentoring-assignment-student-button {
   padding-right: 2px;
 }
@@ -16735,10 +16371,7 @@ textarea,
   .mentoring-assignment-row.drag-enabled.has-conflict {
     grid-template-columns: 1fr;
   }
-  .mentoring-conflict-actions {
-    justify-content: flex-start;
   }
-}
 
 /* v41-34.3 mentoring conflict compact layout hotfix */
 .mentoring-slot-head {
@@ -16980,8 +16613,8 @@ textarea,
 
 /* v41-36 쉬는 시간 키오스크 HOLD */
 .kiosk-hold-panel{margin:0 0 16px;padding:18px;border:2px solid #f0b84f;border-radius:22px;background:#fff9e9;box-shadow:0 10px 28px rgba(91,67,24,.08)}
-.kiosk-hold-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}.kiosk-hold-head h3{margin:0 0 5px;font-size:20px}.kiosk-hold-head h3 b{display:inline-flex;min-width:28px;height:28px;align-items:center;justify-content:center;border-radius:999px;background:#e58b19;color:#fff;font-size:14px}.kiosk-hold-head p{margin:0;color:#7d6844;font-size:13px;line-height:1.5}.kiosk-hold-head-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.kiosk-hold-item{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border:1px solid #ead8b2;border-radius:16px;background:#fff}.kiosk-hold-item.selected{border-color:#df971e;box-shadow:0 0 0 2px rgba(223,151,30,.14)}.kiosk-hold-check{display:flex;align-items:center;justify-content:center}.kiosk-hold-check input{width:18px;height:18px}.kiosk-hold-main{min-width:0;display:flex;flex-direction:column;gap:3px}.kiosk-hold-main strong{font-size:16px}.kiosk-hold-main strong em{font-style:normal;font-size:12px;color:#8a7755;margin-left:6px}.kiosk-hold-main span{font-size:14px;font-weight:700;color:#4f4535}.kiosk-hold-main small{font-size:12px;color:#8a7755}.kiosk-hold-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.kiosk-hold-actions button,.kiosk-hold-head-actions button{white-space:nowrap}
-@media(max-width:900px){.kiosk-hold-head{flex-direction:column}.kiosk-hold-head-actions{width:100%;justify-content:flex-start}.kiosk-hold-item{grid-template-columns:28px minmax(0,1fr)}.kiosk-hold-actions{grid-column:1/-1;justify-content:flex-end}.kiosk-hold-actions button{flex:1}}
+.kiosk-hold-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}.kiosk-hold-head h3{margin:0 0 5px;font-size:20px}.kiosk-hold-head h3 b{display:inline-flex;min-width:28px;height:28px;align-items:center;justify-content:center;border-radius:999px;background:#e58b19;color:#fff;font-size:14px}.kiosk-hold-head p{margin:0;color:#7d6844;font-size:13px;line-height:1.5}.kiosk-hold-head-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.kiosk-hold-check{display:flex;align-items:center;justify-content:center}.kiosk-hold-check input{width:18px;height:18px}.kiosk-hold-main{min-width:0;display:flex;flex-direction:column;gap:3px}.kiosk-hold-main strong{font-size:16px}.kiosk-hold-main strong em{font-style:normal;font-size:12px;color:#8a7755;margin-left:6px}.kiosk-hold-main span{font-size:14px;font-weight:700;color:#4f4535}.kiosk-hold-main small{font-size:12px;color:#8a7755}.kiosk-hold-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.kiosk-hold-actions button,.kiosk-hold-head-actions button{white-space:nowrap}
+@media(max-width:900px){.kiosk-hold-head{flex-direction:column}.kiosk-hold-head-actions{width:100%;justify-content:flex-start}.kiosk-hold-actions{grid-column:1/-1;justify-content:flex-end}.kiosk-hold-actions button{flex:1}}
 
 /* v41-36.2 쉬는 시간 HOLD 그룹/이력 UI */
 .kiosk-hold-panel-v41362{display:flex;flex-direction:column;gap:12px}
@@ -17289,8 +16922,6 @@ button{ border-width:1px !important; }
 .student-care-picker-row .field label{ display:block; font-size:var(--fs-cap) !important; color:var(--ap-text-2); margin-bottom:6px; font-weight:600; }
 .student-care-picker-presets{ display:flex; gap:7px; align-items:end; flex-wrap:wrap; }
 .student-care-picker-presets button{ white-space:nowrap; }
-/* v41-168: 기수 필터가 붙으면 칸이 하나 늘어납니다. */
-.student-care-picker-row.has-cohort{ grid-template-columns:1.2fr 2fr 1fr 1fr auto; }
 /* v41-168: 날짜 입력칸이 선택칸보다 기본 높이가 커서 윗변이 어긋나 보였습니다.
    이 줄의 입력칸 높이를 하나로 맞춥니다. */
 .student-care-picker-row .field select,
@@ -17305,8 +16936,7 @@ button{ border-width:1px !important; }
 @media (max-width:900px){
   .student-care-picker-row,
   .student-care-picker-row.has-cohort{ grid-template-columns:1fr 1fr; }
-  .student-care-picker-cohort{ grid-column:1 / -1; }
-  .student-care-picker-student{ grid-column:1 / -1; }
+    .student-care-picker-student{ grid-column:1 / -1; }
   .student-care-picker-presets{ grid-column:1 / -1; }
 }
 
@@ -17481,11 +17111,8 @@ button{ border-width:1px !important; }
 .override-calendar .calendar-day.overridden{ border-color: #d68b2e !important; }
 .override-controls{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
 .override-controls > strong{ font-size: 14px; }
-.delete-repeat-group{ display: flex; gap: 8px; align-items: center; margin-right: auto; flex-wrap: wrap; }
-.delete-repeat-group select, .delete-repeat-group input[type="date"]{ max-width: 150px; }
 @media (max-width: 900px){
-  .delete-repeat-group{ margin-right: 0; width: 100%; }
-  .override-controls{ align-items: flex-start; }
+    .override-controls{ align-items: flex-start; }
 }
 /* ─── v41-45: 타임라인 라벨 잘림 수정 + 설정 구간 1열 배치 + 학생 시간표 일괄 삭제 ─── */
 /* 1) 일별 타임라인: 첫(오전 9시)/끝(오후 11시) 시간 라벨이 overflow에 잘리지 않도록 고정 */
@@ -17728,10 +17355,6 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .confirm-status-note{ margin-top:8px; font-size:12px; line-height:1.6; color:#8a6a12; font-weight:700; }
 .confirm-status-note.done{ color:#86868b; font-weight:600; }
 
-/* v41-205: 학부모 제출 알림 배지 · 제출 내용 보기 */
-.confirm-alert-bar{ margin:0 0 12px; padding:11px 14px; border:1px solid #f2d79a; border-radius:14px; background:#fffdf6; }
-.confirm-alert-bar b{ display:block; font-size:13px; font-weight:800; color:#8a6a12; }
-.confirm-alert-bar span{ display:block; margin-top:4px; font-size:12px; color:#8a6a12; line-height:1.6; }
 .confirm-summary{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:10px 0 0;
   padding:9px 13px; border-radius:12px; background:#f5f5f7; font-size:12.5px; color:#6e6e73; font-weight:600; }
 .confirm-summary b{ color:#1d1d1f; font-weight:800; }
@@ -17883,7 +17506,6 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .sinfo-picker-field{ max-width:520px; }
 /* v41-168: 학생 앞에 기수 필터를 두고 두 칸을 나란히 놓습니다. */
 .sinfo-picker-row{ display:grid; grid-template-columns:minmax(0, 520px); gap:12px; align-items:end; }
-.sinfo-picker-row.has-cohort{ grid-template-columns:minmax(0, 260px) minmax(0, 520px); }
 .sinfo-picker-row .field label{ display:block; font-size:12.5px; color:#6e6e73; margin-bottom:6px; font-weight:600; }
 .sinfo-picker-row .field select{ box-sizing:border-box; height:46px; min-height:46px; }
 .sinfo-picker-row .field{ margin-bottom:0; }
@@ -18023,7 +17645,6 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .podium-value{ font-size:clamp(13px,1.5vw,19px); font-weight:800; color:var(--accent2); }
 .podium-bar{ width:70%; margin-top:8px; height:clamp(70px,12vh,150px); display:flex; align-items:flex-end; }
 .podium-bar span{ display:block; width:100%; border-radius:8px 8px 0 0; background:linear-gradient(180deg, var(--accent2), var(--accent)); box-shadow:0 0 26px color-mix(in srgb, var(--accent) 65%, transparent); transform-origin:bottom; animation:bcGrow .8s .15s cubic-bezier(.2,.8,.2,1) both; }
-.podium-rank{ position:absolute; top:-14px; width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font-weight:900; font-size:14px; background:#fff; color:#0b0e1c; box-shadow:0 4px 14px rgba(0,0,0,.4); }
 .podium-slot.place-1{ transform:translateY(-14px); }
 .podium-slot.place-1 .podium-bar{ height:clamp(96px,16vh,200px); }
 .podium-slot.place-1{ --accent:#ffd76a; --accent2:#ffe9a8; }
@@ -18123,7 +17744,6 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .podium-medal{ filter:drop-shadow(0 0 8px rgba(0,0,0,.14)); }
 .podium-slot.masked .podium-name{ color:#8a93b0; }
 .podium-value{ color:color-mix(in srgb, var(--accent) 60%, #101430); }
-.podium-rank{ border:1px solid rgba(0,0,0,.06); box-shadow:0 4px 12px rgba(20,40,90,.22); }
 .broadcast-list li{ background:rgba(0,0,0,.035); border-color:rgba(0,0,0,.08); }
 .rl-rank{ color:#6b748f; }
 .broadcast-list li.masked .rl-name{ color:#8a93b0; }
@@ -18245,7 +17865,6 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .report-activity-stat.test, .report-activity-row .status-pill.test{
   background:var(--ap-accent-tint) !important; border-color:rgba(0,113,227,.28) !important; color:var(--ap-accent-press) !important;
 }
-.text-button{ color:var(--ap-accent) !important; }
 
 /* 7) 비의미 골드 CTA → 블루 액센트 */
 .weekly-head-actions .weekly-period-search-button, .weekly-head-actions .primary.section-action{
@@ -19448,10 +19067,6 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   font-size: 11.5px;
   font-weight: 850;
   color: #7a756b;
-}
-.points-cycle-line.is-eligible {
-  background: #fff6e4;
-  color: #8a5a06;
 }
 .points-cycle-line span {
   font-weight: 950;
