@@ -106,7 +106,7 @@ button { cursor: pointer; }
 h1 { margin: 0; font-size: 28px; letter-spacing: -0.6px; }
 .sub { margin-top: 6px; color: #6f6b62; font-size: 14px; }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
-.toolbar button, .toggle-btn {
+.toolbar button {
   border: 0;
   border-radius: 12px;
   padding: 10px 12px;
@@ -122,7 +122,7 @@ h1 { margin: 0; font-size: 28px; letter-spacing: -0.6px; }
   gap: 10px;
   margin-bottom: 18px;
 }
-.summary-card, .content-card {
+.content-card {
   background: white;
   border: 1px solid #e2ded6;
   border-radius: 16px;
@@ -498,7 +498,7 @@ textarea { min-height: 78px; resize: vertical; }
   margin-bottom: 10px;
 }
 @media (max-width: 900px) {
-    .week-grid, .month-grid { grid-template-columns: 1fr; }
+    .month-grid { grid-template-columns: 1fr; }
   .alert-card { grid-template-columns: 1fr; }
 }
 
@@ -732,8 +732,7 @@ textarea { min-height: 78px; resize: vertical; }
   border-color: #d8d2c6;
 }
 
-.day-timeline,
-.week-timeline-body {
+.day-timeline {
   cursor: crosshair;
 }
 
@@ -2050,9 +2049,8 @@ button:disabled {
   .app.report-mode .toolbar button {
     flex: 1;
   }
-  .compact-actions,
   .compact-filter,
-  .report-card-actions {
+.report-card-actions {
     grid-template-columns: 1fr;
   }
     .quick-issue-buttons.compact-chip-buttons {
@@ -2200,7 +2198,6 @@ button:disabled {
 
 
 @media (max-width: 760px) {
-  .compact-actions,
   .report-card-actions {
     grid-template-columns: 1fr;
   }
@@ -2393,8 +2390,7 @@ button:disabled {
     flex: 1;
   }
   .app.report-mode .student-card-grid,
-  .app.report-mode .card-grid,
-  .report-card-list {
+.report-card-list {
     grid-template-columns: 1fr;
   }
   .app.report-mode .planner-status-summary {
@@ -2933,7 +2929,6 @@ button:disabled {
   .attendance-summary-toggle-row {
     align-items: stretch;
   }
-  .compact-status-filter,
   .attendance-summary-toggle-row button {
     width: 100%;
   }
@@ -3575,8 +3570,7 @@ button:disabled {
   gap: 5px;
 }
 .report-card-statuses .status-pill,
-.report-card-head > .status-pill,
-.report-issues .issue-chip {
+.report-card-head > .status-pill {
   font-size: 11px;
   padding: 4px 8px;
 }
@@ -3634,12 +3628,10 @@ button:disabled {
 .report-card-actions button.primary {
   min-width: 0;
 }
-.issue-chip-wrap.report-issues,
 .report-card-statuses.compact-statuses {
   min-width: 0;
   max-width: 100%;
 }
-.report-issues .issue-chip,
 .report-card-statuses .status-pill,
 .report-card-head > .status-pill {
   max-width: 100%;
@@ -3705,8 +3697,7 @@ button:disabled {
   grid-column: 1 / -1;
 }
 .report-card-statuses .status-pill,
-.report-card-head > .status-pill,
-.report-issues .issue-chip {
+.report-card-head > .status-pill {
   overflow: visible;
   text-overflow: clip;
   max-width: none;
@@ -4303,8 +4294,7 @@ button.danger {
     width: 100%;
   }
 
-  .toolbar button,
-  .toggle-btn {
+  .toolbar button {
     min-height: 38px;
     padding: 8px 9px;
     font-size: 12px;
@@ -4319,7 +4309,6 @@ button.danger {
     margin-bottom: 12px;
   }
 
-  .summary-card,
   .content-card {
     border-radius: 14px;
     padding: 12px;
@@ -4371,27 +4360,22 @@ button.danger {
     gap: 10px;
   }
 
-  .compact-actions,
   .report-head-actions,
-  .planner-head-actions,
-  .weekly-head-actions {
+.planner-head-actions,
+.weekly-head-actions {
     display: grid;
     grid-template-columns: 1fr;
     width: 100%;
   }
 
-  .compact-actions input,
-  .compact-actions button,
   .section-action {
     width: 100%;
     min-height: 42px;
   }
 
-  .report-dashboard-strip,
-  .weekly-progress-grid,
   .weekly-summary-grid,
-  .student-db-summary.clickable-summary,
-  .student-db-summary {
+.student-db-summary.clickable-summary,
+.student-db-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -4454,12 +4438,10 @@ button.danger {
   }
 
   .toolbar,
-  .summary,
-  .report-dashboard-strip,
-  .weekly-progress-grid,
-  .weekly-summary-grid,
-  .student-db-summary.clickable-summary,
-  .student-db-summary {
+.summary,
+.weekly-summary-grid,
+.student-db-summary.clickable-summary,
+.student-db-summary {
     grid-template-columns: 1fr;
   }
 
@@ -4554,8 +4536,7 @@ button.danger {
     max-width: 148px;
   }
 
-  .toolbar button,
-  .toggle-btn {
+  .toolbar button {
     width: auto !important;
     min-width: 0;
     min-height: 28px;
@@ -4583,8 +4564,7 @@ button.danger {
     gap: 4px;
   }
 
-  .toolbar button,
-  .toggle-btn {
+  .toolbar button {
     padding: 5px 6px;
     font-size: 9.5px;
   }
@@ -4731,8 +4711,7 @@ button.danger {
     overflow: visible;
   }
 
-  .toolbar button,
-  .toggle-btn {
+  .toolbar button {
     flex: 0 0 auto;
     width: auto !important;
     min-width: 0;
@@ -4812,8 +4791,7 @@ button.danger {
     gap: 3px;
   }
 
-  .toolbar button,
-  .toggle-btn {
+  .toolbar button {
     padding: 4px 4px;
     font-size: 7.6px !important;
     border-radius: 7px;
@@ -5534,11 +5512,9 @@ button.danger {
   }
 
   .content-card h2,
-  .content-card h3,
-  .report-control-card h2,
-  .report-control-card h3,
-  .weekly-builder-card h2,
-  .weekly-builder-card h3 {
+.content-card h3,
+.report-control-card h2,
+.report-control-card h3 {
     letter-spacing: -0.04em;
     word-break: keep-all;
   }
@@ -5551,45 +5527,30 @@ button.danger {
     gap: 10px !important;
   }
 
-  .planner-upload-card,
-  .planner-diagnostics-card,
-  .planner-missing-card {
+  .planner-upload-card {
     padding: 14px !important;
   }
 
-  .planner-upload-card .field,
-  .planner-form .field,
-  .planner-upload-form .field {
+  .planner-upload-card .field {
     margin-bottom: 10px !important;
   }
 
   .planner-upload-card input,
-  .planner-upload-card select,
-  .planner-upload-card textarea,
-  .planner-form input,
-  .planner-form select,
-  .planner-form textarea,
-  .planner-upload-form input,
-  .planner-upload-form select,
-  .planner-upload-form textarea {
+.planner-upload-card select,
+.planner-upload-card textarea {
     min-height: 44px !important;
     font-size: 15px !important;
     border-radius: 13px !important;
   }
 
-  .planner-upload-card input[type="file"],
-  .planner-form input[type="file"],
-  .planner-upload-form input[type="file"] {
+  .planner-upload-card input[type="file"] {
     min-height: 42px !important;
     padding: 9px 10px !important;
     font-size: 13px !important;
   }
 
   .planner-upload-card button,
-  .planner-form button,
-  .planner-upload-form button,
-  .planner-head-actions button,
-  .planner-actions button {
+.planner-head-actions button {
     min-height: 42px !important;
     padding: 9px 10px !important;
     border-radius: 13px !important;
@@ -5598,9 +5559,7 @@ button.danger {
     white-space: normal !important;
   }
 
-  .planner-head-actions,
-  .planner-actions,
-  .planner-upload-actions {
+  .planner-head-actions {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 8px !important;
@@ -5642,17 +5601,13 @@ button.danger {
     gap: 9px !important;
   }
 
-  .report-card-actions,
-  .report-actions,
-  .report-student-actions {
+  .report-card-actions {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 7px !important;
   }
 
-  .report-card-actions button,
-  .report-actions button,
-  .report-student-actions button {
+  .report-card-actions button {
     min-height: 38px !important;
     padding: 7px 8px !important;
     font-size: 12px !important;
@@ -5661,8 +5616,7 @@ button.danger {
     line-height: 1.15 !important;
   }
 
-  .send-preview-modal,
-  .report-preview-modal {
+  .send-preview-modal {
     width: calc(100vw - 20px) !important;
     max-width: calc(100vw - 20px) !important;
     max-height: 88dvh !important;
@@ -5671,15 +5625,12 @@ button.danger {
     padding: 14px !important;
   }
 
-  .send-preview-modal textarea,
-  .report-preview-modal textarea {
+  .send-preview-modal textarea {
     min-height: 180px !important;
     font-size: 14px !important;
     line-height: 1.45 !important;
   }
 
-  .send-preview-actions,
-  .preview-actions,
   .modal-actions {
     display: grid !important;
     grid-template-columns: 1fr !important;
@@ -5691,8 +5642,6 @@ button.danger {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  .send-preview-actions button,
-  .preview-actions button,
   .modal-actions button {
     min-height: 42px !important;
     font-size: 13px !important;
@@ -5707,7 +5656,6 @@ button.danger {
     gap: 12px !important;
   }
 
-  .weekly-progress-grid,
   .weekly-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 7px !important;
@@ -5718,24 +5666,18 @@ button.danger {
     gap: 9px !important;
   }
 
-  .weekly-student-card,
-  .weekly-report-card {
+  .weekly-student-card {
     padding: 12px !important;
   }
 
-  .weekly-head-actions,
-  .weekly-actions,
-  .weekly-report-actions {
+  .weekly-head-actions {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 8px !important;
     width: 100% !important;
   }
 
-  .weekly-head-actions button,
-  .weekly-actions button,
-  .weekly-report-actions button,
-  .weekly-report-card button {
+  .weekly-head-actions button {
     min-height: 40px !important;
     padding: 8px 9px !important;
     font-size: 12px !important;
@@ -5744,8 +5686,6 @@ button.danger {
     line-height: 1.15 !important;
   }
 
-  .weekly-report-card textarea,
-  .weekly-builder-card textarea,
   .weekly-detail-layout textarea {
     min-height: 150px !important;
     font-size: 14px !important;
@@ -5753,9 +5693,6 @@ button.danger {
   }
 
   
-  .attendance-table-wrap table,
-  .table-wrap table,
-  .history-table-wrap table,
   .data-table {
     min-width: 680px;
   }
@@ -5811,28 +5748,17 @@ button.danger {
 @media (max-width: 420px) {
   
   .planner-head-actions,
-  .planner-actions,
-  .planner-upload-actions,
-  .weekly-head-actions,
-  .weekly-actions,
-  .weekly-report-actions,
-  .report-card-actions,
-  .report-actions,
-  .report-student-actions {
+.weekly-head-actions,
+.report-card-actions {
     grid-template-columns: 1fr !important;
   }
 
-  .weekly-progress-grid,
-  .weekly-summary-grid,
-  .attendance-summary-grid,
-  .attendance-insight-grid {
+  .weekly-summary-grid {
     grid-template-columns: 1fr 1fr !important;
   }
 
   .content-card,
-  .report-control-card,
-  .weekly-builder-card,
-  .weekly-report-card {
+.report-control-card {
     padding: 12px !important;
   }
 }
@@ -5865,11 +5791,8 @@ button.danger {
   }
 
   .planner-upload-card .field:has(input[type="date"]),
-  .report-control-card .field:has(input[type="date"]),
-  .weekly-report-card .field:has(input[type="date"]),
-  .weekly-builder-card .field:has(input[type="date"]),
-  .attendance-filter-panel .field:has(input[type="date"]),
-  .calendar-controls .field:has(input[type="date"]) {
+.report-control-card .field:has(input[type="date"]),
+.calendar-controls .field:has(input[type="date"]) {
     align-items: flex-start !important;
   }
 
@@ -5877,17 +5800,13 @@ button.danger {
 
 @media (max-width: 420px) {
   input[type="date"],
-  .content-card input[type="date"],
-  .planner-upload-card input[type="date"],
-  .report-control-card input[type="date"],
-  .weekly-report-card input[type="date"],
-  .weekly-builder-card input[type="date"],
-  .attendance-filter-panel input[type="date"],
-  .attendance-filters input[type="date"],
-  .calendar-controls input[type="date"],
-  .small-action-popup input[type="date"],
-  .activity-popup input[type="date"],
-  .schedule-popup input[type="date"] {
+.content-card input[type="date"],
+.planner-upload-card input[type="date"],
+.report-control-card input[type="date"],
+.calendar-controls input[type="date"],
+.small-action-popup input[type="date"],
+.activity-popup input[type="date"],
+.schedule-popup input[type="date"] {
     width: min(100%, 190px) !important;
     max-width: 190px !important;
   }
@@ -5926,10 +5845,9 @@ button.danger {
   }
 
   .modal-backdrop .small-action-popup,
-  .modal-backdrop .activity-popup,
-  .modal-backdrop .schedule-popup,
-  .modal-backdrop .send-preview-modal,
-  .modal-backdrop .report-preview-modal {
+.modal-backdrop .activity-popup,
+.modal-backdrop .schedule-popup,
+.modal-backdrop .send-preview-modal {
     position: relative;
     z-index: 13001 !important;
   }
@@ -5945,10 +5863,9 @@ button.danger {
   }
 
   .modal-backdrop .small-action-popup,
-  .modal-backdrop .activity-popup,
-  .modal-backdrop .schedule-popup,
-  .modal-backdrop .send-preview-modal,
-  .modal-backdrop .report-preview-modal {
+.modal-backdrop .activity-popup,
+.modal-backdrop .schedule-popup,
+.modal-backdrop .send-preview-modal {
     position: relative;
     z-index: 13001;
   }
@@ -5996,7 +5913,6 @@ button.danger {
   font-weight: 900;
   line-height: 1.15;
 }
-.sync-status-pill.syncing,
 .sync-status-pill.idle {
   background: #fff8e1;
   border-color: #e4c45f;
@@ -6089,7 +6005,6 @@ button.danger {
   gap: 7px;
   flex-wrap: wrap;
 }
-.sync-status-pill.syncing,
 .sync-status-pill.idle {
   background: #f0fff5 !important;
   border-color: #95d5aa !important;
@@ -6356,8 +6271,7 @@ button.danger {
 .small-action-popup,
 .activity-popup,
 .schedule-popup,
-.send-preview-modal,
-.report-preview-modal {
+.send-preview-modal {
   z-index: 13001 !important;
 }
 
@@ -8722,18 +8636,10 @@ button.danger {
   display: none !important;
 }
 
-.report-view-activity > .send-config-banner,
-.report-view-activity > .report-dashboard-strip,
 .report-view-activity > .report-filter-panel,
 .report-view-activity > .report-card-list,
-.report-view-activity > .copy-notice,
-.weekly-view-activity > .send-config-banner,
-.weekly-view-activity > .weekly-progress-grid,
 .weekly-view-activity > .weekly-student-board,
-.weekly-view-activity > .weekly-filter-panel,
-.weekly-view-activity > .weekly-editor-grid,
-.weekly-view-activity > .weekly-send-notice,
-.weekly-view-activity > .weekly-report-preview {
+.weekly-view-activity > .weekly-filter-panel {
   display: none !important;
 }
 
@@ -9900,7 +9806,6 @@ textarea {
   line-height: 1;
 }
 
-.points-control-grid,
 .points-form-grid {
   display: grid;
   grid-template-columns: 1.2fr .7fr .7fr;
@@ -10102,8 +10007,7 @@ textarea {
 
 @media (max-width: 980px) {
   .points-summary-grid,
-  .points-control-grid,
-  .points-form-grid {
+.points-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -10124,8 +10028,7 @@ textarea {
   }
 
   .points-summary-grid,
-  .points-control-grid,
-  .points-form-grid {
+.points-form-grid {
     grid-template-columns: 1fr;
   }
 
@@ -10246,8 +10149,7 @@ textarea {
     overflow: visible !important;
   }
 
-  .toolbar.utility-toolbar .utility-action,
-  .toolbar.utility-toolbar .toggle-btn {
+  .toolbar.utility-toolbar .utility-action {
     width: 100% !important;
     min-width: 0 !important;
     min-height: 50px !important;
@@ -10415,8 +10317,7 @@ textarea {
     display: none;
   }
 
-  .toolbar.utility-toolbar .utility-action,
-  .toolbar.utility-toolbar .toggle-btn {
+  .toolbar.utility-toolbar .utility-action {
     flex: 0 0 auto !important;
     width: auto !important;
     min-width: 62px !important;
@@ -11506,12 +11407,9 @@ textarea {
   display: none !important;
 }
 
-.report-view-director > .send-config-banner,
 .report-view-director > .report-activity-panel,
-.report-view-director > .report-dashboard-strip,
 .report-view-director > .report-filter-panel,
-.report-view-director > .report-card-list,
-.report-view-director > .copy-notice {
+.report-view-director > .report-card-list {
   display: none !important;
 }
 
@@ -12760,7 +12658,6 @@ textarea,
   background: linear-gradient(180deg, #fffaf2 0%, #ffffff 100%);
 }
 .daily-closeout-head,
-.closeout-action-row,
 .bulk-send-progress-head,
 .bulk-retry-bar {
   display: flex;
@@ -12897,8 +12794,6 @@ textarea,
 }
 
 @media (max-width: 900px) {
-  .closeout-score-row,
-  .closeout-check-grid,
   .bulk-send-summary {
     grid-template-columns: 1fr 1fr;
   }
@@ -12908,8 +12803,6 @@ textarea,
 }
 
 @media (max-width: 560px) {
-  .closeout-score-row,
-  .closeout-check-grid,
   .bulk-send-summary {
     grid-template-columns: 1fr;
   }
@@ -13330,7 +13223,6 @@ textarea,
   letter-spacing: -.03em;
 }
 .weekly-auto-compose-head span,
-.weekly-auto-compose-guide span,
 .weekly-bulk-error-list span {
   color: #746855;
   font-size: 13px;
@@ -13644,14 +13536,9 @@ textarea,
 .weekly-view-activity > .weekly-history-console {
   display: none !important;
 }
-.weekly-view-history > .send-config-banner,
 .weekly-view-history > .weekly-auto-compose-console,
-.weekly-view-history > .weekly-progress-grid,
 .weekly-view-history > .weekly-student-board,
-.weekly-view-history > .weekly-filter-panel,
-.weekly-view-history > .weekly-editor-grid,
-.weekly-view-history > .weekly-send-notice,
-.weekly-view-history > .weekly-report-preview {
+.weekly-view-history > .weekly-filter-panel {
   display: none !important;
 }
 @media (max-width: 760px) {
@@ -16246,8 +16133,7 @@ textarea,
   padding: 4px 6px;
 }
 
-.mentoring-date-mini-badge.added,
-.mentoring-date-mini-badge.temporary {
+.mentoring-date-mini-badge.added {
   background: #ede9fe;
   color: #6d28d9;
 }
@@ -16716,9 +16602,9 @@ h1,h2,h3{ color:var(--ap-text); }
 
 /* ── Header + toolbar ── */
 .sub{ color:var(--ap-text-2) !important; }
-.toolbar button, .toggle-btn{ background:var(--ap-surface) !important; color:var(--ap-text) !important;
+.toolbar button { background:var(--ap-surface) !important; color:var(--ap-text) !important;
   border:1px solid var(--ap-sep-strong) !important; border-radius:var(--ap-pill) !important; font-weight:600 !important; }
-.toolbar button:hover, .toggle-btn:hover{ background:var(--ap-surface-2) !important; }
+.toolbar button:hover { background:var(--ap-surface-2) !important; }
 .utility-action.refresh{ border-radius:var(--ap-pill) !important; }
 
 /* ── Pills / version badge ── */
@@ -16797,7 +16683,7 @@ h1,h2,h3{ color:var(--ap-text); }
 .field label{ color:var(--ap-text-2) !important; }
 .content-card .field label{ color:var(--ap-text-2) !important; }
 .hint{ color:var(--ap-text-3) !important; }
-.readonly-main-name, .pname{ color:var(--ap-text) !important; }
+.readonly-main-name { color:var(--ap-text) !important; }
 .panel-guardian-title{ color:var(--ap-text-3) !important; }
 /* 밝은 패널 배경에서 보호자 연락처(전화번호)가 흰색으로 표시되어 안 보이던 문제 수정 */
 .panel-guardian-row strong{ color:var(--ap-text) !important; }
@@ -16887,9 +16773,11 @@ button{ border-width:1px !important; }
 .main button:not(.primary):not(.status-btn):not(.seat),
 .content-card button:not(.primary),
 .panel button:not(.primary):not(.status-btn):not(.seat),
-.toolbar button, .toggle-btn, .utility-action,
-.report-action-row button, .attention-history-actions button,
-.date-filter-grid button, .compact-actions button{
+.toolbar button,
+.utility-action,
+.report-action-row button,
+.attention-history-actions button,
+.date-filter-grid button {
   border-color: var(--ap-sep-strong) !important;
 }
 
@@ -16934,8 +16822,7 @@ button{ border-width:1px !important; }
   background:#fff7e8; border:1px solid #f0dcb4; border-radius:9px; padding:6px 9px; line-height:1.45;
 }
 @media (max-width:900px){
-  .student-care-picker-row,
-  .student-care-picker-row.has-cohort{ grid-template-columns:1fr 1fr; }
+  .student-care-picker-row { grid-template-columns:1fr 1fr; }
     .student-care-picker-student{ grid-column:1 / -1; }
   .student-care-picker-presets{ grid-column:1 / -1; }
 }
@@ -17150,7 +17037,9 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .schedule-chip.activity-chip.deviation{ background:#5b9bf3 !important; color:#ffffff !important; border:1px solid #5b9bf3 !important; }
 /* 월별 요약 칩 */
 .month-summary-chip.match{ background:#ececef !important; color:#1c1c1e !important; }
-.month-summary-chip.deviation, .month-summary-chip.break, .month-summary-chip.checkin, .month-summary-chip.early-checkout{ background:#5b9bf3 !important; color:#ffffff !important; }
+.month-summary-chip.deviation,
+.month-summary-chip.break,
+.month-summary-chip.checkin { background:#5b9bf3 !important; color:#ffffff !important; }
 .month-summary-chip.empty{ background:#f2f2f4 !important; color:#8a8a8e !important; }
 /* v41-84: 월별 보기 — 결석일은 보라색으로 강조 */
 .month-summary-chip.absent, button.month-summary-chip.month-chip-button.absent{ background:var(--ap-absent, #af52de) !important; color:#ffffff !important; font-weight:800 !important; }
@@ -17511,7 +17400,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .sinfo-picker-row .field{ margin-bottom:0; }
 .sinfo-picker-row .sinfo-picker-field{ max-width:none; }
 @media (max-width:760px){
-  .sinfo-picker-row, .sinfo-picker-row.has-cohort{ grid-template-columns:1fr; }
+  .sinfo-picker-row { grid-template-columns:1fr; }
 }
 .sinfo-select-note{ margin:0; padding:24px; text-align:center; color:#86868b; font-size:13px; background:#fff; border:1px solid #e3e3e6; border-radius:16px; }
 .sinfo-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; align-items:start; }
@@ -17797,20 +17686,36 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .weekly-panel textarea, .weekly-report-text{
   color:var(--ap-text) !important;
 }
-.mini-stat span, .report-auto-generate-note, .director-report-head p, .director-summary-grid span,
-.director-student-title span, .director-detail-grid span, .weekly-summary-grid span,
-.weekly-panel p, .weekly-report-output p, .weekly-progress-grid span, .weekly-board-head span,
-.weekly-student-card span, .weekly-status-bar > span, .weekly-send-state span,
-.weekly-bulk-result-grid span, .weekly-interview-ai-row span, .send-config-banner span,
-.send-config-banner small, .send-settings-card span, .send-mode-grid span, .send-payload-head p,
-.webhook-test-summary span, .webhook-checklist-grid span, .provider-status-grid span,
-.alimtalk-checklist-grid span, .recipient-policy-grid span, .recipient-policy-projection-grid span,
-.delivery-empty-note, .delivery-retry-actions span, .closeout-check-card ol,
-.closeout-score-card span, .closeout-score-card small{
+.report-auto-generate-note,
+.director-report-head p,
+.director-summary-grid span,
+.director-student-title span,
+.director-detail-grid span,
+.weekly-summary-grid span,
+.weekly-panel p,
+.weekly-report-output p,
+.weekly-board-head span,
+.weekly-student-card span,
+.weekly-status-bar > span,
+.weekly-bulk-result-grid span,
+.weekly-interview-ai-row span,
+.send-settings-card span,
+.send-mode-grid span,
+.send-payload-head p,
+.webhook-test-summary span,
+.webhook-checklist-grid span,
+.provider-status-grid span,
+.recipient-policy-grid span,
+.recipient-policy-projection-grid span,
+.delivery-empty-note,
+.delivery-retry-actions span {
   color:var(--ap-text-2) !important;
 }
-.weekly-summary-grid em, .report-link-status-row > span, .closeout-link-row span,
-.delivery-recipient-summary span, .delivery-recipient-row span, .delivery-recipient-row small{
+.weekly-summary-grid em,
+.closeout-link-row span,
+.delivery-recipient-summary span,
+.delivery-recipient-row span,
+.delivery-recipient-row small {
   color:var(--ap-text-3) !important;
 }
 
@@ -17825,7 +17730,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .delivery-recipient-row.done, .report-link-status-row.done{
   background:var(--ap-ok-fill) !important; border-color:rgba(52,199,89,.35) !important;
 }
-.report-activity-stat.done, .closeout-score-card.ready strong{ color:var(--ap-ok-text) !important; }
+.report-activity-stat.done { color:var(--ap-ok-text) !important; }
 
 /* 4) 상태색 — 노랑(주의) */
 .status-pill.pending, .status-pill.neutral, .issue-chip, .issue-chip.warning,
@@ -17836,13 +17741,16 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .closeout-issue-chip.warning, .template-validation-list.warning{
   background:var(--ap-away-fill) !important; border-color:transparent !important; color:var(--ap-away-text) !important;
 }
-.mini-stat.gold, .summary-card.warning, .report-activity-stat.pending, .report-activity-stat.partial,
-.weekly-student-card.neutral, .send-config-banner.pending, .send-config-banner.safety-test,
-.send-config-banner.safety-allowlist, .send-settings-card.pending, .provider-adapter-card.safe,
-.recipient-test-mode-card.active, .delivery-recipient-row.pending, .report-link-status-row.pending{
+.report-activity-stat.pending,
+.report-activity-stat.partial,
+.weekly-student-card.neutral,
+.send-settings-card.pending,
+.provider-adapter-card.safe,
+.recipient-test-mode-card.active,
+.delivery-recipient-row.pending {
   background:var(--ap-away-fill) !important; border-color:rgba(255,204,0,.5) !important;
 }
-.report-activity-stat.pending, .closeout-score-card.caution strong{ color:var(--ap-away-text) !important; }
+.report-activity-stat.pending { color:var(--ap-away-text) !important; }
 
 /* 5) 상태색 — 빨강(오류/차단) */
 .issue-chip.blocker, .status-pill.failed, .report-activity-row .status-pill.failed,
@@ -17852,13 +17760,14 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .template-validation-list.failed, .weekly-bulk-error-list > strong{
   background:var(--ap-attn-fill) !important; border-color:transparent !important; color:var(--ap-attn-text) !important;
 }
-.mini-stat.red, .summary-card.failed, .report-activity-stat.failed,
-.send-config-banner.safety-live, .send-settings-card.failed, .provider-adapter-card.live,
-.delivery-recipient-row.failed, .report-link-status-row.failed, .weekly-bulk-error-list{
+.report-activity-stat.failed,
+.send-settings-card.failed,
+.provider-adapter-card.live,
+.delivery-recipient-row.failed,
+.weekly-bulk-error-list {
   background:var(--ap-attn-fill) !important; border-color:rgba(255,59,48,.35) !important;
 }
-.report-activity-stat.failed, .weekly-send-state.failed,
-.closeout-score-card.blocked strong, .closeout-score-card.failed strong{ color:var(--ap-attn-text) !important; }
+.report-activity-stat.failed { color:var(--ap-attn-text) !important; }
 
 /* 6) 정보 파랑(Tailwind/인디고 → 애플 블루 단일 액센트) */
 .report-link-status-row.neutral, .closeout-score-card.link-score, .share-link-confirm-box,
@@ -17938,28 +17847,59 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .kiosk-log-summary-grid strong, .kiosk-alias-item strong, .kiosk-panel-alert-item span{
   color:var(--ap-text) !important;
 }
-.timeline-legend, .timeline-title span, .week-timeline-head span, .week-time-axis,
-.popup-head p, .popup-preview span, .activity-preview span, .schedule-target-bar span,
-.planner-status-summary span, .alert-center-head span, .planner-attachment-box span, .muted-small,
-.points-summary-grid span, .points-form-head span, .points-row span,
-.mentoring-mentor-card span, .mentoring-assignment-row span, .mentoring-assign-panel label span,
-.mentoring-panel-note, .mentoring-student-chip span, .mentoring-responsibility-head p,
-.mentoring-responsibility-chip span, .mentoring-responsibility-actions span, .mentoring-date-strip button span,
-.mentoring-date-control label span, .mentoring-mode-toggle button,
-.integrity-item span, .integrity-hint, .system-check-item span, .guardian-section-head p,
-.send-settings-card span, .send-mode-grid span, .send-payload-head p,
-.kiosk-bridge-status-grid span, .kiosk-bridge-status-grid em, .kiosk-log-summary-grid span,
-.kiosk-log-section-label, .kiosk-log-filter-row button, .kiosk-alias-item span,
-.kiosk-panel-alert-item em, .kiosk-log-action-panel p, .attendance-source-badge.manual{
+.timeline-legend,
+.timeline-title span,
+.popup-head p,
+.popup-preview span,
+.schedule-target-bar span,
+.planner-status-summary span,
+.alert-center-head span,
+.planner-attachment-box span,
+.muted-small,
+.points-summary-grid span,
+.points-form-head span,
+.points-row span,
+.mentoring-mentor-card span,
+.mentoring-assignment-row span,
+.mentoring-assign-panel label span,
+.mentoring-panel-note,
+.mentoring-student-chip span,
+.mentoring-responsibility-head p,
+.mentoring-responsibility-chip span,
+.mentoring-responsibility-actions span,
+.mentoring-date-strip button span,
+.mentoring-date-control label span,
+.mentoring-mode-toggle button,
+.integrity-item span,
+.integrity-hint,
+.system-check-item span,
+.guardian-section-head p,
+.send-settings-card span,
+.send-mode-grid span,
+.send-payload-head p,
+.kiosk-bridge-status-grid span,
+.kiosk-bridge-status-grid em,
+.kiosk-log-summary-grid span,
+.kiosk-log-section-label,
+.kiosk-log-filter-row button,
+.kiosk-alias-item span,
+.kiosk-panel-alert-item em,
+.kiosk-log-action-panel p,
+.attendance-source-badge.manual {
   color:var(--ap-text-2) !important;
 }
 .empty-table-cell, .panel-guardian-empty{ color:var(--ap-text-3) !important; }
 
 /* E) 골드/Tailwind 비의미 액센트 → 블루 단일 액센트 */
 .calendar-day.today{ border-color:var(--ap-accent) !important; box-shadow:0 0 0 3px rgba(0,113,227,.16) !important; }
-.week-timeline-day.today .week-timeline-head, .mentoring-date-strip button.today,
-.mentoring-mode-toggle button.active, .mentoring-date-status.template, .mentoring-date-locked-note,
-.today-record-title, .kiosk-log-summary-grid.today > div, .mentoring-list-note, .mentoring-date-strip > em{
+.mentoring-date-strip button.today,
+.mentoring-mode-toggle button.active,
+.mentoring-date-status.template,
+.mentoring-date-locked-note,
+.today-record-title,
+.kiosk-log-summary-grid.today > div,
+.mentoring-list-note,
+.mentoring-date-strip > em {
   background:var(--ap-accent-tint) !important; border-color:rgba(0,113,227,.28) !important; color:var(--ap-accent-press) !important;
 }
 .mentoring-chip, .mentoring-student-chip.selected, .mentoring-responsibility-control span,
@@ -20643,17 +20583,34 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .main button, .panel button, .modal-backdrop button{
   font-weight:var(--ui-w-med) !important; letter-spacing:-.01em; box-shadow:none !important;
 }
-.main button.primary, .main button.secondary, .main button.danger, .main button.danger-lite,
-.main .section-action, .main .btn-row button, .main .popup-bottom-actions button,
-.main .planner-head-actions button, .main .toolbar button, .main .weekly-head-actions button,
-.main .compact-actions button, .main .report-action-row button, .main .date-filter-grid button,
-.main .student-care-picker-presets button, .main .student-history-preset-row button,
-.main .weekly-auto-compose-actions button, .main .point-auto-rules-actions button,
-.main .penalty-stage-alert-actions button, .main .point-reward-alert-actions button,
+.main button.primary,
+.main button.secondary,
+.main button.danger,
+.main button.danger-lite,
+.main .section-action,
+.main .btn-row button,
+.main .popup-bottom-actions button,
+.main .planner-head-actions button,
+.main .toolbar button,
+.main .weekly-head-actions button,
+.main .report-action-row button,
+.main .date-filter-grid button,
+.main .student-care-picker-presets button,
+.main .student-history-preset-row button,
+.main .weekly-auto-compose-actions button,
+.main .point-auto-rules-actions button,
+.main .penalty-stage-alert-actions button,
+.main .point-reward-alert-actions button,
 .main .attendance-event-actions button,
-.panel button.primary, .panel button.secondary, .panel button.danger, .panel .btn-row button,
-.panel .popup-bottom-actions button, .panel .attendance-event-actions button,
-.modal-backdrop button.primary, .modal-backdrop button.secondary, .modal-backdrop .popup-bottom-actions button{
+.panel button.primary,
+.panel button.secondary,
+.panel button.danger,
+.panel .btn-row button,
+.panel .popup-bottom-actions button,
+.panel .attendance-event-actions button,
+.modal-backdrop button.primary,
+.modal-backdrop button.secondary,
+.modal-backdrop .popup-bottom-actions button {
   min-height:var(--ui-ctl) !important; padding:0 12px !important; border-radius:var(--ui-r-sm) !important;
   font-size:var(--ui-fs) !important; line-height:1.2 !important; transform:none !important;
 }
@@ -20739,14 +20696,25 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 
 /* 통계 타일: 큰 숫자 26px·두꺼운 여백 → 20px·촘촘하게 */
 .main .points-summary-grid, .main .attention-history-summary, .main .summary, .main .dashboard-summary-v4111, .main .integrity-summary-grid, .main .kiosk-log-summary-grid{ gap:8px !important; margin-bottom:10px !important; }
-.main .points-summary-grid > div, .main .attention-history-summary > div, .main .summary-card, .main .integrity-summary-grid > div,
-.main .kiosk-log-summary-grid > div, .main .planner-status-summary > div, .main .student-db-stat, .main .user-management-summary > div{
+.main .points-summary-grid > div,
+.main .attention-history-summary > div,
+.main .integrity-summary-grid > div,
+.main .kiosk-log-summary-grid > div,
+.main .planner-status-summary > div {
   padding:9px 12px !important; border-radius:var(--ui-r) !important; gap:2px !important; box-shadow:none !important; border:1px solid var(--ap-sep) !important;
 }
-.main .points-summary-grid span, .main .attention-history-summary span, .main .summary-card span, .main .integrity-summary-grid span, .main .kiosk-log-summary-grid span, .main .planner-status-summary span{
+.main .points-summary-grid span,
+.main .attention-history-summary span,
+.main .integrity-summary-grid span,
+.main .kiosk-log-summary-grid span,
+.main .planner-status-summary span {
   font-size:11.5px !important; font-weight:var(--ui-w) !important; color:var(--ap-text-2) !important; margin:0 !important;
 }
-.main .points-summary-grid strong, .main .attention-history-summary strong, .main .summary-card strong, .main .integrity-summary-grid strong, .main .kiosk-log-summary-grid strong, .main .planner-status-summary strong{
+.main .points-summary-grid strong,
+.main .attention-history-summary strong,
+.main .integrity-summary-grid strong,
+.main .kiosk-log-summary-grid strong,
+.main .planner-status-summary strong {
   font-size:20px !important; font-weight:var(--ui-w-bold) !important; line-height:1.15 !important; letter-spacing:-.02em;
 }
 
