@@ -16544,7 +16544,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                 value={autoRules.streakWeeks}
                 onChange={(e) => updateAutoRules({ streakWeeks: Number(e.target.value || 0) })}
               />
-              <em>{autoRules.streakWeeks}주 연속으로 명단에 오르면 따로 표시합니다.</em>
+              <em>{autoRules.streakWeeks}주 연속으로 명단에 오르면 따로 표시합니다. 표시된 다음 주부터는 다시 1주부터 셉니다.</em>
             </div>
             <div className="field">
               <label>학부모 경고 알림 기준 순벌점</label>

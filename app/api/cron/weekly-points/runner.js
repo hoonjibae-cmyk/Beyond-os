@@ -20,7 +20,7 @@ import { getKstDateString } from '../../../../lib/date';
 import { loadCohortRange, loadCohortStudentIds } from '../../../../lib/cohortScope';
 import { getPointAutoRules } from '../../../../lib/pointAutoRulesServer';
 import { resolvePointCyclesByStudent, resolveWeeklyRewardState } from '../../../../lib/studentPointCycle';
-import { AUTO_TABLE_HINT, getPreviousWeekRange, addDaysToDateString, resolveStudyTier, evaluatePerfectAttendance, formatMinutesKo } from '../../../../lib/pointAutoRules';
+import { AUTO_TABLE_HINT, getPreviousWeekRange, addDaysToDateString, resolveStudyTier, evaluatePerfectAttendance, formatMinutesKo, resolveStreakWeeks } from '../../../../lib/pointAutoRules';
 
 export const AUTO_AWARD_ACTOR = '시스템 자동';
 
@@ -443,9 +443,8 @@ async function scanRewardTargets({ supabase, rules, week, runDate, students, coh
     const previous = previousByStudent[key];
     // 직전 스캔에서도 대상이었으면 이어서 셉니다.
     // 중간에 배치를 건너뛴 주가 있어도 끊지 않습니다. (연속의 기준은 '스캔 회차'입니다)
-    const streak = isEligible
-      ? (previous?.is_eligible ? Number(previous.streak_weeks || 1) + 1 : 1)
-      : 0;
+    // v41-262: 연속 기준(기본 2주)에 닿은 다음 주는 1주부터 다시 셉니다. (lib/pointAutoRules)
+    const streak = resolveStreakWeeks(previous, isEligible, rules.streakWeeks);
     return {
       student_id: key,
       scan_date: runDate,
