@@ -19213,3 +19213,19 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* v41-257.1: 위클리 학생 카드 목록 — 260px 상자 안에서 셋째 줄이 잘려 보이던 것.
    26석이면 카드가 최대 26장이라 다 펼쳐도 세 줄입니다. 스크롤 상자를 없앱니다. */
 .main .weekly-student-card-grid{ max-height:none !important; overflow:visible !important; }
+
+/* v41-260: 데일리 리포트 학생 카드 — 버튼 5개를 작게, 카드 폭을 좁게
+   v41-257 정돈 레이어의 버튼 크기(34px·13.5px)가 v41-170 의 11px 소형 규칙을 덮어
+   카드가 다시 넓어졌습니다. 이 카드의 버튼만 따로 작게 잡습니다. */
+.main .report-card-actions button,
+.main .report-card-actions.send-focused-actions button{
+  min-height:28px !important; padding:0 4px !important; font-size:11.5px !important; font-weight:var(--ui-w-med) !important;
+  border-radius:6px !important; letter-spacing:-.02em; line-height:1 !important;
+}
+.main .report-card-actions{ gap:4px !important; }
+.main .report-student-card{ padding:12px !important; gap:9px !important; border-radius:var(--ui-r) !important; box-shadow:none !important; }
+.main .report-card-head .seat-name strong{ font-size:var(--ui-fs-lg) !important; }
+.main .report-card-head p{ font-size:var(--ui-fs-sm) !important; margin:2px 0 0 !important; }
+/* 3열 고정 → 폭에 맞춰 자동. 300px 이면 버튼 5개가 한 줄에 들어갑니다. */
+.main .report-card-list{ grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)) !important; gap:10px !important; }
+@media (max-width:760px){ .main .report-card-list{ grid-template-columns:1fr !important; } }
