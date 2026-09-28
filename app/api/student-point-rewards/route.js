@@ -307,6 +307,10 @@ export async function GET(request) {
           const weekEnd = String(row.week_end || '').slice(0, 10);
           // 스캔이 집계한 주를 원본에서 다시 더합니다. 주 구간을 모르면 저장값을 씁니다.
           const weekly = weekStart && weekEnd ? weeklyFor(id, { start: weekStart, end: weekEnd }) : null;
+          // v41-264: 스캔 뒤 상벌점이 바뀌어 지금은 기준을 '초과'하지 못하면 명단에서 내립니다.
+          // (판정은 초과 = 16점부터인데, 스캔 때 16점이었다가 벌점이 더해져 15점이 된 학생이
+          //  대상으로 남아 '+15점'으로 보이던 문제) is_eligible 은 연속 주 수 계산용이라 그대로 둡니다.
+          if (weekly && !weekly.eligible) return null;
           return buildEligibleRow(id, {
             scanDate: String(row.scan_date || '').slice(0, 10),
             scanNet: weekly ? weekly.net : Number(row.net_points || 0),
@@ -320,6 +324,7 @@ export async function GET(request) {
             weekEnd,
           });
         }))
+      .filter(Boolean)
       .filter((row) => studentMap[row.studentId]?.status !== 'inactive')
       // 연속 초과가 오래된 학생을 먼저 보여 줍니다. (별도 상품 대상이라 눈에 띄어야 합니다)
       .sort((a, b) => (b.streakWeeks || 0) - (a.streakWeeks || 0)
@@ -513,18 +518,21 @@ export async function POST(request) {
     const autoRules = await getPointAutoRules(supabase);
     const cycle = resolvePointCycle(pointRows, rewardResult.rows, { threshold: autoRules.rewardThreshold });
 
-    // v41-241: 명단은 월요일 스캔 기준입니다.
+    // v41-264: 지급은 '지금' 그 주 순점수가 기준을 초과할 때만 허용합니다.
     //
-    // 스캔 이후에 벌점이 들어가 지금 순점수가 기준 아래로 내려갔더라도, 명단에 올라
-    // 있는 학생은 지급 처리를 막지 않습니다. 화면에 보이는 버튼이 눌리지 않는 쪽이
-    // 더 나쁜 상황입니다. 반대로 스캔에는 없지만 지금 기준을 넘었다면 그것도 허용합니다.
+    // v41-241 에서는 스캔에 올라 있으면 지금 값이 기준 아래여도 막지 않았습니다.
+    // 그런데 명단 화면이 지금 값으로 다시 판정해 기준 이하를 내리게 되면서(GET),
+    // 새로고침 전 화면에서 누른 버튼이 15점 학생에게 지급되는 길만 남습니다. 그 길을 막습니다.
+    // 주 구간은 스캔이 집계한 주를 쓰고, 스캔이 없으면 지난 한 주입니다.
     const scanForStudent = await loadLatestScan(supabase, studentId);
-    const scanEligible = scanForStudent.rows.some((row) => row.is_eligible);
-    // 스캔이 없으면 지난 한 주를 그 자리에서 계산해 봅니다.
-    const weeklyNow = resolveWeeklyRewardState(pointRows, getPreviousWeekRange(getKstDateString()), { threshold: autoRules.rewardThreshold });
-    if (!scanEligible && !weeklyNow.eligible) {
+    const scanRow = scanForStudent.rows.find((row) => row.is_eligible) || scanForStudent.rows[0] || null;
+    const liveWeek = scanRow?.week_start && scanRow?.week_end
+      ? { start: String(scanRow.week_start).slice(0, 10), end: String(scanRow.week_end).slice(0, 10) }
+      : getPreviousWeekRange(getKstDateString());
+    const weeklyNow = resolveWeeklyRewardState(pointRows, liveWeek, { threshold: autoRules.rewardThreshold });
+    if (!weeklyNow.eligible) {
       return Response.json({
-        error: `지난 한 주 순점수는 ${weeklyNow.net}점으로 상품 지급 대상이 아닙니다. (기준 ${weeklyNow.threshold}점 초과 · 매주 월요일 스캔)`,
+        error: `그 주(${liveWeek.start}~${liveWeek.end}) 순점수는 ${weeklyNow.net}점으로 상품 지급 대상이 아닙니다. (기준 ${weeklyNow.threshold}점 초과 = ${weeklyNow.threshold + 1}점부터)`,
       }, { status: 400 });
     }
 
