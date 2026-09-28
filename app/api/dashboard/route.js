@@ -5,6 +5,7 @@ import { getBusinessDate } from '../../../lib/businessDateServer';
 import { getBusinessDayEndIso, getBusinessDayStartIso } from '../../../lib/businessDate';
 import { STATIC_SEATS } from '../../../lib/staticSeats';
 import { MENTORING_POLICY_SETTING_KEY, getMentoringPolicyCohortKey, normalizeMentoringPolicy, FALLBACK_MENTORING_POLICY } from '../../../lib/mentoringPolicy';
+import { buildMentorByStudent } from '../../../lib/mentorAssignments';
 
 export const dynamic = 'force-dynamic';
 
@@ -245,6 +246,20 @@ export async function GET(request) {
       // 설정을 못 읽어도 기본값으로 계속 진행합니다.
     }
 
+    // v41-263: 좌석 패널 [학생 기본정보]에 담당 멘토를 보여 주기 위해, 오늘 기수의
+    // 멘토-학생 연결을 읽어 학생별로 정리합니다. 표가 없거나 못 읽어도 대시보드는 계속 갑니다.
+    let mentorByStudent = {};
+    try {
+      const { data: linkRows, error: linkError } = await supabase
+        .from('mentoring_mentor_students')
+        .select('student_id, mentor_id, cohort_id, is_active, mentoring_mentors(id, mentor_name, sort_order)')
+        .eq('is_active', true);
+      if (linkError) throw linkError;
+      mentorByStudent = buildMentorByStudent(linkRows || [], todayCohort?.id || null);
+    } catch {
+      // 멘토 연결 표가 아직 없으면(v41-31-4 SQL 미실행) 담당 멘토 칸만 비웁니다.
+    }
+
     if (sessionIds.length > 0) {
       const { data: checkRows, error: checksError } = await supabase
         .from('study_checks')
@@ -434,6 +449,8 @@ export async function GET(request) {
       fieldFocusAcknowledgements,
       todayMentoringAssignments,
       mentoringPolicy,
+      // v41-263: 학생별 담당 멘토 { [studentId]: [{ mentorId, mentorName }] }
+      mentorByStudent,
       parentAlertLogs,
       warning: studentsError ? `학생 목록 조회 일부 실패: ${studentsError.message}` : undefined,
     });

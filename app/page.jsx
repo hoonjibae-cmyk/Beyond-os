@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { isTimeEditableEvent } from '../lib/attendanceEventTime';
+import { formatMentorNames } from '../lib/mentorAssignments';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
@@ -2277,6 +2278,8 @@ export default function Page() {
   const [scheduleCoverage, setScheduleCoverage] = useState(null);
   const [fieldFocusAcknowledgements, setFieldFocusAcknowledgements] = useState([]);
   const [mentoringTodayAssignments, setMentoringTodayAssignments] = useState([]);
+  // v41-263: 학생별 담당 멘토 (오늘 기수 기준). 좌석 패널 학생 기본정보에 표시합니다.
+  const [mentorByStudent, setMentorByStudent] = useState({});
   // v41-179: 멘토링 운영 기준(기수별). 좌석표 안내 시작 시점 등에 씁니다.
   const [mentoringPolicy, setMentoringPolicy] = useState(FALLBACK_MENTORING_POLICY);
   const [dismissedAlerts, setDismissedAlerts] = useState([]);
@@ -3163,6 +3166,7 @@ export default function Page() {
       setEvents(data.events || []);
       setReports(data.reports || []);
       setMentoringTodayAssignments(data.todayMentoringAssignments || []);
+      setMentorByStudent(data.mentorByStudent && typeof data.mentorByStudent === 'object' ? data.mentorByStudent : {});
       if (data.mentoringPolicy) setMentoringPolicy(normalizeMentoringPolicy(data.mentoringPolicy));
       const serverFocusAcks = Array.isArray(data.fieldFocusAcknowledgements) ? data.fieldFocusAcknowledgements : [];
       setFieldFocusAcknowledgements(serverFocusAcks);
@@ -6364,6 +6368,11 @@ export default function Page() {
                       <i>{getProductTier(form.productTier).summary}</i>
                     </strong>
                   ) : <strong>-</strong>}
+                </div>
+                {/* v41-263: 오늘 기수에서 이 학생을 맡은 멘토. 설정 › 멘토링 기본 설정의 담당학생 기준입니다. */}
+                <div className="info-item">
+                  <span>담당 멘토</span>
+                  <strong>{formatMentorNames(mentorByStudent[String(form.studentId || '')]) || '-'}</strong>
                 </div>
               </div>
 
