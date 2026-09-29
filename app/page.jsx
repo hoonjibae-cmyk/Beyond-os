@@ -2026,6 +2026,12 @@ function createPresenceMismatchAlert({ schedule, session, scheduleBreaks = [], s
 
   const seatNo = seat.seat_no || student?.default_seat_no;
   const plannedRange = `${schedule.planned_check_in?.slice(0, 5) || '-'}~${schedule.planned_check_out?.slice(0, 5) || '-'}`;
+  // v41-265: 저장된 등원이 기본 등원보다 이르면 그 사실을 문구에 적습니다.
+  // (시간표 화면은 차시 구간만 그려서 이른 등원이 안 보였고, 알림만 15:30 을 말해 혼란)
+  const baseCheckInMin = timeToMinutes(normalizeDefaultScheduleSettings(defaultSchedule).plannedCheckIn);
+  const earlyNote = checkIn !== null && baseCheckInMin !== null && checkIn < baseCheckInMin
+    ? ` (기본 등원 ${minutesToTime(baseCheckInMin)}보다 이른 ${minutesToTime(checkIn)} 등원으로 저장됨)`
+    : '';
   const actualLabel = STATUS_LABELS[status] || (session?.check_out_at ? '퇴실' : '미입실');
   const statusText = status === 'away'
     ? '외출 상태'
@@ -2044,7 +2050,7 @@ function createPresenceMismatchAlert({ schedule, session, scheduleBreaks = [], s
     mode: 'check',
     issue,
     title: `${studentName} 출결상태 확인 필요`,
-    body: `개인시간표 ${plannedRange} 기준 현재 참여해야 하는 시간이나 ${statusText}입니다. 현재 상태: ${actualLabel}.`,
+    body: `개인시간표 ${plannedRange} 기준 현재 참여해야 하는 시간이나 ${statusText}입니다. 현재 상태: ${actualLabel}.${earlyNote}`,
     student,
     schedule,
     seatNo,
@@ -12471,6 +12477,16 @@ function SchedulesTab(props) {
     const absenceBlocks = [];
     if (start !== null && baseInMin !== null && start > baseInMin) {
       absenceBlocks.push({ id: `absence-in-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: baseInMin, endMinute: start, title: formatAbsenceLabel('in', schedule.schedule_note), detail: `${minutesToTime(baseInMin)}~${minutesToTime(start)}`, schedule });
+    }
+    // v41-265: 기본 등원보다 '이른' 등원(예: 15:30 등원, 1차시 17:30)은 차시 구간 밖이라
+    // 아무 블록도 그려지지 않았습니다. 그래서 시간표에는 17:30 시작처럼 보이는데
+    // 알림센터는 저장된 15:30 을 기준으로 미입실 알림을 띄워 앞뒤가 안 맞아 보였습니다.
+    // 이른 등원 구간을 회색(재실) 블록으로 그려 저장된 값이 그대로 보이게 합니다.
+    if (start !== null && baseInMin !== null && start < baseInMin) {
+      const earlyEnd = end !== null ? Math.min(baseInMin, end) : baseInMin;
+      if (earlyEnd > start) {
+        absenceBlocks.push({ id: `early-in-${schedule.student_id}-${schedule.schedule_date}`, type: 'match', startMinute: start, endMinute: earlyEnd, title: '이른 등원 · 자율학습', detail: `${minutesToTime(start)}~${minutesToTime(earlyEnd)} (기본 등원 ${minutesToTime(baseInMin)})`, schedule });
+      }
     }
     if (end !== null && baseOutMin !== null && end < baseOutMin) {
       absenceBlocks.push({ id: `absence-out-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: end, endMinute: baseOutMin, title: formatAbsenceLabel('out', schedule.schedule_note), detail: `${minutesToTime(end)}~${minutesToTime(baseOutMin)}`, schedule });
