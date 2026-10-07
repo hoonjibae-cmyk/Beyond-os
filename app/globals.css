@@ -19248,3 +19248,8 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .enroll-block-detail > span{ min-width:0; line-height:1.45; }
 .enroll-block-detail.muted-line{ justify-content:flex-start; color:var(--ap-text-3); }
 .sinfo-name-row .enroll-block-badge{ height:24px; font-size:12px; }
+/* v41-266.1: 소형 버튼(.tiny-action)이 .secondary 크기 규칙(0,2,1)에 밀려 34px 로 커져 있었습니다.
+   같은 우선순위(요소 + 클래스 2)로 뒤에 두어 소형 크기가 이기게 합니다. */
+.main button.tiny-action, .panel button.tiny-action, .modal-backdrop button.tiny-action{
+  min-height:26px !important; padding:0 9px !important; font-size:var(--ui-fs-sm) !important; border-radius:999px !important; line-height:1 !important;
+}
