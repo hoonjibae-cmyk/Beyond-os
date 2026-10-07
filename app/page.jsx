@@ -2287,6 +2287,8 @@ export default function Page() {
   const [mentoringTodayAssignments, setMentoringTodayAssignments] = useState([]);
   // v41-263: 학생별 담당 멘토 (오늘 기수 기준). 좌석 패널 학생 기본정보에 표시합니다.
   const [mentorByStudent, setMentorByStudent] = useState({});
+  // v41-267: 좌석 패널에서 학생 이름을 누르면 여는 빠른 수정 팝업(등록불가·신청 상품·음악 청취)
+  const [studentQuickEdit, setStudentQuickEdit] = useState(null);
   // v41-179: 멘토링 운영 기준(기수별). 좌석표 안내 시작 시점 등에 씁니다.
   const [mentoringPolicy, setMentoringPolicy] = useState(FALLBACK_MENTORING_POLICY);
   const [dismissedAlerts, setDismissedAlerts] = useState([]);
@@ -4137,32 +4139,57 @@ export default function Page() {
     }
   }
 
-  // v41-266: 다음 기수 등록불가 표시/해제. 로그인한 누구나 할 수 있습니다.
-  // 표시할 때는 사유를 받습니다. 배지에 마우스를 올리면 사유와 표시한 사람·시각이 보입니다.
-  async function toggleEnrollmentBlock(nextBlocked) {
+  // v41-267: 좌석 패널의 학생 이름을 누르면 빠른 수정 팝업을 엽니다.
+  // 바꿀 수 있는 것: 다음 기수 등록불가(표시 + 사유) · 신청 상품 · 음악 청취. 로그인한 누구나.
+  // (v41-266 의 상시 노출 [등록불가 표시] 버튼은 모든 학생 카드 자리를 차지해 이 팝업으로 옮겼습니다)
+  function openStudentQuickEdit() {
     if (!form.studentId) return;
-    const current = form.enrollmentBlock || {};
-    let reason = '';
-    if (nextBlocked) {
-      const input = window.prompt(`${form.name || '학생'} 학생을 [다음기수 등록불가]로 표시합니다.\n\n상세 사유를 입력하세요. (배지에 마우스를 올리면 보입니다)`, current.reason || '');
-      if (input === null) return;
-      reason = String(input || '').trim();
-      if (!reason) return alert('등록불가 사유를 입력해야 표시할 수 있습니다.');
-    } else if (!confirm(`${form.name || '학생'} 학생의 [다음기수 등록불가] 표시를 해제할까요?`)) {
-      return;
-    }
+    const block = form.enrollmentBlock || {};
+    setStudentQuickEdit({
+      studentId: form.studentId,
+      name: form.name || '학생',
+      enrollmentBlocked: Boolean(block.blocked),
+      enrollmentBlockReason: block.reason || '',
+      productTier: form.productTier || '',
+      audioPolicy: form.audioPolicy || '',
+      saving: false,
+    });
+  }
+
+  async function saveStudentQuickEdit() {
+    const popup = studentQuickEdit;
+    if (!popup || popup.saving) return;
+    const reason = String(popup.enrollmentBlockReason || '').trim();
+    if (popup.enrollmentBlocked && !reason) return alert('등록불가로 표시하려면 사유를 입력하세요.');
     try {
-      setMessage(nextBlocked ? '등록불가 표시 저장 중...' : '등록불가 표시 해제 중...');
-      const data = await apiFetch('/api/student-enrollment-block', {
+      setStudentQuickEdit((prev) => (prev ? { ...prev, saving: true } : prev));
+      setMessage('학생 정보 저장 중...');
+      const data = await apiFetch('/api/student-quick-edit', {
         method: 'POST',
-        body: JSON.stringify({ studentId: form.studentId, blocked: nextBlocked, reason, adminName: currentUser?.displayName || '관리자' }),
+        body: JSON.stringify({
+          studentId: popup.studentId,
+          enrollmentBlocked: popup.enrollmentBlocked,
+          enrollmentBlockReason: reason,
+          productTier: popup.productTier || '',
+          audioPolicy: popup.audioPolicy || '',
+          adminName: currentUser?.displayName || '관리자',
+        }),
       });
-      setForm((prev) => ({ ...prev, enrollmentBlock: getEnrollmentBlock(data?.student || {}) }));
+      const saved = data?.student || {};
+      setForm((prev) => ({
+        ...prev,
+        productTier: saved.product_tier || '',
+        audioPolicy: saved.audio_policy || '',
+        enrollmentBlock: getEnrollmentBlock(saved),
+      }));
+      setStudentQuickEdit(null);
       await loadDashboard({ silent: true, suppressChangeNotice: true });
       setMessage(data?.message || '저장 완료');
+      if (data?.warning) alert(data.warning);
     } catch (error) {
-      setMessage(error.message || '등록불가 표시 저장 실패');
-      alert(error.message || '등록불가 표시를 저장하지 못했습니다.');
+      setStudentQuickEdit((prev) => (prev ? { ...prev, saving: false } : prev));
+      setMessage(error.message || '학생 정보 저장 실패');
+      alert(error.message || '학생 정보를 저장하지 못했습니다.');
     }
   }
 
@@ -6369,6 +6396,7 @@ export default function Page() {
         <RemoteChangeNotice notice={remoteChangeNotice} onClose={() => setRemoteChangeNotice(null)} />
         <AwayDetailPopup popup={awayPopup} setPopup={setAwayPopup} savePopup={saveAwayDetail} />
         <AttendanceAdjustPopup popup={attendanceAdjustPopup} setPopup={setAttendanceAdjustPopup} savePopup={saveAttendanceAdjust} />
+        <StudentQuickEditPopup popup={studentQuickEdit} setPopup={setStudentQuickEdit} save={saveStudentQuickEdit} />
         <ParentConfirmationAlertModal
           popup={parentAlertPopup}
           setPopup={setParentAlertPopup}
@@ -6393,22 +6421,18 @@ export default function Page() {
 {form.name ? (
             <>
               <div className="readonly-name-row">
-                <div className="readonly-main-name">{form.name}</div>
+                {/* v41-267: 이름을 누르면 등록불가·신청 상품·음악 청취를 고치는 팝업이 열립니다. */}
+                <button type="button" className="readonly-main-name is-editable" onClick={openStudentQuickEdit} title="클릭하면 다음기수 등록불가 · 신청 상품 · 음악 청취를 수정합니다">
+                  {form.name}<i aria-hidden="true">✎</i>
+                </button>
                 {/* v41-266: 다음 기수 등록불가. 마우스를 올리면 사유·표시자·시각. */}
                 {form.enrollmentBlock?.blocked ? (
                   <span className="enroll-block-badge" title={formatEnrollmentBlockTitle(form.enrollmentBlock)}>{ENROLLMENT_BLOCK_LABEL}</span>
                 ) : null}
               </div>
               {form.enrollmentBlock?.blocked ? (
-                <div className="enroll-block-detail">
-                  <span>사유: {form.enrollmentBlock.reason || '사유 미입력'}</span>
-                  <button type="button" className="secondary tiny-action" onClick={() => toggleEnrollmentBlock(false)}>해제</button>
-                </div>
-              ) : (
-                <div className="enroll-block-detail muted-line">
-                  <button type="button" className="secondary tiny-action" onClick={() => toggleEnrollmentBlock(true)}>다음기수 등록불가 표시</button>
-                </div>
-              )}
+                <div className="enroll-block-detail"><span>사유: {form.enrollmentBlock.reason || '사유 미입력'}</span></div>
+              ) : null}
               <div className="info-grid compact-student-info-grid">
                 <div className="info-item"><span>학교</span><strong>{form.school || '-'}</strong></div>
                 <div className="info-item"><span>학년</span><strong>{form.grade || '-'}</strong></div>
@@ -6999,6 +7023,67 @@ function AwayDetailPopup({ popup, setPopup, savePopup }) {
         <div className="popup-bottom-actions">
           <button className="secondary" onClick={() => setPopup(null)}>취소</button>
           <button className="primary" onClick={savePopup}>외출 처리</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// v41-267: 좌석 패널 학생 이름 클릭 → 빠른 수정
+function StudentQuickEditPopup({ popup, setPopup, save }) {
+  if (!popup) return null;
+  const close = () => { if (!popup.saving) setPopup(null); };
+  const set = (patch) => setPopup((prev) => (prev ? { ...prev, ...patch } : prev));
+  return (
+    <div className="modal-backdrop" {...backdropCloseProps(close)}>
+      <div className="small-action-popup student-quick-edit-popup" onClick={(event) => event.stopPropagation()}>
+        <div className="popup-head">
+          <div>
+            <h2>{popup.name} 학생 정보 수정</h2>
+            <p>이 세 가지는 여기서 바로 고칩니다. 나머지 신상 정보는 설정 › 학생 관리에서 수정합니다.</p>
+          </div>
+          <button type="button" onClick={close}>닫기</button>
+        </div>
+
+        <div className={`field quick-edit-block${popup.enrollmentBlocked ? ' is-on' : ''}`}>
+          <label className="quick-edit-toggle">
+            <input type="checkbox" checked={popup.enrollmentBlocked} onChange={(e) => set({ enrollmentBlocked: e.target.checked })} />
+            <span>다음기수 등록불가로 표시</span>
+          </label>
+          {popup.enrollmentBlocked ? (
+            <>
+              <textarea
+                value={popup.enrollmentBlockReason}
+                onChange={(e) => set({ enrollmentBlockReason: e.target.value })}
+                placeholder="상세 사유 (배지에 마우스를 올리면 보입니다) — 예: 지도 불응 반복, 타 학생 방해"
+                rows={3}
+              />
+              <div className="hint">사유 없이는 표시되지 않습니다. 누가 언제 표시했는지 활동 로그에 남습니다.</div>
+            </>
+          ) : <div className="hint">표시하면 좌석 패널과 학생 기본정보의 이름 옆에 빨간 배지가 붙습니다.</div>}
+        </div>
+
+        <div className="field">
+          <label>신청 상품</label>
+          <select value={popup.productTier || ''} onChange={(e) => set({ productTier: e.target.value })}>
+            <option value="">미분류 (표시 안 함)</option>
+            {PRODUCT_TIERS.map((tier) => <option key={tier.key} value={tier.key}>{tier.label} · {tier.summary}</option>)}
+          </select>
+          <div className="hint">{getProductTier(popup.productTier)?.detail || '분류가 없으면 비워 두세요.'}</div>
+        </div>
+
+        <div className="field">
+          <label>음악 청취</label>
+          <select value={popup.audioPolicy || ''} onChange={(e) => set({ audioPolicy: e.target.value })}>
+            <option value="">미정 (표시 안 함)</option>
+            {AUDIO_POLICIES.map((policy) => <option key={policy.key} value={policy.key}>{policy.label}</option>)}
+          </select>
+          <div className="hint">{getAudioPolicy(popup.audioPolicy)?.detail || '학부모가 아직 정하지 않았으면 비워 두세요.'}</div>
+        </div>
+
+        <div className="popup-bottom-actions">
+          <button type="button" className="secondary" onClick={close} disabled={popup.saving}>취소</button>
+          <button type="button" className="primary" onClick={save} disabled={popup.saving}>{popup.saving ? '저장 중...' : '저장'}</button>
         </div>
       </div>
     </div>
@@ -18855,7 +18940,7 @@ function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focu
                 <ProductTierBadge tier={selectedStudent.product_tier} />
                 {selectedStudent.nickname ? <span className="sinfo-nickname">{selectedStudent.nickname}</span> : null}
                 <span className={`sinfo-status ${selectedStudent.status || 'active'}`}>{STUDENT_STATUS_TEXT[selectedStudent.status] || selectedStudent.status || '활성'}</span>
-                {/* v41-266: 다음 기수 등록불가. 표시/해제는 대시보드 좌석 패널의 학생 기본정보에서 합니다. */}
+                {/* v41-266: 다음 기수 등록불가. 표시/해제는 대시보드 좌석 패널에서 학생 이름을 눌러 합니다. */}
                 {getEnrollmentBlock(selectedStudent).blocked ? (
                   <span className="enroll-block-badge" title={formatEnrollmentBlockTitle(getEnrollmentBlock(selectedStudent))}>{ENROLLMENT_BLOCK_LABEL}</span>
                 ) : null}

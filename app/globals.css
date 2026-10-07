@@ -19253,3 +19253,16 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .main button.tiny-action, .panel button.tiny-action, .modal-backdrop button.tiny-action{
   min-height:26px !important; padding:0 9px !important; font-size:var(--ui-fs-sm) !important; border-radius:999px !important; line-height:1 !important;
 }
+/* v41-267: 좌석 패널 이름 클릭 → 빠른 수정 */
+.panel button.readonly-main-name.is-editable{
+  appearance:none; background:var(--ap-surface-3) !important; border:1px solid var(--ap-sep) !important; color:var(--ap-text) !important;
+  display:inline-flex !important; align-items:center; gap:6px; min-height:0 !important; height:auto; padding:8px 12px !important; margin:0 !important;
+  border-radius:var(--ui-r-sm) !important; font-size:18px !important; font-weight:var(--ui-w-bold) !important; cursor:pointer; text-align:left; line-height:1.2 !important;
+}
+.panel button.readonly-main-name.is-editable:hover{ background:var(--ap-surface) !important; border-color:var(--ap-accent) !important; }
+.panel button.readonly-main-name.is-editable i{ font-style:normal; font-size:12px; color:var(--ap-text-3); }
+.student-quick-edit-popup .quick-edit-toggle{ display:flex; align-items:center; gap:8px; font-size:var(--ui-fs) !important; font-weight:var(--ui-w-med) !important; color:var(--ap-text) !important; cursor:pointer; }
+.student-quick-edit-popup .quick-edit-toggle input{ width:16px; height:16px; accent-color:var(--ap-attn); }
+.student-quick-edit-popup .quick-edit-block{ padding:10px 12px; border:1px solid var(--ap-sep); border-radius:var(--ui-r); background:var(--ap-surface-2); }
+.student-quick-edit-popup .quick-edit-block.is-on{ border-color:rgba(255,59,48,.35); background:var(--ap-attn-fill); }
+.student-quick-edit-popup .quick-edit-block textarea{ margin-top:8px; }
