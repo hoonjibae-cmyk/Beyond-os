@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { isTimeEditableEvent } from '../lib/attendanceEventTime';
 import { formatMentorNames } from '../lib/mentorAssignments';
+import { ENROLLMENT_BLOCK_LABEL, getEnrollmentBlock, formatEnrollmentBlockTitle } from '../lib/enrollmentBlock';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
@@ -3839,6 +3840,8 @@ export default function Page() {
       studentPhone: student.student_phone || '',
       // v41-216: 좌석 패널의 학생 기본정보에 음악 청취 허용 범위를 함께 보여 줍니다.
       audioPolicy: student.audio_policy || '',
+      // v41-266: 다음 기수 등록불가 표시(사유·표시자·시각). 칸이 없으면 '해당 없음'.
+      enrollmentBlock: getEnrollmentBlock(student),
       // v41-223: 신청 상품(Lite/Plus/Premium). 멘토링·수행평가 대상인지 바로 알 수 있어야 합니다.
       productTier: student.product_tier || '',
       studyStatus: latestStudyCheck?.study_status || '인강',
@@ -4131,6 +4134,35 @@ export default function Page() {
         attendanceSaveLockRef.current = false;
         setAttendanceSavingStatus(null);
       }, ATTENDANCE_ACTION_UNLOCK_MS);
+    }
+  }
+
+  // v41-266: 다음 기수 등록불가 표시/해제. 로그인한 누구나 할 수 있습니다.
+  // 표시할 때는 사유를 받습니다. 배지에 마우스를 올리면 사유와 표시한 사람·시각이 보입니다.
+  async function toggleEnrollmentBlock(nextBlocked) {
+    if (!form.studentId) return;
+    const current = form.enrollmentBlock || {};
+    let reason = '';
+    if (nextBlocked) {
+      const input = window.prompt(`${form.name || '학생'} 학생을 [다음기수 등록불가]로 표시합니다.\n\n상세 사유를 입력하세요. (배지에 마우스를 올리면 보입니다)`, current.reason || '');
+      if (input === null) return;
+      reason = String(input || '').trim();
+      if (!reason) return alert('등록불가 사유를 입력해야 표시할 수 있습니다.');
+    } else if (!confirm(`${form.name || '학생'} 학생의 [다음기수 등록불가] 표시를 해제할까요?`)) {
+      return;
+    }
+    try {
+      setMessage(nextBlocked ? '등록불가 표시 저장 중...' : '등록불가 표시 해제 중...');
+      const data = await apiFetch('/api/student-enrollment-block', {
+        method: 'POST',
+        body: JSON.stringify({ studentId: form.studentId, blocked: nextBlocked, reason, adminName: currentUser?.displayName || '관리자' }),
+      });
+      setForm((prev) => ({ ...prev, enrollmentBlock: getEnrollmentBlock(data?.student || {}) }));
+      await loadDashboard({ silent: true, suppressChangeNotice: true });
+      setMessage(data?.message || '저장 완료');
+    } catch (error) {
+      setMessage(error.message || '등록불가 표시 저장 실패');
+      alert(error.message || '등록불가 표시를 저장하지 못했습니다.');
     }
   }
 
@@ -6360,7 +6392,23 @@ export default function Page() {
         <PanelSection title="학생 기본정보" defaultMobileOpen={false} className="readonly-student-card">
 {form.name ? (
             <>
-              <div className="readonly-main-name">{form.name}</div>
+              <div className="readonly-name-row">
+                <div className="readonly-main-name">{form.name}</div>
+                {/* v41-266: 다음 기수 등록불가. 마우스를 올리면 사유·표시자·시각. */}
+                {form.enrollmentBlock?.blocked ? (
+                  <span className="enroll-block-badge" title={formatEnrollmentBlockTitle(form.enrollmentBlock)}>{ENROLLMENT_BLOCK_LABEL}</span>
+                ) : null}
+              </div>
+              {form.enrollmentBlock?.blocked ? (
+                <div className="enroll-block-detail">
+                  <span>사유: {form.enrollmentBlock.reason || '사유 미입력'}</span>
+                  <button type="button" className="secondary tiny-action" onClick={() => toggleEnrollmentBlock(false)}>해제</button>
+                </div>
+              ) : (
+                <div className="enroll-block-detail muted-line">
+                  <button type="button" className="secondary tiny-action" onClick={() => toggleEnrollmentBlock(true)}>다음기수 등록불가 표시</button>
+                </div>
+              )}
               <div className="info-grid compact-student-info-grid">
                 <div className="info-item"><span>학교</span><strong>{form.school || '-'}</strong></div>
                 <div className="info-item"><span>학년</span><strong>{form.grade || '-'}</strong></div>
@@ -18807,7 +18855,16 @@ function StudentInfoTab({ students = [], apiFetch, currentUser, setMessage, focu
                 <ProductTierBadge tier={selectedStudent.product_tier} />
                 {selectedStudent.nickname ? <span className="sinfo-nickname">{selectedStudent.nickname}</span> : null}
                 <span className={`sinfo-status ${selectedStudent.status || 'active'}`}>{STUDENT_STATUS_TEXT[selectedStudent.status] || selectedStudent.status || '활성'}</span>
+                {/* v41-266: 다음 기수 등록불가. 표시/해제는 대시보드 좌석 패널의 학생 기본정보에서 합니다. */}
+                {getEnrollmentBlock(selectedStudent).blocked ? (
+                  <span className="enroll-block-badge" title={formatEnrollmentBlockTitle(getEnrollmentBlock(selectedStudent))}>{ENROLLMENT_BLOCK_LABEL}</span>
+                ) : null}
               </div>
+              {getEnrollmentBlock(selectedStudent).blocked ? (
+                <div className="enroll-block-detail">
+                  <span>등록불가 사유: {getEnrollmentBlock(selectedStudent).reason || '사유 미입력'}</span>
+                </div>
+              ) : null}
               <dl className="sinfo-fields">
                 <div><dt>학교</dt><dd>{selectedStudent.school || '-'}</dd></div>
                 <div><dt>학년</dt><dd>{selectedStudent.grade || '-'}</dd></div>

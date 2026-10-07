@@ -19235,3 +19235,16 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .main .unified-report-chips.one-line > .issue-chip.more{ flex:0 0 auto; }
 .main .unified-report-chips.expanded{ flex-wrap:wrap !important; gap:4px !important; margin:0 !important; }
 .main .unified-report-chips .issue-chip, .main .unified-report-chips .status-pill{ min-height:22px !important; padding:2px 7px !important; font-size:11px !important; }
+
+/* v41-266: 다음 기수 등록불가 배지 */
+.readonly-name-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.readonly-name-row .readonly-main-name{ margin:0; }
+.enroll-block-badge{
+  display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:999px;
+  background:var(--ap-attn-fill); color:var(--ap-attn-text); border:1px solid rgba(255,59,48,.35);
+  font-size:11px; font-weight:var(--ui-w-med); white-space:nowrap; cursor:help;
+}
+.enroll-block-detail{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin:6px 0 8px; font-size:12px; color:var(--ap-attn-text); }
+.enroll-block-detail > span{ min-width:0; line-height:1.45; }
+.enroll-block-detail.muted-line{ justify-content:flex-start; color:var(--ap-text-3); }
+.sinfo-name-row .enroll-block-badge{ height:24px; font-size:12px; }
