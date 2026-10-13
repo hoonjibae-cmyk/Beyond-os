@@ -8,7 +8,9 @@ import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { normalizeProductTier } from '../../../lib/productTier';
 import { normalizeAudioPolicy } from '../../../lib/audioPolicy';
-import { buildEnrollmentBlockPayload, ENROLLMENT_BLOCK_SQL_HINT } from '../../../lib/enrollmentBlock';
+import { buildEnrollmentBlockPayload, stripCohortColumns, ENROLLMENT_BLOCK_SQL_HINT } from '../../../lib/enrollmentBlock';
+import { normalizeCohort, resolveCohortForDate } from '../../../lib/cohorts';
+import { getKstDateString } from '../../../lib/date';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,12 +42,29 @@ export async function POST(request) {
       product_tier: normalizeProductTier(body.productTier) || null,
       audio_policy: normalizeAudioPolicy(body.audioPolicy) || null,
     };
-    const blockPayload = buildEnrollmentBlockPayload({ blocked, reason, actorName });
+    // v41-268: 새로 표시할 때 오늘이 속한 기수를 함께 적습니다. (등록불가 학생 메뉴의 기수별 표)
+    // 이미 표시된 학생의 사유만 고치는 경우는 처음 표시한 기수를 그대로 둡니다.
+    let todayCohort = null;
+    try {
+      const { data: cohortRows } = await supabase.from('cohorts').select('*');
+      todayCohort = resolveCohortForDate((cohortRows || []).map(normalizeCohort), getKstDateString());
+    } catch {
+      todayCohort = null;
+    }
+    const alreadyBlocked = existing?.enrollment_blocked === true;
+    const blockPayload = buildEnrollmentBlockPayload({ blocked, reason, actorName, cohort: todayCohort, keepCohort: blocked && alreadyBlocked });
 
-    // 등록불가 칸(v41-266 SQL)이 아직 없으면 상품·음악만 저장하고 알려 줍니다.
+    // 칸이 아직 없으면 단계적으로 물러섭니다:
+    //   기수 칸(v41-268)만 없음 → 기수 없이 등록불가 저장
+    //   등록불가 칸(v41-266)도 없음 → 상품·음악만 저장하고 알려 줍니다.
     let warning = '';
     let { data: student, error } = await supabase
       .from('students').update({ ...basePayload, ...blockPayload }).eq('id', studentId).select('*').single();
+    if (error && isMissingEnrollmentColumn(error)) {
+      ({ data: student, error } = await supabase
+        .from('students').update({ ...basePayload, ...stripCohortColumns(blockPayload) }).eq('id', studentId).select('*').single());
+      if (!error) warning = '표시한 기수는 기록되지 않았습니다. beyond-os-supabase-enrollment-block-cohort-v41-268.sql 실행 여부를 확인하세요.';
+    }
     if (error && isMissingEnrollmentColumn(error)) {
       warning = `등록불가 표시는 저장되지 않았습니다. ${ENROLLMENT_BLOCK_SQL_HINT}`;
       ({ data: student, error } = await supabase

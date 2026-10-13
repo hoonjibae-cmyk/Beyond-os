@@ -144,6 +144,7 @@ const TABS = [
   ['points', '상벌점 관리'],
   ['mentoring', '멘토링 시간표'],
   ['attention', '관리주의 이력'],
+  ['blockedStudents', '등록불가 학생'],
   ['settings', '설정'],
 ];
 
@@ -159,6 +160,7 @@ const USER_PERMISSION_TABS = [
   ['points', '상벌점 관리'],
   ['mentoring', '멘토링 시간표'],
   ['attention', '관리주의 이력'],
+  ['blockedStudents', '등록불가 학생'],
 ];
 
 const USER_ROLE_LABELS = {
@@ -6312,6 +6314,10 @@ export default function Page() {
             setActiveTab={setActiveTab}
             cohortStudentIds={cohortScopeStudentIds}
           />
+        ) : null}
+
+        {isActiveTabAllowed && activeTab === 'blockedStudents' ? (
+          <BlockedStudentsTab apiFetch={apiFetch} />
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'settings' ? (
@@ -24540,6 +24546,109 @@ function AccountModal({ open, onClose, currentUser, passwordForm, setPasswordFor
         )}
       </div>
     </div>
+  );
+}
+
+// v41-268: ISO 시각 → KST 날짜(YYYY-MM-DD). 등록불가 표시일 표기용.
+function formatKstDateOnly(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
+// v41-268: 등록불가 학생 메뉴 — 기수마다 누적된 [다음기수 등록불가] 학생을 표로 보여 줍니다.
+// 직원 건의: 기수가 쌓이면 누가 등록불가였는지 기억하기 어려우니 1기·2기… 로 나눠 남겨 두자.
+// 퇴원(비활성) 학생도 포함합니다. 표시 자체는 좌석 패널에서 학생 이름을 눌러 합니다.
+function BlockedStudentsTab({ apiFetch }) {
+  const [groups, setGroups] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [warning, setWarning] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await apiFetch('/api/blocked-students');
+      setGroups(Array.isArray(data?.groups) ? data.groups : []);
+      setTotal(Number(data?.total || 0));
+      setWarning(data?.warning || data?.error || '');
+    } catch (error) {
+      setGroups([]);
+      setTotal(0);
+      setWarning(error.message || '등록불가 학생 목록을 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const keyword = query.trim().toLowerCase();
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      rows: keyword
+        ? group.rows.filter((row) => [row.name, row.school, row.grade, row.reason, row.updatedBy].join(' ').toLowerCase().includes(keyword))
+        : group.rows,
+    }))
+    .filter((group) => group.rows.length);
+
+  return (
+    <section className="content-card blocked-students-tab">
+      <div className="section-head">
+        <div>
+          <h2>등록불가 학생</h2>
+          <p>기수별로 [다음기수 등록불가]로 표시한 학생입니다. 퇴원한 학생도 남습니다. 표시·해제는 대시보드 좌석 패널에서 학생 이름을 눌러 합니다.</p>
+        </div>
+        <div className="planner-head-actions">
+          <button type="button" className="secondary section-action" onClick={load} disabled={loading}>{loading ? '불러오는 중...' : '새로고침'}</button>
+        </div>
+      </div>
+
+      {warning ? <div className="status-alert warning">{warning}</div> : null}
+
+      <div className="blocked-students-toolbar clean-panel">
+        <div className="field">
+          <label>검색</label>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름 · 학교 · 사유 · 표시자" />
+        </div>
+        <div className="blocked-students-total"><b>{total}</b>명 · 기수 {groups.length}개</div>
+      </div>
+
+      {!loading && !visibleGroups.length ? (
+        <div className="all-clear">{keyword ? '검색 조건에 맞는 학생이 없습니다.' : '등록불가로 표시된 학생이 없습니다.'}</div>
+      ) : null}
+
+      {visibleGroups.map((group) => (
+        <div key={group.key} className="blocked-students-group">
+          <div className="blocked-students-group-head">
+            <strong>{group.cohortName} 등록불가</strong>
+            <span>{group.rows.length}명{group.startDate ? ` · ${group.startDate}~` : ''}</span>
+          </div>
+          <div className="blocked-students-table-wrap">
+            <table className="blocked-students-table">
+              <thead>
+                <tr><th>이름</th><th>학교/학년</th><th>사유</th><th>표시자</th><th>표시일</th><th>상태</th></tr>
+              </thead>
+              <tbody>
+                {group.rows.map((row) => (
+                  <tr key={row.studentId} className={row.status === 'inactive' ? 'is-inactive' : ''}>
+                    <td className="blocked-students-name"><strong>{row.name}</strong>{row.cohortInferred ? <i title="표시한 기수가 기록되지 않아 표시일로 추정했습니다">추정</i> : null}</td>
+                    <td>{[row.school, row.grade].filter(Boolean).join(' ') || '-'}</td>
+                    <td className="blocked-students-reason">{row.reason || <span className="muted">사유 미입력</span>}</td>
+                    <td>{row.updatedBy || '-'}</td>
+                    <td>{row.updatedAt ? String(formatKstDateOnly(row.updatedAt)) : '-'}</td>
+                    <td>{STUDENT_STATUS_TEXT[row.status] || row.status || '활성'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 
