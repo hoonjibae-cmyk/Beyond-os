@@ -187,7 +187,7 @@ async function loadWeeklySchedules(supabase, week, studentIds) {
       }
       return { byStudent, warning: '결석 일정(planned_absent) 컬럼이 없어 사전 신고 결석은 반영하지 않았습니다.' };
     } catch {
-      return { byStudent: {}, warning: `개인 시간표를 읽지 못해 주간 개근 상점을 건너뛰었습니다. (${error?.message || '원인 미상'})` };
+      return { byStudent: {}, failed: true, warning: `개인 시간표를 읽지 못해 주간 개근 상점을 건너뛰었습니다. (${error?.message || '원인 미상'})` };
     }
   }
 }
@@ -254,9 +254,16 @@ async function insertAutoAward({ supabase, student, week, runDate, kind, points,
 }
 
 /** 1) 자동 상점 부여 — 주간 순공 구간 + 주간 개근 (둘 다 받을 수 있습니다) */
-async function awardWeeklyPoints({ supabase, rules, week, runDate, students, minutesByStudent, minutesByStudentDate, sessionByStudentDate, schedulesByStudent, operatingDates, lateThresholdMinutes }) {
+async function awardWeeklyPoints({ supabase, rules, week, runDate, students, minutesByStudent, minutesByStudentDate, sessionByStudentDate, schedulesByStudent, schedulesFailed = false, operatingDates, lateThresholdMinutes }) {
+  // v41-270: 개근 판정은 운영일이 아니라 그 주 7일 전부입니다.
+  const weekDates = [];
+  for (let offset = 0; offset < 7; offset += 1) {
+    const date = addDaysToDateString(week.start, offset);
+    if (date) weekDates.push(date);
+  }
   const wantsStudy = rules.autoRewardEnabled && rules.tiers.length > 0;
-  const wantsPerfect = rules.perfectAttendanceEnabled && rules.perfectAttendancePoints > 0;
+  // 시간표를 못 읽은 주에는 개근을 판정할 수 없습니다. (빈 시간표 = 전부 자율학습일로 오판하게 됨)
+  const wantsPerfect = rules.perfectAttendanceEnabled && rules.perfectAttendancePoints > 0 && !schedulesFailed;
 
   if (!rules.autoRewardEnabled) {
     return { awarded: [], failures: [], skipped: 'disabled', warning: '' };
@@ -322,7 +329,10 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, min
     // ── 주간 개근 상점 ──────────────────────────────────
     // 순공 구간 상점과 별개입니다. 같은 주에 둘 다 받을 수 있습니다.
     if (!wantsPerfect || alreadyAwarded.has(`${key}::perfect`)) continue;
+    // v41-270: 월~일 7일 전부 봅니다. 차시 있는 날은 시간표 준수(결석·지각·조기 외출 없음),
+    // 차시 없는 날은 자율학습 순공 최소치(기본 1시간) 이상.
     const perfect = evaluatePerfectAttendance({
+      weekDates,
       operatingDates,
       schedules: schedulesByStudent[key] || [],
       sessionsByDate: sessionByStudentDate[key] || {},
@@ -332,6 +342,9 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, min
     });
     if (!perfect.ok) continue;
 
+    const freeNote = perfect.freeDays
+      ? ` · 차시 없는 날 ${perfect.freeDays}일 자율학습 ${formatMinutesKo(rules.perfectAttendanceDailyMinutes)} 이상`
+      : '';
     const result = await insertAutoAward({
       supabase, student, week, runDate,
       kind: 'perfect',
@@ -339,14 +352,14 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, min
       studyMinutes: minutes,
       tierMinMinutes: rules.perfectAttendanceDailyMinutes,
       tierLabel: '주간 개근',
-      reason: `주간 개근 자동 상점 · ${week.start}~${week.end} 운영일 ${perfect.operatingDays}일 전원 등원`,
-      memo: `일일 최소 순공 ${formatMinutesKo(rules.perfectAttendanceDailyMinutes)} 충족 · ${runDate} 자동 부여`,
+      reason: `주간 개근 자동 상점 · ${week.start}~${week.end} 시간표 ${perfect.scheduledDays}일 준수${freeNote}`,
+      memo: `결석·지각·조기 외출 없음 · ${runDate} 자동 부여`,
     });
     if (result.status === 'awarded') {
       awarded.push({
         studentId: key, name: student.name || '학생', kind: 'perfect',
         studyMinutes: minutes, studyLabel: formatMinutesKo(minutes),
-        operatingDays: perfect.operatingDays, points: rules.perfectAttendancePoints,
+        operatingDays: perfect.operatingDays, scheduledDays: perfect.scheduledDays, freeDays: perfect.freeDays, points: rules.perfectAttendancePoints,
       });
     } else if (result.status === 'failed') {
       failures.push({ studentId: key, name: student.name || '', kind: 'perfect', message: result.message });
@@ -520,6 +533,7 @@ export async function runWeeklyPointBatch({ supabase, runDate: requestedRunDate,
       supabase, rules, week, runDate, students,
       minutesByStudent, minutesByStudentDate, sessionByStudentDate,
       schedulesByStudent: scheduleResult.byStudent,
+      schedulesFailed: Boolean(scheduleResult.failed),
       operatingDates,
       lateThresholdMinutes,
     });

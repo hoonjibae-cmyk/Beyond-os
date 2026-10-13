@@ -16780,9 +16780,10 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
             <div className="point-auto-tier-head">
               <strong>주간 개근 상점</strong>
               <span>
-                순공시간 구간 상점과 <b>따로</b> 계산합니다. 같은 주에 둘 다 받을 수 있습니다.
-                그 주에 <b>센터가 문을 여는 날은 전부</b> 나와야 하고, <b>지각·결석이 하나도 없어야</b> 부여합니다.
-                개인 시간표가 없는 날(일요일 자율학습 등)이나 시간표에 결석으로 등록해 둔 날도 나와야 합니다.
+                순공시간 구간 상점과 <b>따로</b> 계산합니다. 같은 주에 둘 다 받을 수 있습니다. 월~일 7일을 전부 봅니다.
+                개인 시간표에 <b>차시가 있는 날은 시간표를 그대로</b> 지켜야 하고(<b>결석 X · 지각 X · 조기 외출 X</b>),
+                <b>차시가 없는 날</b>(일요일·공휴일·빈 요일 모두)은 <b>자율학습 순공을 아래 최소치 이상</b> 기록해야 합니다.
+                시간표에 결석으로 등록해 둔 날도 결석으로 봅니다.
               </span>
             </div>
             <label className="point-auto-toggle">
@@ -16806,7 +16807,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                 <em>{Number(autoRules.perfectAttendancePoints || 0) > 0 ? `개근한 주마다 ${autoRules.perfectAttendancePoints}점` : '0점이면 부여하지 않습니다.'}</em>
               </div>
               <div className="field">
-                <label>일일 최소 순공시간</label>
+                <label>차시 없는 날 최소 순공시간</label>
                 <div className="point-auto-time-input">
                   <input
                     type="number"
@@ -16825,12 +16826,12 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                   />
                   <em>분</em>
                 </div>
-                <em>이 시간에 못 미친 날은 등원으로 세지 않습니다. (기본 30분)</em>
+                <em>차시가 없는 날(일요일·공휴일 등)에 이 시간에 못 미치면 개근이 아닙니다. (기본 1시간)</em>
               </div>
             </div>
             <p className="point-auto-rules-note">
-              대상일은 설정 · 기본 시간표에서 <b>운영으로 켜 둔 요일</b>과 공휴일 설정을 따릅니다. 문을 닫는 날은 대상에서 빠집니다.
-              지각은 개인 시간표에 등원 시각이 정해진 날만 보며, 기준은 설정 · 운영 기준의 [지각 허용 시간]을 그대로 씁니다.
+              지각·조기 외출의 허용치는 설정 · 운영 기준의 [지각 허용 시간]을 그대로 씁니다. 하원 기록이 없는 날은 조기 외출로 보지 않습니다.
+              매주 월요일 06:00에 지난 주를 판정해 일요일 날짜로 상점을 넣습니다.
             </p>
           </div>
 
@@ -17054,7 +17055,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                   </em>
                   <i>
                     {row.award_kind === 'perfect'
-                      ? `운영일 전원 등원 · 일일 최소 ${formatMinutesKo(row.tier_min_minutes)}`
+                      ? `시간표 준수 · 차시 없는 날 ${formatMinutesKo(row.tier_min_minutes)} 이상`
                       : `${row.tier_label ? `${row.tier_label} · ` : ''}${formatMinutesKo(row.tier_min_minutes)} 이상`}
                   </i>
                   <b>+{row.points}점</b>
