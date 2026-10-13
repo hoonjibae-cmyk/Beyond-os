@@ -19392,3 +19392,6 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
   .main .points-row p{ grid-column:auto !important; }
   .main button.points-row-delete{ width:22px !important; }
 }
+
+/* v41-269.1: 자주 주는 상점이 독립 카드로 맨 위에 옵니다 */
+.main .points-quick-block{ padding:12px !important; }

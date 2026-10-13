@@ -17074,6 +17074,52 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
         <div><span>기록 수</span><strong>{summary.count || 0}건</strong></div>
       </div>
 
+      {/* v41-269.1: 자주 주는 상점을 맨 위로. 조회 조건은 직접 입력 바로 위에 둡니다 (부원장님 지시) */}
+      <div className="points-quick-block">
+        <div className="points-quick-head">
+          <strong>자주 주는 상점</strong>
+          <span>항목을 고르고 학생을 여러 명 선택해 한 번에 기록합니다.</span>
+        </div>
+        <div className="points-quick-row">
+          <div className="seg points-quick-presets" role="group" aria-label="자주 주는 상점 항목">
+            {QUICK_REWARD_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                className={quickPresetKey === preset.key ? 'active' : ''}
+                onClick={() => setQuickPresetKey(preset.key)}
+              >
+                {preset.label} <b>+{preset.points}</b>
+              </button>
+            ))}
+          </div>
+          <StudentMultiPicker
+            students={activeStudents}
+            value={quickStudentIds}
+            onChange={setQuickStudentIds}
+            disabled={quickSaving}
+            placeholder="상점을 줄 학생 선택 (다중)"
+          />
+          <input
+            type="date"
+            className="points-quick-date"
+            aria-label="부여 날짜"
+            onClick={openNativePicker}
+            onFocus={openNativePicker}
+            value={quickDate}
+            onChange={(e) => setQuickDate(e.target.value)}
+          />
+          <button
+            type="button"
+            className="primary points-quick-submit"
+            onClick={submitQuickReward}
+            disabled={quickSaving || !quickStudentIds.length}
+          >
+            {quickSaving ? '기록 중...' : `${quickStudentIds.length ? `${quickStudentIds.length}명에게 ` : ''}부여`}
+          </button>
+        </div>
+      </div>
+
       {/* v41-257: 조회 조건을 한 줄로. 학생 · 기간 프리셋 · 날짜 · 조회 */}
       <div className="points-filter-bar clean-panel">
         <div className="field points-filter-student">
@@ -17131,54 +17177,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
       </div>
 
       <div className="points-form-card clean-panel">
-        {/* v41-269: 자주 주는 상점 — 항목 버튼 + 학생 다중 선택 + 날짜 → 한 번에 기록 */}
-        <div className="points-quick-block">
-          <div className="points-quick-head">
-            <strong>자주 주는 상점</strong>
-            <span>항목을 고르고 학생을 여러 명 선택해 한 번에 기록합니다.</span>
-          </div>
-          <div className="points-quick-row">
-            <div className="seg points-quick-presets" role="group" aria-label="자주 주는 상점 항목">
-              {QUICK_REWARD_PRESETS.map((preset) => (
-                <button
-                  key={preset.key}
-                  type="button"
-                  className={quickPresetKey === preset.key ? 'active' : ''}
-                  onClick={() => setQuickPresetKey(preset.key)}
-                >
-                  {preset.label} <b>+{preset.points}</b>
-                </button>
-              ))}
-            </div>
-            <StudentMultiPicker
-              students={activeStudents}
-              value={quickStudentIds}
-              onChange={setQuickStudentIds}
-              disabled={quickSaving}
-              placeholder="상점을 줄 학생 선택 (다중)"
-            />
-            <input
-              type="date"
-              className="points-quick-date"
-              aria-label="부여 날짜"
-              onClick={openNativePicker}
-              onFocus={openNativePicker}
-              value={quickDate}
-              onChange={(e) => setQuickDate(e.target.value)}
-            />
-            <button
-              type="button"
-              className="primary points-quick-submit"
-              onClick={submitQuickReward}
-              disabled={quickSaving || !quickStudentIds.length}
-            >
-              {quickSaving ? '기록 중...' : `${quickStudentIds.length ? `${quickStudentIds.length}명에게 ` : ''}부여`}
-            </button>
-          </div>
-        </div>
-
         <div className="points-form-head">
-          <strong>{selectedStudent ? `${selectedStudent.name} 직접 입력` : '직접 입력 · 위 조회 조건에서 학생을 먼저 선택하세요'}</strong>
+          <strong>{selectedStudent ? `${selectedStudent.name} 직접 입력` : '직접 입력 · 바로 위에서 학생을 먼저 선택하세요'}</strong>
           <span>리포트에는 해당 날짜 또는 기간의 상벌점 요약이 자동 반영됩니다.</span>
         </div>
         <div className="points-form-grid">
