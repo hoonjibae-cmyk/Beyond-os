@@ -19285,3 +19285,110 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .blocked-students-name i{ margin-left:6px; font-style:normal; font-size:10.5px; color:var(--ap-text-3); border:1px dashed var(--ap-sep-strong); border-radius:999px; padding:0 6px; }
 .blocked-students-reason{ min-width:260px; line-height:1.5; color:var(--ap-attn-text); }
 .blocked-students-reason .muted{ color:var(--ap-text-3) !important; }
+
+/* ═══════════════════════════════════════════════════════════════
+   v41-269 상벌점 탭 — 학생 카드 격자 재구성 + 자주 주는 상점 일괄 부여
+   ═══════════════════════════════════════════════════════════════ */
+/* 1) 학생 카드: 가로로 길게 한 장씩 → 폭 340px 안팎의 카드를 격자로 */
+.main .points-student-group-list{
+  display:grid !important;
+  grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)) !important;
+  gap:10px !important;
+  align-items:start;
+}
+.main .points-student-group-list.single{ grid-template-columns:minmax(0, 640px) !important; }
+.main .points-student-group{
+  padding:10px 11px !important; background:#fff !important; border:1px solid var(--ap-sep) !important;
+  display:flex; flex-direction:column; gap:7px; min-width:0;
+}
+.main .points-student-head{ margin:0 !important; padding:0 !important; gap:8px !important; flex-wrap:nowrap !important; align-items:center !important; }
+.main .points-student-name{ min-width:0; display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
+.main .points-student-name strong{ font-size:var(--ui-fs-lg) !important; margin:0 !important; }
+.main .points-student-name span{ font-size:11.5px !important; font-weight:var(--ui-w) !important; white-space:nowrap; }
+.main .points-student-score{ flex:0 0 auto; gap:4px !important; flex-wrap:nowrap !important; }
+.main .points-student-score em{ padding:2px 7px !important; font-size:11.5px !important; font-weight:var(--ui-w-med) !important; }
+.main .points-student-score b{ padding:2px 8px !important; font-size:12px !important; font-weight:var(--ui-w-bold) !important; }
+.main .points-cycle-line{ margin:0 !important; padding:4px 8px !important; border-radius:var(--ui-r-sm) !important; gap:6px !important; font-size:11px !important; }
+.main .points-row-list{ gap:4px !important; }
+.main .points-row{
+  grid-template-columns:auto auto minmax(0,1fr) auto !important;
+  gap:8px !important; padding:5px 8px !important; align-items:center !important;
+  border-radius:var(--ui-r-sm) !important; background:#fbfaf7 !important; border-color:var(--ap-sep) !important;
+}
+.main .points-row.reward{ border-left:3px solid #6fc48f !important; }
+.main .points-row.penalty{ border-left:3px solid #ff8fa3 !important; }
+.main .points-row strong{ font-size:12px !important; color:var(--ap-text-2) !important; font-variant-numeric:tabular-nums; }
+.main .points-row em{ padding:1px 7px !important; font-size:12px !important; font-weight:var(--ui-w-bold) !important; min-width:34px; text-align:center; }
+.main .points-row p{ margin:0 !important; font-size:var(--ui-fs-sm) !important; font-weight:var(--ui-w) !important; line-height:1.35 !important; min-width:0; overflow-wrap:anywhere; }
+.main .points-row p span{ color:var(--ap-text-3); font-size:11.5px !important; }
+.main button.points-row-delete{
+  min-height:22px !important; height:22px; width:22px; min-width:22px !important; padding:0 !important; border-radius:6px !important;
+  font-size:14px !important; line-height:1 !important; color:var(--ap-text-3) !important; background:transparent !important; border-color:transparent !important;
+}
+.main button.points-row-delete:hover{ background:#fdecef !important; color:#c1355a !important; border-color:#ffc2cd !important; }
+.main button.points-more-btn{
+  align-self:flex-start; min-height:24px !important; padding:0 8px !important; font-size:11.5px !important; font-weight:var(--ui-w-med) !important;
+  background:transparent !important; border:1px dashed var(--ap-sep) !important; color:var(--ap-text-2) !important; border-radius:var(--ui-r-sm) !important;
+}
+.main button.points-more-btn:hover{ background:#f4f2ed !important; }
+
+/* 2) 자주 주는 상점 */
+.main .points-quick-block{ display:grid; gap:8px; padding:10px 12px; border-radius:var(--ui-r); background:#f6f9ff; border:1px solid #d9e6ff; }
+.main .points-quick-head{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.main .points-quick-head strong{ font-size:var(--ui-fs) !important; color:var(--ap-text) !important; }
+.main .points-quick-head span{ font-size:var(--ui-fs-sm) !important; color:var(--ap-text-2) !important; font-weight:var(--ui-w) !important; }
+.main .points-quick-row{ display:grid; grid-template-columns:auto minmax(220px,1fr) auto auto; gap:8px; align-items:center; }
+.main .points-quick-presets > button b{ font-weight:var(--ui-w-bold); margin-left:2px; color:#2f7d54; }
+.main .points-quick-presets > button.active b{ color:inherit; }
+.main input.points-quick-date{ width:auto !important; flex:0 0 150px; }
+.main button.points-quick-submit{ min-width:104px !important; white-space:nowrap; }
+
+/* 학생 다중 선택 드롭다운 */
+.main .student-multi-picker{ position:relative; min-width:0; }
+.main button.student-multi-picker-toggle{
+  width:100%; min-height:var(--ui-input) !important; padding:0 10px !important; display:flex; align-items:center; justify-content:space-between; gap:8px;
+  background:#fff !important; border:1px solid var(--ap-sep-strong) !important; color:var(--ap-text-3) !important;
+  font-weight:var(--ui-w) !important; font-size:var(--ui-fs) !important; text-align:left; border-radius:var(--ui-r-sm) !important;
+}
+.main button.student-multi-picker-toggle.has-value{ color:var(--ap-text) !important; font-weight:var(--ui-w-med) !important; border-color:var(--ap-accent) !important; }
+.main .student-multi-picker-text{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.main .student-multi-picker-toggle i{ font-style:normal; color:var(--ap-text-3); flex:0 0 auto; }
+.main .student-multi-picker-pop{
+  position:absolute; top:calc(100% + 4px); left:0; z-index:10500; width:min(360px, 92vw);
+  background:#fff; border:1px solid var(--ap-sep-strong); border-radius:var(--ui-r); box-shadow:0 12px 32px rgba(20,20,30,.16);
+  display:grid; grid-template-rows:auto 1fr auto; overflow:hidden;
+}
+.main .student-multi-picker-tools{ display:grid; grid-template-columns:1fr auto auto; gap:6px; padding:8px; border-bottom:1px solid var(--ap-sep); }
+.main .student-multi-picker-tools input{ min-height:30px !important; height:30px; font-size:12.5px !important; }
+.main .student-multi-picker-tools button{ min-height:30px !important; padding:0 9px !important; font-size:12px !important; }
+.main .student-multi-picker-list{ max-height:280px; overflow:auto; padding:4px; }
+.main .student-multi-picker-item{
+  display:grid; grid-template-columns:auto auto 1fr; gap:8px; align-items:center; padding:6px 8px; border-radius:6px; cursor:pointer; margin:0;
+  font-size:var(--ui-fs-sm); color:var(--ap-text);
+}
+.main .student-multi-picker-item:hover{ background:#f4f6fb; }
+.main .student-multi-picker-item.is-on{ background:#eef4ff; }
+.main .student-multi-picker-item input{ width:15px; height:15px; margin:0; }
+.main .student-multi-picker-item strong{ font-weight:var(--ui-w-med); }
+.main .student-multi-picker-item span{ color:var(--ap-text-3); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.main .student-multi-picker-empty{ padding:14px; text-align:center; color:var(--ap-text-3); font-size:12.5px; }
+.main .student-multi-picker-foot{ display:flex; align-items:center; justify-content:space-between; padding:6px 8px; border-top:1px solid var(--ap-sep); font-size:12px; color:var(--ap-text-2); }
+.main .student-multi-picker-foot button{ min-height:28px !important; padding:0 12px !important; font-size:12px !important; }
+
+@media (max-width:1100px){
+  .main .points-quick-row{ grid-template-columns:1fr 1fr; }
+  .main .points-quick-presets{ grid-column:1 / -1; }
+}
+@media (max-width:760px){
+  .main .points-student-group-list, .main .points-student-group-list.single{ grid-template-columns:1fr !important; }
+  .main .points-quick-row{ grid-template-columns:1fr; }
+  .main input.points-quick-date{ width:100% !important; flex:none; }
+  .main .points-student-head{ flex-wrap:wrap !important; }
+  .main .student-multi-picker-pop{ width:100%; }
+}
+/* 좁은 화면에서도 기록 줄은 날짜·점수·사유·삭제 한 줄을 유지합니다 (예전 980/760 규칙이 세로로 쌓던 것을 되돌림) */
+@media (max-width:980px){
+  .main .points-row{ grid-template-columns:auto auto minmax(0,1fr) auto !important; align-items:center !important; }
+  .main .points-row p{ grid-column:auto !important; }
+  .main button.points-row-delete{ width:22px !important; }
+}

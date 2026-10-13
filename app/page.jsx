@@ -5,6 +5,7 @@ import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { isTimeEditableEvent } from '../lib/attendanceEventTime';
 import { formatMentorNames } from '../lib/mentorAssignments';
 import { ENROLLMENT_BLOCK_LABEL, getEnrollmentBlock, formatEnrollmentBlockTitle } from '../lib/enrollmentBlock';
+import { QUICK_REWARD_PRESETS, MAX_BULK_POINT_STUDENTS, summarizeStudentNames } from '../lib/pointQuickPresets';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
@@ -16182,6 +16183,105 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   );
 }
 
+const POINTS_CARD_ROW_LIMIT = 5;
+
+// v41-269: 학생 다중 선택 드롭다운. 버튼을 누르면 체크 목록이 열리고, 바깥을 누르면 닫힙니다.
+function StudentMultiPicker({ students = [], value = [], onChange, disabled = false, placeholder = '학생 선택' }) {
+  const [open, setOpen] = useState(false);
+  const [keyword, setKeyword] = useState('');
+  const rootRef = useRef(null);
+  const selected = new Set((value || []).map(String));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onDown(event) {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    }
+    function onKey(event) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const needle = keyword.trim().toLowerCase();
+  const visible = (students || []).filter((student) => {
+    if (!needle) return true;
+    return [student.name, student.school, student.grade].filter(Boolean).join(' ').toLowerCase().includes(needle);
+  });
+  const selectedNames = (students || []).filter((student) => selected.has(String(student.id))).map((student) => student.name);
+
+  function toggle(id) {
+    const key = String(id);
+    const next = new Set(selected);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    // 학생 목록 순서를 유지한 채 돌려줍니다.
+    onChange?.((students || []).map((student) => String(student.id)).filter((sid) => next.has(sid)));
+  }
+
+  function selectVisible(on) {
+    const next = new Set(selected);
+    for (const student of visible) {
+      if (on) next.add(String(student.id)); else next.delete(String(student.id));
+    }
+    onChange?.((students || []).map((student) => String(student.id)).filter((sid) => next.has(sid)));
+  }
+
+  return (
+    <div className={`student-multi-picker${open ? ' is-open' : ''}`} ref={rootRef}>
+      <button
+        type="button"
+        className={`student-multi-picker-toggle${selectedNames.length ? ' has-value' : ''}`}
+        onClick={() => setOpen((prev) => !prev)}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="student-multi-picker-text">
+          {selectedNames.length ? `${summarizeStudentNames(selectedNames, 3)} · ${selectedNames.length}명` : placeholder}
+        </span>
+        <i aria-hidden="true">▾</i>
+      </button>
+      {open ? (
+        <div className="student-multi-picker-pop" role="listbox" aria-multiselectable="true">
+          <div className="student-multi-picker-tools">
+            <input
+              type="search"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="이름 · 학교 검색"
+              autoFocus
+            />
+            <button type="button" className="secondary" onClick={() => selectVisible(true)}>전체 선택</button>
+            <button type="button" className="secondary" onClick={() => selectVisible(false)}>해제</button>
+          </div>
+          <div className="student-multi-picker-list">
+            {visible.length ? visible.map((student) => {
+              const id = String(student.id);
+              const on = selected.has(id);
+              return (
+                <label key={id} className={`student-multi-picker-item${on ? ' is-on' : ''}`} role="option" aria-selected={on}>
+                  <input type="checkbox" checked={on} onChange={() => toggle(id)} />
+                  <strong>{student.name}</strong>
+                  <span>{[student.school, student.grade].filter(Boolean).join(' ') || '학교/학년 미입력'}</span>
+                </label>
+              );
+            }) : <div className="student-multi-picker-empty">검색 결과가 없습니다.</div>}
+          </div>
+          <div className="student-multi-picker-foot">
+            <span>{selectedNames.length}명 선택</span>
+            <button type="button" className="primary" onClick={() => setOpen(false)}>완료</button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortStudentIds = null }) {
   const today = getKstDateString();
   const week = getThisWeekRange();
@@ -16197,6 +16297,13 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ pointDate: today, pointType: 'reward', points: 1, reason: '', memo: '' });
+  // v41-269: 자주 주는 상점(모범태도/플래너) — 학생 여러 명을 골라 한 번에 기록합니다.
+  const [quickPresetKey, setQuickPresetKey] = useState(QUICK_REWARD_PRESETS[0]?.key || '');
+  const [quickStudentIds, setQuickStudentIds] = useState([]);
+  const [quickDate, setQuickDate] = useState(today);
+  const [quickSaving, setQuickSaving] = useState(false);
+  // v41-269: 학생 카드가 길어지지 않도록 기록 5건까지만 펼쳐 두고 나머지는 [더 보기]로 엽니다.
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
   // v41-137: 순점수가 기준(10점)을 초과한 학생의 상품 지급 처리 상태
   const [rewardState, setRewardState] = useState(null);
   const [rewardWorkingId, setRewardWorkingId] = useState('');
@@ -16443,6 +16550,46 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
     } finally {
       setSaving(false);
     }
+  }
+
+  // v41-269: 프리셋 상점을 선택한 학생 전원에게 한 번에 기록합니다.
+  async function submitQuickReward() {
+    const preset = QUICK_REWARD_PRESETS.find((item) => item.key === quickPresetKey);
+    if (!preset) return alert('부여할 상점 항목을 고르세요.');
+    const ids = quickStudentIds.filter((id) => activeStudents.some((student) => String(student.id) === String(id)));
+    if (!ids.length) return alert('상점을 줄 학생을 한 명 이상 선택하세요.');
+    if (ids.length > MAX_BULK_POINT_STUDENTS) return alert(`한 번에 ${MAX_BULK_POINT_STUDENTS}명까지만 기록할 수 있습니다.`);
+    const names = ids.map((id) => activeStudents.find((student) => String(student.id) === String(id))?.name || '학생');
+    const ok = confirm(`${summarizeStudentNames(names, 4)}에게 [${preset.label}] +${preset.points}점을 기록할까요?\n\n날짜: ${quickDate || today} · 총 ${ids.length}명`);
+    if (!ok) return;
+    try {
+      setQuickSaving(true);
+      const data = await apiFetch('/api/student-points', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'bulk_create',
+          presetKey: preset.key,
+          studentIds: ids,
+          pointDate: quickDate || today,
+          createdBy: currentUser?.displayName || '관리자',
+        }),
+      });
+      setMessage?.(data.message || `${preset.label} +${preset.points}점 · ${ids.length}명 기록 완료`);
+      setQuickStudentIds([]);
+      await Promise.all([loadPoints(), loadRewardState()]);
+    } catch (error) {
+      setMessage?.(error.message || '상점 일괄 기록 실패');
+    } finally {
+      setQuickSaving(false);
+    }
+  }
+
+  function toggleGroupExpanded(key) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
   }
 
   async function deletePoint(row) {
@@ -16984,8 +17131,54 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
       </div>
 
       <div className="points-form-card clean-panel">
+        {/* v41-269: 자주 주는 상점 — 항목 버튼 + 학생 다중 선택 + 날짜 → 한 번에 기록 */}
+        <div className="points-quick-block">
+          <div className="points-quick-head">
+            <strong>자주 주는 상점</strong>
+            <span>항목을 고르고 학생을 여러 명 선택해 한 번에 기록합니다.</span>
+          </div>
+          <div className="points-quick-row">
+            <div className="seg points-quick-presets" role="group" aria-label="자주 주는 상점 항목">
+              {QUICK_REWARD_PRESETS.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className={quickPresetKey === preset.key ? 'active' : ''}
+                  onClick={() => setQuickPresetKey(preset.key)}
+                >
+                  {preset.label} <b>+{preset.points}</b>
+                </button>
+              ))}
+            </div>
+            <StudentMultiPicker
+              students={activeStudents}
+              value={quickStudentIds}
+              onChange={setQuickStudentIds}
+              disabled={quickSaving}
+              placeholder="상점을 줄 학생 선택 (다중)"
+            />
+            <input
+              type="date"
+              className="points-quick-date"
+              aria-label="부여 날짜"
+              onClick={openNativePicker}
+              onFocus={openNativePicker}
+              value={quickDate}
+              onChange={(e) => setQuickDate(e.target.value)}
+            />
+            <button
+              type="button"
+              className="primary points-quick-submit"
+              onClick={submitQuickReward}
+              disabled={quickSaving || !quickStudentIds.length}
+            >
+              {quickSaving ? '기록 중...' : `${quickStudentIds.length ? `${quickStudentIds.length}명에게 ` : ''}부여`}
+            </button>
+          </div>
+        </div>
+
         <div className="points-form-head">
-          <strong>{selectedStudent ? `${selectedStudent.name} 상벌점 기록` : '학생을 선택해 상벌점을 기록하세요'}</strong>
+          <strong>{selectedStudent ? `${selectedStudent.name} 직접 입력` : '직접 입력 · 위 조회 조건에서 학생을 먼저 선택하세요'}</strong>
           <span>리포트에는 해당 날짜 또는 기간의 상벌점 요약이 자동 반영됩니다.</span>
         </div>
         <div className="points-form-grid">
@@ -17004,10 +17197,14 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
           <span>{loading ? '조회 중...' : `학생 ${pointStudentGroups.length}명 · ${rows.length}건 표시 중`}</span>
         </div>
         {pointStudentGroups.length ? (
-          <div className="points-student-group-list">
+          <div className={`points-student-group-list${pointStudentGroups.length === 1 ? ' single' : ''}`}>
             {pointStudentGroups.map((group) => {
               // v41-137: 조회 기간 합계와 별개로, 상품 지급 기준이 되는 '현재 사이클' 누적도 함께 보여줍니다.
               const cycle = rewardState?.cycles?.[String(group.key)] || null;
+              // v41-269: 카드를 격자로 좁혀 놓았으므로 기록은 5건까지만 보이고 나머지는 접습니다.
+              const expanded = expandedGroups.has(group.key);
+              const visibleItems = expanded ? group.items : group.items.slice(0, POINTS_CARD_ROW_LIMIT);
+              const hiddenCount = group.items.length - visibleItems.length;
               return (
               <section key={group.key} className="points-student-group">
                 <div className="points-student-head">
@@ -17016,31 +17213,33 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                     <span>{group.subtitle || '학교/학년 미입력'} · {group.items.length}건</span>
                   </div>
                   <div className="points-student-score">
-                    {group.reward ? <em className="reward">상점 +{group.reward}</em> : null}
-                    {group.penalty ? <em className="penalty">벌점 -{group.penalty}</em> : null}
-                    <b className={group.net >= 0 ? 'net-positive' : 'net-negative'}>순점수 {group.net > 0 ? '+' : ''}{group.net}점</b>
+                    {group.reward ? <em className="reward" title="조회 기간 상점 합계">+{group.reward}</em> : null}
+                    {group.penalty ? <em className="penalty" title="조회 기간 벌점 합계">-{group.penalty}</em> : null}
+                    <b className={group.net >= 0 ? 'net-positive' : 'net-negative'} title="조회 기간 순점수">순 {group.net > 0 ? '+' : ''}{group.net}</b>
                   </div>
                 </div>
                 {cycle ? (
                   <div className="points-cycle-line">
-                    <span>최근 지급 이후 누적 {cycle.net > 0 ? '+' : ''}{cycle.net}점</span>
-                    {cycle.grantCount ? <em>지금까지 {cycle.grantCount}회 지급</em> : <em>지급 이력 없음</em>}
-                    {cycle.lastGrant ? <i>최근 지급 {String(cycle.lastGrant.created_at || '').slice(0, 10)} · 당시 {cycle.lastGrant.net_points > 0 ? '+' : ''}{cycle.lastGrant.net_points}점</i> : null}
+                    <span>지급 이후 누적 {cycle.net > 0 ? '+' : ''}{cycle.net}점</span>
+                    {cycle.grantCount ? <em>{cycle.grantCount}회 지급</em> : <em>지급 이력 없음</em>}
+                    {cycle.lastGrant ? <i>최근 {String(cycle.lastGrant.created_at || '').slice(0, 10)}</i> : null}
                   </div>
                 ) : null}
                 <div className="points-row-list">
-                  {group.items.map((row) => (
-                    <article key={row.id} className={`points-row ${row.point_type}`}>
-                      <div>
-                        <strong>{row.point_date}</strong>
-                        {row.memo ? <span>{row.memo}</span> : null}
-                      </div>
-                      <em>{row.point_type === 'reward' ? '+' : '-'}{row.points}점</em>
-                      <p>{row.reason}</p>
-                      <button className="secondary" onClick={() => deletePoint(row)}>삭제</button>
+                  {visibleItems.map((row) => (
+                    <article key={row.id} className={`points-row ${row.point_type}`} title={row.memo ? `메모: ${row.memo}` : undefined}>
+                      <strong>{String(row.point_date || '').slice(5).replace('-', '.')}</strong>
+                      <em>{row.point_type === 'reward' ? '+' : '-'}{row.points}</em>
+                      <p>{row.reason}{row.memo ? <span> · {row.memo}</span> : null}</p>
+                      <button type="button" className="secondary points-row-delete" onClick={() => deletePoint(row)} aria-label="이 기록 삭제" title="삭제">×</button>
                     </article>
                   ))}
                 </div>
+                {hiddenCount > 0 || expanded ? (
+                  <button type="button" className="points-more-btn" onClick={() => toggleGroupExpanded(group.key)}>
+                    {expanded ? '접기' : `+${hiddenCount}건 더 보기`}
+                  </button>
+                ) : null}
               </section>
               );
             })}

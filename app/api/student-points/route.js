@@ -1,6 +1,8 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
+import { buildBulkPointRows, formatBulkPointMessage } from '../../../lib/pointQuickPresets';
+import { getKstDateString } from '../../../lib/date';
 
 export const dynamic = 'force-dynamic';
 
@@ -124,6 +126,43 @@ export async function POST(request) {
       });
 
       return Response.json({ ok: true, row: data, message: `${pointType === 'reward' ? '상점' : '벌점'} ${points}점 기록 완료` });
+    }
+
+    // v41-269: 자주 주는 상점(모범태도/플래너) 또는 같은 내용을 여러 학생에게 한 번에 기록합니다.
+    if (action === 'bulk_create') {
+      const plan = buildBulkPointRows(body, { actorName, today: getKstDateString() });
+      if (!plan.ok) return Response.json({ error: plan.error }, { status: 400 });
+
+      const { data, error } = await supabase
+        .from('student_points')
+        .insert(plan.rows)
+        .select();
+      if (error) throw error;
+
+      const inserted = data || [];
+      await writeUserActionLog(supabase, request, {
+        actionType: 'student_points.bulk_create',
+        targetType: 'student_points',
+        targetId: inserted[0]?.id || null,
+        targetName: `${plan.studentIds.length}명`,
+        payload: {
+          studentIds: plan.studentIds,
+          pointDate: plan.pointDate,
+          pointType: plan.pointType,
+          points: plan.points,
+          reason: plan.reason,
+          memo: plan.memo,
+          presetKey: body.presetKey || null,
+          rowIds: inserted.map((row) => row.id),
+        },
+      });
+
+      return Response.json({
+        ok: true,
+        rows: inserted,
+        count: inserted.length,
+        message: formatBulkPointMessage({ pointType: plan.pointType, points: plan.points, reason: plan.reason, count: inserted.length }),
+      });
     }
 
     if (action === 'delete') {
