@@ -4,7 +4,7 @@ import { requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getReportSendSettings, resolveRecipientTestMode, getRecipientTestModeSource } from '../../../lib/reportSendSettings';
 import { getNoticeLink } from '../../../lib/noticeShare';
-import { getNoticeCategory, buildNoticeKakaoVariables } from '../../../lib/noticeTemplates';
+import { getNoticeCategory, buildNoticeKakaoVariables, buildSeatNicknameVariables } from '../../../lib/noticeTemplates';
 import { normalizeNoticeAudience, getNoticeAudienceLabel, audienceIncludesParent, audienceIncludesStudent } from '../../../lib/noticeAudience';
 import { getKstDateString } from '../../../lib/date';
 
@@ -81,6 +81,79 @@ async function collectRecipients(supabase, studentIds = null, audience = 'parent
   }
 
   return recipients;
+}
+
+/**
+ * v41-271: 학생별 유형(좌석·닉네임) 수신자.
+ *
+ * 학생마다 변수가 다르므로 수신자에 variables 와 studentId 를 붙입니다.
+ * 같은 학생 안에서만 번호 중복을 제거합니다. (보호자 번호 = 학생 번호인 경우 한 통)
+ * 형제가 같은 기수면 보호자 한 번호로 학생 수만큼 나갑니다.
+ * 좌석이 없거나(미배정) 랭킹 공개 동의인데 닉네임이 없는 학생은 빠지고, 사유를 돌려줍니다.
+ */
+async function collectPerStudentRecipients(supabase, studentIds = null, audience = 'parent') {
+  if (Array.isArray(studentIds) && !studentIds.length) return { recipients: [], included: [], excluded: [] };
+  const wantParent = audienceIncludesParent(audience);
+  const wantStudent = audienceIncludesStudent(audience);
+
+  let query = supabase
+    .from('students')
+    .select('id, name, status, student_phone, default_seat_no, nickname, ranking_opt_in, student_guardians(*)')
+    .eq('status', 'active');
+  if (Array.isArray(studentIds)) query = query.in('id', studentIds);
+  const { data: students, error } = await query;
+  if (error) throw error;
+
+  const recipients = [];
+  const included = [];
+  const excluded = [];
+  const sorted = [...(students || [])].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+
+  for (const student of sorted) {
+    const plan = buildSeatNicknameVariables(student);
+    if (!plan.ok) {
+      excluded.push({ studentId: student.id, name: student.name || '학생', reason: plan.reason });
+      continue;
+    }
+    const seen = new Set();
+    let count = 0;
+    if (wantParent) {
+      const guardians = Array.isArray(student.student_guardians) ? student.student_guardians : [];
+      for (const g of guardians) {
+        if (g.is_active === false) continue;
+        if (g.receive_daily_report === false) continue;
+        const phone = normalizePhone(g.phone);
+        if (!phone || seen.has(phone)) continue;
+        seen.add(phone);
+        recipients.push({
+          name: g.guardian_name || `${student.name || '학생'} 보호자`, phone, role: 'parent',
+          studentId: String(student.id), studentName: student.name || '학생', variables: plan.variables,
+        });
+        count += 1;
+      }
+    }
+    if (wantStudent) {
+      const phone = normalizePhone(student.student_phone);
+      if (phone && !seen.has(phone)) {
+        seen.add(phone);
+        recipients.push({
+          name: student.name || '학생', phone, role: 'student',
+          studentId: String(student.id), studentName: student.name || '학생', variables: plan.variables,
+        });
+        count += 1;
+      }
+    }
+    if (!count) {
+      excluded.push({ studentId: student.id, name: student.name || '학생', reason: wantParent ? '수신 동의 보호자 연락처 없음' : '학생 연락처 없음' });
+      continue;
+    }
+    included.push({
+      studentId: student.id, name: student.name || '학생',
+      seat: plan.variables['#{좌석번호}'], nickname: plan.variables['#{닉네임}'], recipientCount: count,
+    });
+  }
+
+  return { recipients, included, excluded };
 }
 
 function countByRole(recipients = []) {
@@ -163,7 +236,14 @@ export async function POST(request) {
     // v41-244: 학부모 / 학생 / 둘 다 중에서 고릅니다. 값이 없으면 예전처럼 학부모입니다.
     const audience = normalizeNoticeAudience(body.audience);
     const audienceLabel = getNoticeAudienceLabel(audience);
-    const recipients = await collectRecipients(supabase, cohortStudentIds, audience);
+    const category = notice.category || 'operating_rules';
+    const cat = getNoticeCategory(category);
+    const isFields = cat.input === 'fields';
+    const isPerStudent = cat.input === 'per_student';
+
+    // v41-271: 학생별 유형은 학생마다 다른 변수를 붙여 모읍니다.
+    const perStudent = isPerStudent ? await collectPerStudentRecipients(supabase, cohortStudentIds, audience) : null;
+    const recipients = isPerStudent ? perStudent.recipients : await collectRecipients(supabase, cohortStudentIds, audience);
     const { parentCount, studentCount } = countByRole(recipients);
     const studentsWithoutPhone = audienceIncludesStudent(audience)
       ? await countStudentsWithoutPhone(supabase, cohortStudentIds)
@@ -173,15 +253,14 @@ export async function POST(request) {
     const testMode = resolveRecipientTestMode(sendSettings?.settings || sendSettings || {}, String(process.env.KAKAO_RECIPIENT_TEST_MODE || '').toLowerCase() === 'true');
     const testModeSource = getRecipientTestModeSource(sendSettings?.settings || sendSettings || {});
 
-    const category = notice.category || 'operating_rules';
-    const cat = getNoticeCategory(category);
-    const isFields = cat.input === 'fields';
     const templateData = notice.template_data || {};
 
-    // 링크형: 웹링크 필요 / 필드형: 항목값(기간·사유·내용) 필요
-    const link = isFields ? '' : getNoticeLink(request, notice);
+    // 링크형: 웹링크 필요 / 필드형: 항목값(기간·사유·내용) 필요 / 학생별: 보낼 학생이 1명 이상
+    const link = (isFields || isPerStudent) ? '' : getNoticeLink(request, notice);
     const missingFields = isFields ? cat.fields.filter((f) => !String(templateData[f.key] || '').trim()) : [];
-    const contentReady = isFields ? missingFields.length === 0 : Boolean(link);
+    const contentReady = isPerStudent
+      ? recipients.length > 0
+      : (isFields ? missingFields.length === 0 : Boolean(link));
 
     // 미리보기: 실제 발송 없이 대상 수/모드만 반환
     if (previewOnly) {
@@ -194,6 +273,7 @@ export async function POST(request) {
         cohortName: cohort?.name || '',
         scopeLabel,
         cohortStudentCount: Array.isArray(cohortStudentIds) ? cohortStudentIds.length : null,
+        perStudent: perStudent ? { included: perStudent.included, excluded: perStudent.excluded } : null,
       });
     }
 
@@ -207,13 +287,19 @@ export async function POST(request) {
     }
     if (!contentReady) {
       return Response.json({
-        error: isFields
-          ? `발송 항목이 비어 있습니다: ${missingFields.map((f) => f.label).join(', ')}`
-          : '공지 링크를 만들 수 없습니다. 본문을 저장했는지, 또는 외부 URL이 올바른지 확인하세요.',
+        error: isPerStudent
+          ? '보낼 수 있는 학생이 없습니다. 좌석번호·닉네임과 보호자 연락처를 확인하세요.'
+          : isFields
+            ? `발송 항목이 비어 있습니다: ${missingFields.map((f) => f.label).join(', ')}`
+            : '공지 링크를 만들 수 없습니다. 본문을 저장했는지, 또는 외부 URL이 올바른지 확인하세요.',
       }, { status: 400 });
     }
 
-    const kakaoVariables = buildNoticeKakaoVariables(cat.key, { link, title: notice.title, data: templateData });
+    // 학생별 유형의 공용 변수는 첫 학생 값으로 둡니다. (테스트 수신번호 모드에서 변수가 비지 않도록)
+    const kakaoVariables = buildNoticeKakaoVariables(cat.key, {
+      link, title: notice.title, data: templateData,
+      sample: isPerStudent ? recipients[0]?.variables : null,
+    });
 
     const payload = {
       reportType: 'notice',
@@ -235,6 +321,7 @@ export async function POST(request) {
       },
       cohortId: cohort?.id || null,
       cohortName: cohort?.name || '',
+      allowDuplicateRecipients: isPerStudent,
       // 대상이 달라지면 다른 발송입니다. (학부모에게 보낸 뒤 학생에게도 보낼 수 있어야 합니다)
       idempotencyKey: `notice:${notice.id}:${cohort?.id || 'all'}:${audience}:${actualSend ? 'live' : 'test'}:${recipients.length}`,
     };
@@ -243,7 +330,9 @@ export async function POST(request) {
 
     // 실제 발송이 접수되면 공지 상태 갱신 (발송 대상 스냅샷 포함 — 번호는 마스킹 저장)
     if (actualSend && result.ok) {
-      const recipientSnapshot = recipients.map((r) => ({ name: r.name, phone: maskPhone(r.phone), role: r.role || 'parent' }));
+      const recipientSnapshot = recipients.map((r) => ({
+        name: r.studentName ? `${r.studentName} · ${r.name}` : r.name, phone: maskPhone(r.phone), role: r.role || 'parent',
+      }));
       await supabase.from('notices').update({
         status: 'sent',
         sent_at: new Date().toISOString(),
@@ -263,6 +352,7 @@ export async function POST(request) {
           cohortName: cohort?.name || '',
           scopeLabel,
           recipients: recipientSnapshot,
+          perStudent: perStudent ? { includedCount: perStudent.included.length, excluded: perStudent.excluded } : null,
         },
       }).eq('id', notice.id);
     }
@@ -295,6 +385,7 @@ export async function POST(request) {
       cohortName: cohort?.name || '',
       scopeLabel,
       link,
+      perStudent: perStudent ? { included: perStudent.included, excluded: perStudent.excluded } : null,
       recipientStats: result.recipientStats,
       recipientPolicy: result.recipientPolicy,
     });

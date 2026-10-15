@@ -44,7 +44,9 @@ export async function POST(request) {
     const externalUrl = String(body.externalUrl || '').trim() || null;
     const content = String(body.body || '').trim() || null;
 
-    if (cat.input === 'fields') {
+    if (cat.input === 'per_student') {
+      // v41-271: 학생별 유형(좌석·닉네임)은 본문도 링크도 없습니다. 학생 정보에서 채웁니다.
+    } else if (cat.input === 'fields') {
       // 링크 없이 항목값(기간/사유/내용)을 알림톡 본문에 직접 표기하는 유형
       const missing = cat.fields.filter((f) => !String(templateData[f.key] || '').trim());
       if (missing.length) {
@@ -65,8 +67,8 @@ export async function POST(request) {
 
     const payload = {
       title,
-      body: cat.input === 'fields' ? null : content,
-      external_url: cat.input === 'fields' ? null : externalUrl,
+      body: cat.input === 'link' ? content : null,
+      external_url: cat.input === 'link' ? externalUrl : null,
       category: cat.key,
       template_data: cat.input === 'fields' ? templateData : null,
       updated_at: new Date().toISOString(),

@@ -20897,6 +20897,8 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 
   const activeCategory = getNoticeCategory(form.category);
   const isFields = activeCategory.input === 'fields';
+  // v41-271: 학생별 유형(좌석·닉네임) — 본문·링크 없이 학생 정보에서 변수를 채웁니다.
+  const isPerStudent = activeCategory.input === 'per_student';
 
   async function loadNotices() {
     try {
@@ -20920,7 +20922,9 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 
   async function saveNotice() {
     if (!form.title.trim()) { setMessage('공지 제목(내부 관리용)을 입력하세요.'); return; }
-    if (isFields) {
+    if (isPerStudent) {
+      // 입력할 본문이 없습니다. 제목만 있으면 저장합니다.
+    } else if (isFields) {
       const missing = activeCategory.fields.filter((f) => !String(form.templateData[f.key] || '').trim());
       if (missing.length) { setMessage(`다음 항목을 입력하세요: ${missing.map((f) => f.label).join(', ')}`); return; }
     } else {
@@ -20933,8 +20937,8 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
         id: form.id || undefined,
         title: form.title,
         category: form.category,
-        body: (!isFields && mode === 'inapp') ? form.body : '',
-        externalUrl: (!isFields && mode === 'external') ? form.externalUrl : '',
+        body: (!isFields && !isPerStudent && mode === 'inapp') ? form.body : '',
+        externalUrl: (!isFields && !isPerStudent && mode === 'external') ? form.externalUrl : '',
         templateData: isFields ? form.templateData : undefined,
       };
       const d = await apiFetch('/api/notices', { method: 'POST', body: JSON.stringify(payload) });
@@ -20942,7 +20946,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
       setPublicUrl(d.notice.publicUrl || '');
       setConfirm(null); setConfirmChecked(false);
       await loadNotices();
-      setMessage(isFields ? '공지를 저장했습니다. 발송을 진행하세요.' : '공지를 저장했습니다. 링크를 확인하고 발송을 진행하세요.');
+      setMessage((isFields || isPerStudent) ? '공지를 저장했습니다. 발송을 진행하세요.' : '공지를 저장했습니다. 링크를 확인하고 발송을 진행하세요.');
     } catch (e) { setMessage(e.message); } finally { setSaving(false); }
   }
 
@@ -20970,6 +20974,8 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
         audienceLabel: d.audienceLabel || '학부모',
         parentCount: d.parentCount, studentCount: d.studentCount,
         studentsWithoutPhone: d.studentsWithoutPhone || 0,
+        // v41-271: 학생별 유형 — 보낼 학생(좌석·닉네임)과 빠지는 학생(사유)
+        perStudent: d.perStudent || null,
       });
       setConfirmChecked(false);
     } catch (e) { setMessage(e.message); } finally { setSending(false); }
@@ -21036,10 +21042,20 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
       <h4>2) 공지 작성</h4>
       <div className="field">
         <label>공지 제목 <span className="hint" style={{ fontWeight: 400 }}>(내부 관리·링크 페이지 제목용)</span></label>
-        <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={isFields ? '예: 8월 운영시간 변동' : '예: 2026 썸머스쿨 운영규정 안내'} maxLength={60} />
+        <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={isPerStudent ? '예: 3기 좌석·닉네임 안내' : isFields ? '예: 8월 운영시간 변동' : '예: 2026 썸머스쿨 운영규정 안내'} maxLength={60} />
       </div>
 
-      {isFields ? (
+      {isPerStudent ? (
+        <div className="call field" style={{ marginTop: 0 }}>
+          <b>입력할 본문이 없습니다.</b>
+          <p style={{ margin: '4px 0 0', fontSize: 12.5, lineHeight: 1.5 }}>
+            학생마다 <b>학생 정보의 기본 좌석번호</b>와 <b>닉네임</b>이 변수로 들어가 각각 다른 알림톡이 나갑니다.
+            좌석이 미배정이거나, 랭킹 공개에 동의했는데 닉네임이 비어 있는 학생은 발송에서 빠지고 [발송 준비]에서 사유가 표시됩니다.
+            랭킹 공개에 동의하지 않은 학생의 닉네임 칸에는 &quot;비공개 (랭킹에 ♥♥♥로 표기)&quot;가 들어갑니다.
+            닉네임이 비어 있으면 설정 › 학생 관리의 [닉네임 일괄 배정]을 먼저 쓰세요.
+          </p>
+        </div>
+      ) : isFields ? (
         <>
           {activeCategory.fields.map((f) => (
             <div className="field" key={f.key}>
@@ -21089,7 +21105,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
         <button className="secondary" onClick={resetForm}>새 공지</button>
       </div>
 
-      {!isFields && publicUrl ? (
+      {!isFields && !isPerStudent && publicUrl ? (
         <div className="notice-link-box" style={{ marginTop: 10 }}>
           <div className="hint" style={{ marginBottom: 4 }}>발송될 링크</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -21116,7 +21132,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
         <div className="call warn notice-audience-note" style={{ marginTop: 8 }}>
           <b>학생에게 보내기 전에 확인하세요</b>
           <p style={{ margin: '4px 0 0', fontSize: 12.5, lineHeight: 1.5 }}>
-            카카오 알림톡 본문은 심사받은 그대로만 나갑니다. 지금 등록된 세 템플릿은 모두
+            카카오 알림톡 본문은 심사받은 그대로만 나갑니다. 등록된 공지 템플릿은 모두
             <b> &quot;안녕하세요, 학부모님.&quot;</b>으로 시작합니다. 학생에게도 그 문구 그대로 갑니다.
             학생용 문구가 따로 필요하시면 학생용 템플릿을 별도로 심사받아야 합니다.
           </p>
@@ -21145,8 +21161,27 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
               ⚠️ 학생 연락처가 없는 학생 <b>{confirm.studentsWithoutPhone}명</b>은 대상에서 빠집니다. 학생 관리에서 연락처를 채우면 다음 발송부터 포함됩니다.
             </p>
           ) : null}
-          {confirm.testMode ? <p>현재 <b>테스트 수신번호 모드</b>입니다. 실제 학부모가 아니라 설정된 테스트 번호로만 발송됩니다. (실전 발송하려면 설정 › 리포트 발송 설정에서 테스트 모드를 끄세요.)</p> : null}
-          {!confirm.hasLink ? <p style={{ color: 'var(--ap-attn-text,#c0392b)' }}>⚠️ {confirm.input === 'fields' ? '발송 항목(기간·사유·내용)이 비어 있습니다. 저장 후 다시 시도하세요.' : '링크가 없습니다. 본문 저장 또는 외부 URL을 확인하세요.'}</p> : null}
+          {confirm.perStudent ? (
+            <div className="notice-per-student" style={{ margin: '6px 0 4px' }}>
+              <p style={{ margin: '0 0 4px' }}>보낼 학생 <b>{confirm.perStudent.included?.length || 0}명</b>{confirm.perStudent.excluded?.length ? ` · 빠지는 학생 ${confirm.perStudent.excluded.length}명` : ''}</p>
+              {confirm.perStudent.included?.length ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                  {confirm.perStudent.included.map((row) => (
+                    <span key={row.studentId} className="hint" style={{ background: 'var(--ap-surface-3,#f0f0f3)', borderRadius: 8, padding: '3px 9px' }}>
+                      <b>{row.name}</b> · {row.seat} · {row.nickname}{row.recipientCount > 1 ? ` · ${row.recipientCount}통` : ''}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {confirm.perStudent.excluded?.length ? (
+                <p style={{ margin: 0, color: 'var(--ap-attn-text,#c0392b)', fontSize: 12.5, lineHeight: 1.5 }}>
+                  ⚠️ 빠지는 학생: {confirm.perStudent.excluded.map((row) => `${row.name}(${row.reason})`).join(', ')} — 학생 정보를 채우면 다음 발송부터 포함됩니다.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {confirm.testMode ? <p>현재 <b>테스트 수신번호 모드</b>입니다. 실제 학부모가 아니라 설정된 테스트 번호로만 발송됩니다. (실전 발송하려면 설정 › 리포트 발송 설정에서 테스트 모드를 끄세요.){confirm.perStudent ? ' 테스트 번호로는 첫 학생의 좌석·닉네임이 견본으로 나갑니다.' : ''}</p> : null}
+          {!confirm.hasLink ? <p style={{ color: 'var(--ap-attn-text,#c0392b)' }}>⚠️ {confirm.perStudent ? '보낼 수 있는 학생이 없습니다. 좌석번호·닉네임·보호자 연락처를 확인하세요.' : confirm.input === 'fields' ? '발송 항목(기간·사유·내용)이 비어 있습니다. 저장 후 다시 시도하세요.' : '링크가 없습니다. 본문 저장 또는 외부 URL을 확인하세요.'}</p> : null}
           {!confirm.testMode ? (
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0', fontWeight: 700 }}>
               <input type="checkbox" checked={confirmChecked} onChange={(e) => setConfirmChecked(e.target.checked)} />
