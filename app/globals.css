@@ -19395,3 +19395,51 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 
 /* v41-269.1: 자주 주는 상점이 독립 카드로 맨 위에 옵니다 */
 .main .points-quick-block{ padding:12px !important; }
+
+/* ═══════════════════════════════════════════════════════════════
+   v41-272 공지사항 발송 독립 메뉴 + 카카오톡 수신 화면 미리보기
+   ═══════════════════════════════════════════════════════════════ */
+.main .notice-preview-block{ display:grid; gap:8px; margin:10px 0 14px; }
+.main .notice-preview-head{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.main .notice-preview-head strong{ font-size:var(--ui-fs) !important; }
+.main .notice-preview-head span{ font-size:var(--ui-fs-sm) !important; color:var(--ap-text-2); font-weight:var(--ui-w) !important; }
+.main .kakao-preview{
+  background:#b2c7d9; border-radius:var(--ui-r); padding:14px 14px 10px; max-width:560px;
+  font-family:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+}
+.main .kakao-preview-date{ display:flex; justify-content:center; margin:0 0 12px; }
+.main .kakao-preview-date span{ background:rgba(0,0,0,.12); color:#2b3a48; font-size:11.5px; padding:3px 12px; border-radius:999px; }
+.main .kakao-preview-row{ display:flex; gap:9px; align-items:flex-start; }
+.main .kakao-preview-avatar{ flex:0 0 40px; width:40px; height:40px; border-radius:16px; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+.main .kakao-preview-col{ min-width:0; flex:1; }
+.main .kakao-preview-channel{ font-size:12.5px; color:#2b3a48; margin:0 0 5px 2px; }
+.main .kakao-preview-bubble-wrap{ display:flex; align-items:flex-end; gap:6px; }
+.main .kakao-preview-bubble{
+  width:min(300px, 100%); background:#fff; border-radius:4px 14px 14px 14px; overflow:hidden;
+  box-shadow:0 1px 2px rgba(0,0,0,.1); border:1px solid rgba(0,0,0,.04);
+}
+.main .kakao-preview-head{
+  background:#fae100; color:#1f1f1f; font-size:13px; font-weight:700; padding:9px 12px;
+  display:flex; align-items:center; justify-content:space-between; position:relative;
+}
+.main .kakao-preview-badge{
+  font-style:normal; font-size:9.5px; font-weight:700; color:#fae100; background:#1f1f1f;
+  width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  position:absolute; right:10px; top:-12px; box-shadow:0 1px 3px rgba(0,0,0,.25);
+}
+.main .kakao-preview-body{
+  padding:12px 12px 13px; font-size:13.5px; line-height:1.55; color:#1f1f1f; white-space:pre-wrap; overflow-wrap:anywhere;
+}
+.main .kakao-preview-body .kakao-var{ font-weight:600; }
+.main .kakao-preview-body .kakao-var-empty{ background:#fff3b0; color:#6b5300; border-radius:3px; padding:0 2px; font-weight:600; }
+.main .kakao-preview-time{ font-size:11px; color:#4a5a6a; white-space:nowrap; padding-bottom:4px; }
+.main .kakao-preview-caption{ text-align:center; font-size:11.5px; color:#3b4b5a; margin-top:10px; }
+.main .notice-template-raw summary{ cursor:pointer; font-weight:var(--ui-w-med); font-size:var(--ui-fs-sm); color:var(--ap-text-2); }
+.main .notice-template-raw pre{
+  white-space:pre-wrap; word-break:break-word; background:var(--ap-surface-3,#f0f0f3); border-radius:10px;
+  padding:10px 12px; margin-top:8px; font-size:12.5px; line-height:1.5;
+}
+@media (max-width:760px){
+  .main .kakao-preview{ max-width:none; padding:12px 10px 8px; }
+  .main .kakao-preview-bubble{ width:100%; }
+}

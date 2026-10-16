@@ -29,8 +29,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  // 공지 작성/저장은 설정(총괄관리자) 권한으로 제한
-  const denied = requireTabPermission(request, 'settings');
+  // v41-272: 공지사항 발송은 독립 메뉴입니다. 메뉴 권한이 있는 사용자 누구나 작성·발송합니다.
+  const denied = requireTabPermission(request, 'notices');
   if (denied) return denied;
   try {
     const body = await request.json();
@@ -110,7 +110,7 @@ export async function POST(request) {
 }
 
 export async function DELETE(request) {
-  const denied = requireTabPermission(request, 'settings');
+  const denied = requireTabPermission(request, 'notices');
   if (denied) return denied;
   try {
     const body = await request.json();

@@ -215,7 +215,7 @@ async function callWebhook(payload) {
 }
 
 export async function POST(request) {
-  const denied = requireTabPermission(request, 'settings');
+  const denied = requireTabPermission(request, 'notices');
   if (denied) return denied;
 
   try {

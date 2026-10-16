@@ -20,7 +20,7 @@ import { normalizePlannerRotation, turnPlannerRotation, isPlannerRotationSideway
 import { FOCUS_MAX, FOCUS_LABELS, normalizeFocusRating, getFocusLabel, summarizeFocusRatings } from '../lib/focusRating';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
-import { NOTICE_CATEGORIES, getNoticeCategory } from '../lib/noticeTemplates';
+import { NOTICE_CATEGORIES, getNoticeCategory, SEAT_NICKNAME_SAMPLE_VARIABLES } from '../lib/noticeTemplates';
 import { NOTICE_AUDIENCES, DEFAULT_NOTICE_AUDIENCE, getNoticeAudience } from '../lib/noticeAudience';
 import { buildConfirmDetail, summarizeConfirmDetail } from '../lib/scheduleConfirmView';
 import { MENTORING_DAY_OPTIONS, FALLBACK_MENTORING_POLICY, normalizeMentoringPolicy, getSelectableMentoringDays, formatMentoringDays } from '../lib/mentoringPolicy';
@@ -146,6 +146,7 @@ const TABS = [
   ['mentoring', '멘토링 시간표'],
   ['attention', '관리주의 이력'],
   ['blockedStudents', '등록불가 학생'],
+  ['notices', '공지사항 발송'],
   ['settings', '설정'],
 ];
 
@@ -162,6 +163,7 @@ const USER_PERMISSION_TABS = [
   ['mentoring', '멘토링 시간표'],
   ['attention', '관리주의 이력'],
   ['blockedStudents', '등록불가 학생'],
+  ['notices', '공지사항 발송'],
 ];
 
 const USER_ROLE_LABELS = {
@@ -6319,6 +6321,11 @@ export default function Page() {
 
         {isActiveTabAllowed && activeTab === 'blockedStudents' ? (
           <BlockedStudentsTab apiFetch={apiFetch} />
+        ) : null}
+
+        {/* v41-272: 공지사항 발송을 설정에서 독립 메뉴로 뺐습니다. 모든 사용자에게 기본으로 보입니다. */}
+        {isActiveTabAllowed && activeTab === 'notices' ? (
+          <NoticeBroadcastTab apiFetch={apiFetch} setMessage={setMessage} />
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'settings' ? (
@@ -20882,6 +20889,50 @@ function MentoringBaseSettingsTab({ students = [], apiFetch, setMessage, default
   );
 }
 
+// v41-272: 카카오톡 알림톡 수신 화면을 흉내 낸 미리보기.
+// 템플릿 본문에 변수 값을 채워 넣어, 학부모가 받게 될 모양 그대로 보여 줍니다.
+// 채워지지 않은 변수(#{…})는 노란 바탕으로 남겨 둡니다.
+function fillKakaoTemplate(text, variables = {}) {
+  return String(text || '').split(/(#\{[^}]+\})/g).map((part, index) => {
+    if (/^#\{[^}]+\}$/.test(part)) {
+      const value = variables[part];
+      return value !== undefined && value !== null && String(value) !== ''
+        ? <b key={index} className="kakao-var">{String(value)}</b>
+        : <mark key={index} className="kakao-var-empty">{part}</mark>;
+    }
+    return <Fragment key={index}>{part}</Fragment>;
+  });
+}
+
+function KakaoAlimtalkPreview({ text, variables = {}, channelName = '목동유쌤영어학원', dateLabel = '', timeLabel = '', caption = '' }) {
+  const now = new Date();
+  const date = dateLabel || `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일`;
+  const hour = now.getHours();
+  const time = timeLabel || `${hour < 12 ? '오전' : '오후'} ${hour % 12 || 12}:${String(now.getMinutes()).padStart(2, '0')}`;
+  return (
+    <div className="kakao-preview">
+      <div className="kakao-preview-date"><span>{date}</span></div>
+      <div className="kakao-preview-row">
+        <div className="kakao-preview-avatar" aria-hidden="true" />
+        <div className="kakao-preview-col">
+          <div className="kakao-preview-channel">{channelName}</div>
+          <div className="kakao-preview-bubble-wrap">
+            <div className="kakao-preview-bubble">
+              <div className="kakao-preview-head">
+                <span>알림톡 도착</span>
+                <i className="kakao-preview-badge" aria-hidden="true">kakao</i>
+              </div>
+              <div className="kakao-preview-body">{fillKakaoTemplate(text, variables)}</div>
+            </div>
+            <span className="kakao-preview-time">{time}</span>
+          </div>
+        </div>
+      </div>
+      {caption ? <div className="kakao-preview-caption">{caption}</div> : null}
+    </div>
+  );
+}
+
 function NoticeBroadcastTab({ apiFetch, setMessage }) {
   const [notices, setNotices] = useState([]);
   const [form, setForm] = useState({ id: null, title: '', body: '', externalUrl: '', category: 'operating_rules', templateData: {} });
@@ -20899,6 +20950,24 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
   const isFields = activeCategory.input === 'fields';
   // v41-271: 학생별 유형(좌석·닉네임) — 본문·링크 없이 학생 정보에서 변수를 채웁니다.
   const isPerStudent = activeCategory.input === 'per_student';
+
+  // v41-272: 유형별 미리보기에 넣을 변수 값. 입력한 값이 있으면 그 값을, 없으면 예시를 씁니다.
+  const previewVariables = useMemo(() => {
+    if (isPerStudent) return { ...SEAT_NICKNAME_SAMPLE_VARIABLES, '#{학생이름}': '김민준', '#{좌석번호}': '26번', '#{닉네임}': '야무짐' };
+    if (isFields) {
+      const out = {};
+      for (const f of activeCategory.fields) {
+        const typed = String(form.templateData?.[f.key] || '').trim();
+        out[f.kakao] = typed || String(f.placeholder || '').replace(/^예:\s*/, '');
+      }
+      return out;
+    }
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return {
+      '#{링크}': publicUrl || (mode === 'external' && form.externalUrl.trim() ? form.externalUrl.trim() : `${origin}/n/예시링크`),
+      '#{공지제목}': form.title || '공지 제목',
+    };
+  }, [isPerStudent, isFields, activeCategory, form.templateData, form.title, form.externalUrl, mode, publicUrl]);
 
   async function loadNotices() {
     try {
@@ -21011,7 +21080,12 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 
   return (
     <section className="content-card notice-broadcast-tab">
-      <h2>공지사항 발송</h2>
+      <div className="section-head">
+        <div>
+          <h2>공지사항 발송</h2>
+          <p>공지 유형을 고르면 바로 아래에 학부모가 받게 될 카카오톡 화면이 보입니다. 작성 후 [발송 준비]로 대상을 확인하고 보냅니다.</p>
+        </div>
+      </div>
       <p>공지를 작성하면 카카오 알림톡으로 발송합니다. 받는 사람은 <b>학부모 · 학생 · 둘 다</b> 중에서 고를 수 있습니다. 학부모는 <b>활성 학생의 수신 동의 보호자</b>, 학생은 <b>학생 본인 연락처</b> 기준이며, 테스트 수신번호 모드·Allowlist 설정이 그대로 적용됩니다.</p>
       <div className="call note" style={{ marginTop: 4 }}>
         <b>준비물</b>
@@ -21032,9 +21106,22 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
       </div>
       <div className="call field" style={{ marginTop: 0 }}>
         <p style={{ margin: 0 }}>{activeCategory.desc}</p>
-        <details style={{ marginTop: 8 }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 800, fontSize: 13 }}>SOLAPI 등록용 템플릿 예시 (복사)</summary>
-          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'var(--ap-surface-3,#f0f0f3)', borderRadius: 10, padding: '10px 12px', marginTop: 8, fontSize: 12.5, lineHeight: 1.5 }}>{activeCategory.sample}</pre>
+      </div>
+
+      {/* v41-272: 고른 유형의 발송 예시를 카카오톡 수신 화면처럼 바로 보여 줍니다 */}
+      <div className="notice-preview-block">
+        <div className="notice-preview-head">
+          <strong>발송 예시 · {activeCategory.label}</strong>
+          <span>학부모 카카오톡에 이렇게 도착합니다. 변수 자리에는 {isPerStudent ? '학생별 실제 값' : isFields ? '아래에 입력한 값' : '저장 후 만들어지는 링크'}이 들어갑니다.</span>
+        </div>
+        <KakaoAlimtalkPreview
+          text={activeCategory.sample}
+          variables={previewVariables}
+          caption="미리보기는 실제 단말기와 차이가 있을 수 있습니다."
+        />
+        <details className="notice-template-raw">
+          <summary>SOLAPI 등록용 템플릿 원문 (복사)</summary>
+          <pre>{activeCategory.sample}</pre>
           <div className="hint" style={{ marginTop: 6 }}>변수: {activeCategory.kakaoVars.join(', ')} · 환경변수: <span className="path">{(activeCategory.templateIdEnvs || [])[0]}</span></div>
         </details>
       </div>
@@ -21252,13 +21339,14 @@ function SettingsTab({
     if (settingsView === 'users' && !canUseUserManagement) setSettingsView('students');
     // v41-219: 설문 시간표 일괄 등록은 학생 시간표 메뉴로 옮겼습니다.
     if (settingsView === 'scheduleImport') setSettingsView('students');
+    // v41-272: 공지사항 발송은 왼쪽 메뉴의 독립 항목으로 옮겼습니다.
+    if (settingsView === 'notice') setSettingsView('students');
   }, [settingsView, canUseUserManagement, setSettingsView]);
   return (
     <section className="settings-shell settings-structured-shell">
       <div className="settings-tabs clean-panel">
         <button className={settingsView === 'students' ? 'active' : ''} onClick={() => setSettingsView('students')}>학생 관리</button>
         {canUseUserManagement ? <button className={settingsView === 'users' ? 'active' : ''} onClick={() => setSettingsView('users')}>유저 관리</button> : null}
-        <button className={settingsView === 'notice' ? 'active' : ''} onClick={() => setSettingsView('notice')}>공지사항 발송</button>
         <button className={settingsView === 'integrity' ? 'active' : ''} onClick={() => setSettingsView('integrity')}>좌석 데이터 점검</button>
         <button className={settingsView === 'system' ? 'active' : ''} onClick={() => setSettingsView('system')}>시스템 점검</button>
         <button className={settingsView === 'send' ? 'active' : ''} onClick={() => setSettingsView('send')}>리포트 발송 설정</button>
@@ -21281,10 +21369,6 @@ function SettingsTab({
 
       {settingsView === 'users' && canUseUserManagement ? (
         <UserManagementTab apiFetch={apiFetch} setMessage={setMessage} />
-      ) : null}
-
-      {settingsView === 'notice' ? (
-        <NoticeBroadcastTab apiFetch={apiFetch} setMessage={setMessage} />
       ) : null}
 
       {settingsView === 'integrity' ? (
