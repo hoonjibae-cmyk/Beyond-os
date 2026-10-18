@@ -6,6 +6,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { formatSpecialDate, SPECIAL_TYPE_LABELS } from '../../../lib/specialScheduleParse';
 import { getSelfStudyWindow, describeSelfStudyWindows } from '../../../lib/selfStudyHours';
+import { buildShiftDescription } from '../../../lib/scheduleNoteReason';
 
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const DAY_LABELS = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
@@ -39,14 +40,16 @@ function describeSpecial(item) {
 // v41-199: 기본 시간표보다 늦게 오거나 일찍 가는 요일은 그 사유를 함께 보여 줍니다.
 // 사유가 안 보이면 학부모가 "왜 20:30이지?" 하고 맞는지 판단할 수 없습니다.
 // 기준 시간표를 못 받은 예전 링크에서도 사유만은 그대로 보여 줍니다.
+// v41-273: 늦은 등원·이른 하원이 같은 날 있으면 메모를 나눠 각 사유로 붙입니다. (lib/scheduleNoteReason)
 function describeShift(day, base) {
   if (!day || day.absent) return '';
-  const parts = [];
-  if (base?.checkIn && day.checkIn && day.checkIn > base.checkIn) parts.push(`늦은 등원 (기준 ${base.checkIn})`);
-  if (base?.checkOut && day.checkOut && day.checkOut < base.checkOut) parts.push(`이른 하원 (기준 ${base.checkOut})`);
-  const note = String(day.note || '').trim();
-  if (note) parts.push(note);
-  return parts.join(' · ');
+  const lateIn = Boolean(base?.checkIn && day.checkIn && day.checkIn > base.checkIn);
+  const earlyOut = Boolean(base?.checkOut && day.checkOut && day.checkOut < base.checkOut);
+  return buildShiftDescription({
+    lateIn, earlyOut, note: day.note,
+    inLabel: `늦은 등원 (기준 ${base?.checkIn || ''})`,
+    outLabel: `이른 하원 (기준 ${base?.checkOut || ''})`,
+  });
 }
 
 export default function ConfirmForm({

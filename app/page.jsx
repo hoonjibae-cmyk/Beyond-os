@@ -6,6 +6,7 @@ import { isTimeEditableEvent } from '../lib/attendanceEventTime';
 import { formatMentorNames } from '../lib/mentorAssignments';
 import { ENROLLMENT_BLOCK_LABEL, getEnrollmentBlock, formatEnrollmentBlockTitle } from '../lib/enrollmentBlock';
 import { QUICK_REWARD_PRESETS, MAX_BULK_POINT_STUDENTS, summarizeStudentNames } from '../lib/pointQuickPresets';
+import { AUTO_SCHEDULE_NOTE_PATTERN, resolveAbsenceReasons, SCHEDULE_NOTE_HELP } from '../lib/scheduleNoteReason';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
@@ -1150,12 +1151,18 @@ const SESSION_RECHECK_MS = 3 * 60 * 1000;
 // 그래서 화면이 "부재_비욘드2기 설문 응답 기준 자동 등록"으로 읽혀
 // 무엇 때문에 비는 구간인지 알 수 없었습니다.
 // 이제 늦은 등원인지 이른 하원인지를 그대로 적고, 사람이 쓴 메모만 덧붙입니다.
-const AUTO_SCHEDULE_NOTE_PATTERN = /(자동\s*등록|일괄\s*생성|기본\s*시간표|학부모\s*확인\s*시간표|설문\s*응답)/;
-function formatAbsenceLabel(kind, scheduleNote) {
+// (AUTO_SCHEDULE_NOTE_PATTERN 은 lib/scheduleNoteReason.js 로 옮겼습니다)
+//
+// v41-273: 늦은 등원과 이른 하원이 같은 날 있으면 메모를 구분자(, / 등)로 나눠
+// 앞 조각은 늦은 등원, 뒤 조각은 이른 하원 사유로 붙입니다. (예: '저녁식사, 영어학원')
+void AUTO_SCHEDULE_NOTE_PATTERN;
+function formatAbsenceLabel(kind, scheduleNote, context = {}) {
   const base = kind === 'in' ? '늦은 등원' : '이른 하원';
-  const note = String(scheduleNote || '').trim();
-  if (!note || AUTO_SCHEDULE_NOTE_PATTERN.test(note)) return base;
-  return `${base} · ${note}`;
+  const lateIn = context.lateIn ?? (kind === 'in');
+  const earlyOut = context.earlyOut ?? (kind === 'out');
+  const reasons = resolveAbsenceReasons(scheduleNote, { lateIn, earlyOut });
+  const reason = kind === 'in' ? reasons.in : reasons.out;
+  return reason ? `${base} · ${reason}` : base;
 }
 
 // v41-193: 이번 저장으로 '운영 → 휴무'가 되는 날짜를 찾습니다.
@@ -5794,8 +5801,12 @@ export default function Page() {
       .filter((item) => item.startMinute !== null && item.endMinute !== null && item.endMinute > item.startMinute);
 
     // v41-194: 부재 구간은 '늦은 등원 / 이른 하원'으로 표기합니다. (일정 메모는 등록 출처라 사유가 아닙니다)
-    const absenceLabelIn = formatAbsenceLabel('in', schedule.schedule_note);
-    const absenceLabelOut = formatAbsenceLabel('out', schedule.schedule_note);
+    const absenceContext = {
+      lateIn: startMin !== null && baseInMin !== null && startMin > baseInMin,
+      earlyOut: endMin !== null && baseOutMin !== null && endMin < baseOutMin,
+    };
+    const absenceLabelIn = formatAbsenceLabel('in', schedule.schedule_note, absenceContext);
+    const absenceLabelOut = formatAbsenceLabel('out', schedule.schedule_note, absenceContext);
 
     // 학습 세그먼트 + 외출을 시간순으로 병합. 외출을 만나면 그 전까지의 연속 차시를 한 배지로 flush.
     const events = [...segments, ...breakItems]
@@ -7451,7 +7462,11 @@ function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBre
                   <div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setField({ parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div>
                 </div>
                 <div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote || ''} onChange={(e) => setField({ confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div>
-                <div className="field"><label>일정 메모</label><textarea value={popup.scheduleNote || ''} onChange={(e) => setField({ scheduleNote: e.target.value })} placeholder="예: 학교 행사로 10시 등원" /></div>
+                <div className="field">
+                  <label>일정 메모</label>
+                  <textarea value={popup.scheduleNote || ''} onChange={(e) => setField({ scheduleNote: e.target.value })} placeholder="예: 저녁식사, 영어학원  (앞: 늦은 등원 사유 · 뒤: 이른 하원 사유)" />
+                  <div className="hint schedule-note-help">{SCHEDULE_NOTE_HELP}</div>
+                </div>
               </section>
             ) : null}
 
@@ -12622,8 +12637,12 @@ function SchedulesTab(props) {
     //   전: 22:10~22:30 · 기본 하원 22:30   후: 22:10~22:30
     // 정보 손실 없이 줄만 짧아집니다.
     const absenceBlocks = [];
-    if (start !== null && baseInMin !== null && start > baseInMin) {
-      absenceBlocks.push({ id: `absence-in-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: baseInMin, endMinute: start, title: formatAbsenceLabel('in', schedule.schedule_note), detail: `${minutesToTime(baseInMin)}~${minutesToTime(start)}`, schedule });
+    const absenceContext = {
+      lateIn: start !== null && baseInMin !== null && start > baseInMin,
+      earlyOut: end !== null && baseOutMin !== null && end < baseOutMin,
+    };
+    if (absenceContext.lateIn) {
+      absenceBlocks.push({ id: `absence-in-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: baseInMin, endMinute: start, title: formatAbsenceLabel('in', schedule.schedule_note, absenceContext), detail: `${minutesToTime(baseInMin)}~${minutesToTime(start)}`, schedule });
     }
     // v41-265: 기본 등원보다 '이른' 등원(예: 15:30 등원, 1차시 17:30)은 차시 구간 밖이라
     // 아무 블록도 그려지지 않았습니다. 그래서 시간표에는 17:30 시작처럼 보이는데
@@ -12635,8 +12654,8 @@ function SchedulesTab(props) {
         absenceBlocks.push({ id: `early-in-${schedule.student_id}-${schedule.schedule_date}`, type: 'match', startMinute: start, endMinute: earlyEnd, title: '이른 등원 · 자율학습', detail: `${minutesToTime(start)}~${minutesToTime(earlyEnd)} (기본 등원 ${minutesToTime(baseInMin)})`, schedule });
       }
     }
-    if (end !== null && baseOutMin !== null && end < baseOutMin) {
-      absenceBlocks.push({ id: `absence-out-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: end, endMinute: baseOutMin, title: formatAbsenceLabel('out', schedule.schedule_note), detail: `${minutesToTime(end)}~${minutesToTime(baseOutMin)}`, schedule });
+    if (absenceContext.earlyOut) {
+      absenceBlocks.push({ id: `absence-out-${schedule.student_id}-${schedule.schedule_date}`, type: 'deviation', startMinute: end, endMinute: baseOutMin, title: formatAbsenceLabel('out', schedule.schedule_note, absenceContext), detail: `${minutesToTime(end)}~${minutesToTime(baseOutMin)}`, schedule });
     }
 
     blocks.push(...periodBlocks, ...breakBlocks, ...absenceBlocks);
