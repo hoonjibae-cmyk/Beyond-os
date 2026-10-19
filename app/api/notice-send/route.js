@@ -232,7 +232,16 @@ export async function POST(request) {
 
     // v41-202: 지금 보고 있는 기수의 수강생 학부모에게만 보냅니다.
     const cohort = await resolveNoticeCohort(supabase, body.cohortId || getCohortIdFromRequest(request));
-    const cohortStudentIds = cohort ? await loadCohortStudentIds(supabase, cohort.id) : null;
+    const rosterStudentIds = cohort ? await loadCohortStudentIds(supabase, cohort.id) : null;
+    // v41-274: 특정 학생에게만 보내기. 화면에서 고른 학생 id 목록이 오면 그 학생들로만 좁힙니다.
+    const selectedStudentIds = Array.isArray(body.studentIds)
+      ? [...new Set(body.studentIds.map((id) => String(id || '').trim()).filter(Boolean))]
+      : null;
+    const isSelectedMode = Array.isArray(selectedStudentIds);
+    if (isSelectedMode && !selectedStudentIds.length) {
+      return Response.json({ error: '보낼 학생을 한 명 이상 선택하세요.' }, { status: 400 });
+    }
+    const cohortStudentIds = isSelectedMode ? selectedStudentIds : rosterStudentIds;
     // v41-244: 학부모 / 학생 / 둘 다 중에서 고릅니다. 값이 없으면 예전처럼 학부모입니다.
     const audience = normalizeNoticeAudience(body.audience);
     const audienceLabel = getNoticeAudienceLabel(audience);
@@ -248,7 +257,15 @@ export async function POST(request) {
     const studentsWithoutPhone = audienceIncludesStudent(audience)
       ? await countStudentsWithoutPhone(supabase, cohortStudentIds)
       : 0;
-    const scopeLabel = cohort ? `${cohort.name || '해당 기수'} 수강 명단` : '활성 학생 전체';
+    const scopeLabel = isSelectedMode
+      ? `선택 학생 ${selectedStudentIds.length}명`
+      : cohort ? `${cohort.name || '해당 기수'} 수강 명단` : '활성 학생 전체';
+    // 선택 학생의 이름(확인창·발송 이력 표시용)
+    let selectedStudents = [];
+    if (isSelectedMode) {
+      const { data: nameRows } = await supabase.from('students').select('id, name, status').in('id', selectedStudentIds);
+      selectedStudents = (nameRows || []).map((row) => ({ id: String(row.id), name: row.name || '학생', active: row.status !== 'inactive' }));
+    }
     const sendSettings = await getReportSendSettings(supabase).catch(() => ({}));
     const testMode = resolveRecipientTestMode(sendSettings?.settings || sendSettings || {}, String(process.env.KAKAO_RECIPIENT_TEST_MODE || '').toLowerCase() === 'true');
     const testModeSource = getRecipientTestModeSource(sendSettings?.settings || sendSettings || {});
@@ -274,6 +291,8 @@ export async function POST(request) {
         scopeLabel,
         cohortStudentCount: Array.isArray(cohortStudentIds) ? cohortStudentIds.length : null,
         perStudent: perStudent ? { included: perStudent.included, excluded: perStudent.excluded } : null,
+        selectedMode: isSelectedMode,
+        selectedStudents,
       });
     }
 
@@ -282,7 +301,9 @@ export async function POST(request) {
         ? '학생 본인 연락처가 없습니다. (학생 정보의 학생 연락처를 확인하세요)'
         : '수신 동의된 보호자 연락처가 없습니다. (활성 학생 · 데일리 리포트 수신 ON 기준)';
       return Response.json({
-        error: cohort ? `${scopeLabel}에 ${who} 기수 관리에서 수강 명단을 확인하세요.` : who,
+        error: isSelectedMode
+          ? `선택한 학생에게 보낼 연락처가 없습니다. ${who}`
+          : cohort ? `${scopeLabel}에 ${who} 기수 관리에서 수강 명단을 확인하세요.` : who,
       }, { status: 400 });
     }
     if (!contentReady) {
@@ -323,7 +344,7 @@ export async function POST(request) {
       cohortName: cohort?.name || '',
       allowDuplicateRecipients: isPerStudent,
       // 대상이 달라지면 다른 발송입니다. (학부모에게 보낸 뒤 학생에게도 보낼 수 있어야 합니다)
-      idempotencyKey: `notice:${notice.id}:${cohort?.id || 'all'}:${audience}:${actualSend ? 'live' : 'test'}:${recipients.length}`,
+      idempotencyKey: `notice:${notice.id}:${cohort?.id || 'all'}:${isSelectedMode ? `sel-${selectedStudentIds.slice().sort().join('.')}` : 'roster'}:${audience}:${actualSend ? 'live' : 'test'}:${recipients.length}`,
     };
 
     const result = await callWebhook(payload);
@@ -353,6 +374,8 @@ export async function POST(request) {
           scopeLabel,
           recipients: recipientSnapshot,
           perStudent: perStudent ? { includedCount: perStudent.included.length, excluded: perStudent.excluded } : null,
+          selectedMode: isSelectedMode,
+          selectedStudents: isSelectedMode ? selectedStudents.map((item) => item.name) : [],
         },
       }).eq('id', notice.id);
     }
@@ -365,6 +388,7 @@ export async function POST(request) {
       payload: {
         category: cat.key, recipientCount: recipients.length, actualSend, testMode,
         audience, audienceLabel, parentCount, studentCount,
+        selectedMode: isSelectedMode, selectedStudentIds: isSelectedMode ? selectedStudentIds : null,
         ok: result.ok, status: result.status,
         cohortId: cohort?.id || null, cohortName: cohort?.name || '',
       },
@@ -386,6 +410,8 @@ export async function POST(request) {
       scopeLabel,
       link,
       perStudent: perStudent ? { included: perStudent.included, excluded: perStudent.excluded } : null,
+      selectedMode: isSelectedMode,
+      selectedStudents,
       recipientStats: result.recipientStats,
       recipientPolicy: result.recipientPolicy,
     });

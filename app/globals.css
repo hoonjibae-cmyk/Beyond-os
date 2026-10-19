@@ -19446,3 +19446,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 
 /* v41-273 시간표 팝업 · 일정 메모 안내문 */
 .main .schedule-note-help, .activity-popup .schedule-note-help{ margin-top:4px; font-size:11.5px !important; line-height:1.5; color:var(--ap-text-2); }
+
+/* v41-274 공지사항 발송 — 발송 범위(기수 전체 / 특정 학생만) */
+.main .notice-target-row{ display:grid; grid-template-columns:auto minmax(260px, 480px); gap:10px; align-items:center; margin:6px 0 4px; }
+@media (max-width:760px){ .main .notice-target-row{ grid-template-columns:1fr; } }

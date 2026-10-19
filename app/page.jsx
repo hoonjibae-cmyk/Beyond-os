@@ -6336,7 +6336,7 @@ export default function Page() {
 
         {/* v41-272: 공지사항 발송을 설정에서 독립 메뉴로 뺐습니다. 모든 사용자에게 기본으로 보입니다. */}
         {isActiveTabAllowed && activeTab === 'notices' ? (
-          <NoticeBroadcastTab apiFetch={apiFetch} setMessage={setMessage} />
+          <NoticeBroadcastTab apiFetch={apiFetch} setMessage={setMessage} students={scopedStudents} cohortScopeName={cohortScopeInfo?.name || ''} />
         ) : null}
 
         {isActiveTabAllowed && activeTab === 'settings' ? (
@@ -20952,7 +20952,7 @@ function KakaoAlimtalkPreview({ text, variables = {}, channelName = '목동유�
   );
 }
 
-function NoticeBroadcastTab({ apiFetch, setMessage }) {
+function NoticeBroadcastTab({ apiFetch, setMessage, students = [], cohortScopeName = '' }) {
   const [notices, setNotices] = useState([]);
   const [form, setForm] = useState({ id: null, title: '', body: '', externalUrl: '', category: 'operating_rules', templateData: {} });
   const [mode, setMode] = useState('inapp'); // inapp | external
@@ -20963,6 +20963,15 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
   const [sending, setSending] = useState(false);
   // v41-244: 공지 수신 대상 (학부모 / 학생 / 둘 다). 기본은 예전과 같은 학부모입니다.
   const [audience, setAudience] = useState(DEFAULT_NOTICE_AUDIENCE);
+  // v41-274: 발송 범위 — 기수 수강생 전체(roster) / 특정 학생만(selected)
+  const [targetMode, setTargetMode] = useState('roster');
+  const [targetStudentIds, setTargetStudentIds] = useState([]);
+  const activeStudents = useMemo(() => (students || []).filter((student) => student.status !== 'inactive'), [students]);
+  const targetStudentNames = useMemo(
+    () => activeStudents.filter((student) => targetStudentIds.includes(String(student.id))).map((student) => student.name),
+    [activeStudents, targetStudentIds],
+  );
+  const sendStudentIds = targetMode === 'selected' ? targetStudentIds : null;
   const [recipientView, setRecipientView] = useState(null); // 발송 대상 조회 중인 공지 id
 
   const activeCategory = getNoticeCategory(form.category);
@@ -21048,9 +21057,10 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
 
   async function prepareSend() {
     if (!form.id) { setMessage('먼저 공지를 저장하세요.'); return; }
+    if (targetMode === 'selected' && !targetStudentIds.length) { setMessage('보낼 학생을 한 명 이상 선택하세요.'); return; }
     try {
       setSending(true);
-      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, previewOnly: true, audience }) });
+      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, previewOnly: true, audience, studentIds: sendStudentIds }) });
       setConfirm({
         recipientCount: d.recipientCount, testMode: d.testMode, testModeSource: d.testModeSource,
         link: d.link, hasLink: d.hasLink, categoryLabel: d.categoryLabel, input: d.input,
@@ -21064,6 +21074,9 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
         studentsWithoutPhone: d.studentsWithoutPhone || 0,
         // v41-271: 학생별 유형 — 보낼 학생(좌석·닉네임)과 빠지는 학생(사유)
         perStudent: d.perStudent || null,
+        // v41-274: 확인 시점의 발송 범위(선택 학생 목록)를 그대로 들고 갑니다.
+        studentIds: sendStudentIds ? [...sendStudentIds] : null,
+        selectedStudents: d.selectedStudents || [],
       });
       setConfirmChecked(false);
     } catch (e) { setMessage(e.message); } finally { setSending(false); }
@@ -21074,8 +21087,8 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
     if (!confirm.testMode && !confirmChecked) { setMessage('실제 발송 확인 체크가 필요합니다.'); return; }
     try {
       setSending(true);
-      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, actualSend: true, audience: confirm.audience }) });
-      if (d.ok) setMessage(`공지 알림톡 발송 접수 완료 · ${d.cohortName ? `${d.cohortName} ` : ''}${d.audienceLabel || '학부모'} ${d.recipientCount}명${d.testMode ? ' (테스트 수신번호 모드)' : ''}`);
+      const d = await apiFetch('/api/notice-send', { method: 'POST', body: JSON.stringify({ noticeId: form.id, actualSend: true, audience: confirm.audience, studentIds: confirm.studentIds }) });
+      if (d.ok) setMessage(`공지 알림톡 발송 접수 완료 · ${d.selectedMode ? `${d.scopeLabel} ` : d.cohortName ? `${d.cohortName} ` : ''}${d.audienceLabel || '학부모'} ${d.recipientCount}명${d.testMode ? ' (테스트 수신번호 모드)' : ''}`);
       else setMessage(`발송 실패: ${d.message || d.error || '알 수 없는 오류'}`);
       setConfirm(null); setConfirmChecked(false);
       await loadNotices();
@@ -21222,7 +21235,26 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
       ) : null}
 
       <h4>3) 발송 대상 · 발송</h4>
-      <div className="hint">화면 상단 [기수 보기]에서 고른 기수의 수강생에게만 보냅니다. 아래 [발송 준비]를 누르면 어느 기수 몇 명인지 확인할 수 있습니다.</div>
+      {/* v41-274: 기수 전체 / 특정 학생만 */}
+      <div className="notice-target-row">
+        <div className="seg" role="group" aria-label="발송 범위">
+          <button type="button" className={targetMode === 'roster' ? 'active' : ''} onClick={() => { setTargetMode('roster'); setConfirm(null); setConfirmChecked(false); }}>{cohortScopeName ? `${cohortScopeName} 전체` : '기수 전체'}</button>
+          <button type="button" className={targetMode === 'selected' ? 'active' : ''} onClick={() => { setTargetMode('selected'); setConfirm(null); setConfirmChecked(false); }}>특정 학생만</button>
+        </div>
+        {targetMode === 'selected' ? (
+          <StudentMultiPicker
+            students={activeStudents}
+            value={targetStudentIds}
+            onChange={(ids) => { setTargetStudentIds(ids); setConfirm(null); setConfirmChecked(false); }}
+            placeholder="안내를 보낼 학생 선택 (여러 명 가능)"
+          />
+        ) : null}
+      </div>
+      <div className="hint">
+        {targetMode === 'selected'
+          ? `고른 학생${targetStudentNames.length ? ` ${targetStudentNames.length}명(${summarizeStudentNames(targetStudentNames, 4)})` : ''}의 보호자·본인에게만 보냅니다. 기수 수강생 전체에는 가지 않습니다.`
+          : '화면 상단 [기수 보기]에서 고른 기수의 수강생에게만 보냅니다. 아래 [발송 준비]를 누르면 어느 기수 몇 명인지 확인할 수 있습니다.'}
+      </div>
       <div className="notice-audience-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '6px 0 4px' }}>
         {NOTICE_AUDIENCES.map((item) => (
           <button
@@ -21245,14 +21277,17 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
         </div>
       ) : null}
       <div className="btn-row">
-        <button className="primary" onClick={prepareSend} disabled={!form.id || sending}>{sending && !confirm ? '대상 확인 중...' : '발송 준비 (대상 확인)'}</button>
+        <button className="primary" onClick={prepareSend} disabled={!form.id || sending || (targetMode === 'selected' && !targetStudentIds.length)}>{sending && !confirm ? '대상 확인 중...' : '발송 준비 (대상 확인)'}</button>
       </div>
 
       {confirm ? (
         <div className={`notice-confirm-panel call ${confirm.testMode ? 'warn' : 'field'}`} style={{ marginTop: 10 }}>
-          <b>{confirm.testMode ? '테스트 수신번호 모드로 발송' : `${confirm.cohortName ? `${confirm.cohortName} ` : '전체 '}${confirm.audienceLabel || '학부모'}에게 실제 발송`}</b>
+          <b>{confirm.testMode ? '테스트 수신번호 모드로 발송' : `${confirm.studentIds ? `선택 학생 ${confirm.studentIds.length}명의 ` : confirm.cohortName ? `${confirm.cohortName} ` : '전체 '}${confirm.audienceLabel || '학부모'}에게 실제 발송`}</b>
           {confirm.categoryLabel ? <p style={{ margin: '2px 0 4px' }}>유형: <b>{confirm.categoryLabel}</b></p> : null}
-          <p>발송 범위: <b>{confirm.scopeLabel || '활성 학생 전체'}</b>{typeof confirm.cohortStudentCount === 'number' ? ` (수강생 ${confirm.cohortStudentCount}명)` : ''}</p>
+          <p>발송 범위: <b>{confirm.scopeLabel || '활성 학생 전체'}</b>{confirm.studentIds ? ` — ${(confirm.selectedStudents || []).map((item) => item.name).join(', ')}` : typeof confirm.cohortStudentCount === 'number' ? ` (수강생 ${confirm.cohortStudentCount}명)` : ''}</p>
+          {confirm.studentIds && (confirm.selectedStudents || []).some((item) => item.active === false) ? (
+            <p style={{ color: 'var(--ap-attn-text,#c0392b)' }}>⚠️ 퇴원(비활성) 학생이 포함되어 있습니다. 비활성 학생에게는 발송되지 않습니다.</p>
+          ) : null}
           <p>
             수신 대상 <b>{confirm.audienceLabel || '학부모'} {confirm.recipientCount}명</b>
             {confirm.audience === 'both' ? ` (보호자 ${confirm.parentCount || 0} · 학생 ${confirm.studentCount || 0})` : ''}
@@ -21291,7 +21326,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
           {!confirm.testMode ? (
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0', fontWeight: 700 }}>
               <input type="checkbox" checked={confirmChecked} onChange={(e) => setConfirmChecked(e.target.checked)} />
-              {confirm.cohortName ? `${confirm.cohortName} ` : ''}실제 {confirm.audienceLabel || '학부모'} {confirm.recipientCount}명에게 발송하는 것을 확인합니다.
+              {confirm.studentIds ? `선택 학생 ${confirm.studentIds.length}명의 ` : confirm.cohortName ? `${confirm.cohortName} ` : ''}실제 {confirm.audienceLabel || '학부모'} {confirm.recipientCount}명에게 발송하는 것을 확인합니다.
             </label>
           ) : null}
           <div className="btn-row">
@@ -21314,7 +21349,7 @@ function NoticeBroadcastTab({ apiFetch, setMessage }) {
                 <span className={`status-pill ${n.status === 'sent' ? 'done' : 'neutral'}`}>{n.status === 'sent' ? '발송됨' : '작성'}</span>
                 <span className="hint" style={{ background: 'var(--ap-surface-3,#f0f0f3)', borderRadius: 8, padding: '2px 8px' }}>{getNoticeCategory(n.category).label}</span>
                 <strong style={{ flex: 1, minWidth: 120 }}>{n.title}</strong>
-                {n.status === 'sent' && n.sent_count ? <span className="hint">{n.sent_count}명 발송{summary?.testMode ? ' (테스트)' : ''}</span> : null}
+                {n.status === 'sent' && n.sent_count ? <span className="hint">{summary?.selectedMode ? `선택 학생 ${(summary.selectedStudents || []).length}명 · ` : ''}{n.sent_count}명 발송{summary?.testMode ? ' (테스트)' : ''}</span> : null}
                 {n.status === 'sent' ? <button className="secondary" onClick={() => setRecipientView(isOpen ? null : n.id)}>{isOpen ? '대상 닫기' : '발송 대상'}</button> : null}
                 <button className="secondary" onClick={() => loadNoticeToForm(n)}>불러오기</button>
                 {getNoticeCategory(n.category).input === 'link' ? <button className="secondary" onClick={() => copyLink(n.publicUrl)}>링크복사</button> : null}
