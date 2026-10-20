@@ -101,6 +101,8 @@ async function buildCandidates(supabase, date, rules) {
     dayInfo,
     ...findLongAwayCandidates({
       date,
+      // v41-275.1: 자율학습 구간은 그 날짜의 기수별 기본 시간표에서 가져옵니다.
+      dayInfo,
       dayType: dayInfo.dayType,
       sessions: live,
       eventsBySession,
@@ -147,9 +149,12 @@ export async function GET(request) {
       dayType: built.dayInfo.dayType,
       operating: built.dayInfo.operating,
       selfStudyLabel: built.selfStudyLabel,
+      selfStudySource: built.selfStudySource || '',
       candidates,
       pendingCount: candidates.filter((item) => !item.decision).length,
-      warning: reviews.warning || (built.reason === 'no_self_study' ? '이 날은 자율학습 시간대가 없는 요일(공휴일)입니다.' : ''),
+      warning: reviews.warning || (built.reason === 'no_self_study'
+        ? (built.dayInfo.operating === false ? '이 날은 휴무일이라 자율학습 시간이 없습니다.' : '이 날짜의 기본 시간표에 자율학습 차시가 없습니다. 설정 › 기본 시간표에서 "자율학습" 차시를 추가하세요.')
+        : ''),
       missingTable: Boolean(reviews.missingTable),
     });
   } catch (error) {
