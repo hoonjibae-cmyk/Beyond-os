@@ -19450,3 +19450,14 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* v41-274 공지사항 발송 — 발송 범위(기수 전체 / 특정 학생만) */
 .main .notice-target-row{ display:grid; grid-template-columns:auto minmax(260px, 480px); gap:10px; align-items:center; margin:6px 0 4px; }
 @media (max-width:760px){ .main .notice-target-row{ grid-template-columns:1fr; } }
+
+/* v41-275 자율학습 중 장시간 외출 확인 카드 */
+.main .long-away-card.is-clear{ border-color:var(--ap-sep) !important; background:#fff !important; }
+.main .long-away-nav{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.main .long-away-nav input[type="date"]{ width:auto !important; flex:0 1 150px; }
+.main .long-away-list > article.tone-warn{ border-color:#f2c23b; background:#fffdf5; }
+.main .long-away-list > article.is-decided{ opacity:.78; }
+.main .long-away-list > article.is-skipped{ border-color:var(--ap-sep); background:#fafafa; }
+.main .long-away-planned{ margin:0 !important; font-size:12px !important; color:#8a6d00; }
+.main .long-away-decision{ margin:0 !important; font-size:12px !important; color:var(--ap-text-2); }
+.main .penalty-stage-badge.tone-warn{ background:#fff3c4; color:#7a5a00; border-color:#f2c23b; }

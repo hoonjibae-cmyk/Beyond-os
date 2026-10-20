@@ -7,6 +7,7 @@ import { formatMentorNames } from '../lib/mentorAssignments';
 import { ENROLLMENT_BLOCK_LABEL, getEnrollmentBlock, formatEnrollmentBlockTitle } from '../lib/enrollmentBlock';
 import { QUICK_REWARD_PRESETS, MAX_BULK_POINT_STUDENTS, summarizeStudentNames } from '../lib/pointQuickPresets';
 import { AUTO_SCHEDULE_NOTE_PATTERN, resolveAbsenceReasons, SCHEDULE_NOTE_HELP } from '../lib/scheduleNoteReason';
+import { previousDateString as previousKstDate } from '../lib/longAwayReview';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
@@ -16340,6 +16341,11 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   const [autoRulesSaving, setAutoRulesSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [autoAwardOpen, setAutoAwardOpen] = useState(false);
+  // v41-275: 자율학습 중 장시간 외출 — 전날 명단을 불러와 건마다 벌점 부여 여부를 정합니다.
+  const [longAwayDate, setLongAwayDate] = useState(() => previousKstDate(getKstDateString()));
+  const [longAway, setLongAway] = useState(null);
+  const [longAwayLoading, setLongAwayLoading] = useState(false);
+  const [longAwayWorkingKey, setLongAwayWorkingKey] = useState('');
 
   // v41-127: 상벌점 기록을 '일자별 나열'에서 '학생별 대분류 → 학생 안에서 일자별'로 재구성합니다.
   // v41-171: 헤더 [기수 보기]로 좁힌 경우 상벌점 기록도 그 기수 학생만 보여줍니다.
@@ -16387,6 +16393,51 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
     loadRewardState();
     loadAutoRules();
   }, []);
+
+  useEffect(() => {
+    loadLongAway(longAwayDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [longAwayDate]);
+
+  async function loadLongAway(date = longAwayDate) {
+    try {
+      setLongAwayLoading(true);
+      const data = await apiFetch(`/api/long-away-reviews?date=${date}`);
+      setLongAway(data);
+    } catch (error) {
+      setLongAway({ date, candidates: [], pendingCount: 0, warning: error?.message || '장시간 외출 명단 조회 실패' });
+    } finally {
+      setLongAwayLoading(false);
+    }
+  }
+
+  // v41-275: 건마다 [벌점 부여] / [사유 있음 · 제외] / [되돌리기]
+  async function decideLongAway(candidate, action) {
+    const points = longAway?.points || 3;
+    let note = '';
+    if (action === 'penalty') {
+      if (!confirm(`${candidate.name} 학생 — ${candidate.sessionDate} 외출 ${candidate.awayLabel} (${candidate.awayMinutes}분, 자율학습 ${candidate.selfStudyMinutes}분)\n\n벌점 ${points}점을 기록할까요?`)) return;
+    } else if (action === 'skip') {
+      const typed = prompt(`${candidate.name} 학생 — 이 외출을 벌점 없이 제외합니다.\n사유를 적어 주세요. (선택)`, candidate.plannedBreaks?.[0] ? `시간표 외출: ${candidate.plannedBreaks[0]}` : '');
+      if (typed === null) return;
+      note = typed;
+    } else if (action === 'undo') {
+      if (!confirm(`${candidate.name} 학생 — 이 건의 결정을 되돌릴까요?${candidate.decision === 'penalty' ? `\n\n부여했던 벌점 ${candidate.decidedPoints}점도 삭제됩니다.` : ''}`)) return;
+    }
+    try {
+      setLongAwayWorkingKey(`${candidate.key}:${action}`);
+      const data = await apiFetch('/api/long-away-reviews', {
+        method: 'POST',
+        body: JSON.stringify({ action, candidate, note, createdBy: currentUser?.displayName || '관리자' }),
+      });
+      setMessage?.(data.message || '처리 완료');
+      await Promise.all([loadLongAway(longAwayDate), loadPoints(), loadRewardState()]);
+    } catch (error) {
+      setMessage?.(error.message || '처리 실패');
+    } finally {
+      setLongAwayWorkingKey('');
+    }
+  }
 
   // v41-241: 자동 상점 구간표와 지급 기준을 읽습니다.
   async function loadAutoRules() {
@@ -16861,6 +16912,49 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
             </p>
           </div>
 
+          {/* v41-275: 자율학습 중 장시간 외출 벌점 확인 */}
+          <div className="point-auto-perfect-block point-auto-longaway-block">
+            <div className="point-auto-tier-head">
+              <strong>자율학습 중 장시간 외출 벌점 확인</strong>
+              <span>
+                외출 → 복귀로 <b>닫힌 외출</b> 중 자율학습 시간대(평일 22:30~24:00 · 토 18:30~22:00 · 일 09:30~22:00)에 겹치는 시간이 기준 이상이면
+                <b> 다음 날 명단</b>에 오릅니다. 복귀 없이 퇴실·자동 퇴실된 외출은 세지 않습니다. 벌점은 명단에서 <b>[벌점 부여]를 눌러야</b> 들어갑니다.
+              </span>
+            </div>
+            <label className="point-auto-toggle">
+              <input
+                type="checkbox"
+                checked={autoRules.longAwayPenaltyEnabled !== false}
+                onChange={(e) => updateAutoRules({ longAwayPenaltyEnabled: e.target.checked })}
+              />
+              <span>장시간 외출 확인 명단 사용</span>
+            </label>
+            <div className="point-auto-perfect-grid">
+              <div className="field">
+                <label>기준 외출 시간(분)</label>
+                <input
+                  type="number"
+                  min="5"
+                  max="600"
+                  value={autoRules.longAwayMinutes}
+                  onChange={(e) => updateAutoRules({ longAwayMinutes: Number(e.target.value || 0) })}
+                />
+                <em>자율학습 시간대에 겹친 분이 이 값 이상이면 명단에 오릅니다. (기본 40분)</em>
+              </div>
+              <div className="field">
+                <label>벌점</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={autoRules.longAwayPoints}
+                  onChange={(e) => updateAutoRules({ longAwayPoints: Number(e.target.value || 0) })}
+                />
+                <em>[벌점 부여]를 누르면 기록되는 점수. (기본 3점)</em>
+              </div>
+            </div>
+          </div>
+
           <div className="point-auto-threshold-grid">
             <div className="field">
               <label>상품 지급 기준 순점수</label>
@@ -16918,6 +17012,76 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
 
       {/* v41-156: 누적 벌점이 10/20/30점을 넘으면 단계별 조치 대상으로 알립니다.
           상품 지급(순점수) 사이클과 별개로, 상점을 받아도 이 단계는 내려가지 않습니다. */}
+      {/* v41-275: 자율학습 중 장시간 외출 — 전날 명단. 건마다 벌점 부여 / 제외를 정합니다. */}
+      {autoRules.longAwayPenaltyEnabled !== false ? (() => {
+        const rows = scopeRows(longAway?.candidates || []);
+        const pending = rows.filter((item) => !item.decision);
+        const isYesterday = longAwayDate === previousKstDate(getKstDateString());
+        return (
+          <div className={`penalty-stage-alert-card long-away-card${pending.length ? '' : ' is-clear'}`}>
+            <div className="penalty-stage-alert-head">
+              <strong>자율학습 중 장시간 외출 확인 · {longAwayDate}{isYesterday ? ' (어제)' : ''} — {longAwayLoading ? '조회 중...' : `확인 대기 ${pending.length}건${rows.length > pending.length ? ` · 처리됨 ${rows.length - pending.length}건` : ''}`}</strong>
+              <span>
+                외출 → 복귀로 닫힌 외출 중 자율학습 시간대{longAway?.selfStudyLabel ? `(${longAway.selfStudyLabel})` : ''}에 <b>{longAway?.thresholdMinutes || autoRules.longAwayMinutes}분 이상</b> 겹친 건입니다.
+                {' '}복귀 없이 퇴실·자동 퇴실된 외출은 들어 있지 않습니다. 특별한 사유가 없으면 <b>[벌점 {longAway?.points || autoRules.longAwayPoints}점]</b>, 사유가 있으면 <b>[사유 있음 · 제외]</b>를 누르세요.
+              </span>
+              <div className="long-away-nav">
+                <button type="button" className="secondary icon-btn" onClick={() => setLongAwayDate(previousKstDate(longAwayDate))} disabled={longAwayLoading} aria-label="전날">◀</button>
+                <input type="date" aria-label="확인 날짜" onClick={openNativePicker} onFocus={openNativePicker} value={longAwayDate} max={getKstDateString()} onChange={(e) => { if (e.target.value) setLongAwayDate(e.target.value); }} />
+                <button type="button" className="secondary icon-btn" onClick={() => setLongAwayDate(addDays(longAwayDate, 1))} disabled={longAwayLoading || longAwayDate >= getKstDateString()} aria-label="다음날">▶</button>
+                {!isYesterday ? <button type="button" className="secondary" onClick={() => setLongAwayDate(previousKstDate(getKstDateString()))} disabled={longAwayLoading}>어제</button> : null}
+                <button type="button" className="secondary" onClick={() => loadLongAway(longAwayDate)} disabled={longAwayLoading}>새로고침</button>
+              </div>
+            </div>
+            {longAway?.warning ? <div className="status-alert">{longAway.warning}</div> : null}
+            {rows.length ? (
+              <div className="penalty-stage-alert-list long-away-list">
+                {rows.map((item) => {
+                  const working = longAwayWorkingKey.startsWith(`${item.key}:`);
+                  return (
+                    <article key={item.key} className={item.decision === 'penalty' ? 'tone-danger is-decided' : item.decision === 'skip' ? 'is-decided is-skipped' : 'tone-warn'}>
+                      <div className="penalty-stage-alert-student">
+                        <strong>{item.name}</strong>
+                        <span>{item.subtitle || '학교/학년 미입력'}</span>
+                      </div>
+                      <div className="penalty-stage-alert-score">
+                        <b className={`penalty-stage-badge ${item.decision === 'penalty' ? 'tone-danger' : 'tone-warn'}`}>외출 {item.awayLabel} · {item.awayMinutes}분</b>
+                        <em>자율학습 시간대 {item.selfStudyMinutes}분{item.memo ? ` · 외출 메모: ${item.memo}` : ''}</em>
+                      </div>
+                      {item.plannedBreaks?.length ? <p className="long-away-planned">시간표에 잡힌 외출과 겹침: {item.plannedBreaks.join(', ')}</p> : null}
+                      {item.decision ? (
+                        <p className="long-away-decision">
+                          {item.decision === 'penalty' ? <b>벌점 {item.decidedPoints}점 부여됨</b> : <b>사유 있음 · 제외</b>}
+                          {item.decidedBy ? ` · ${item.decidedBy}` : ''}{item.decidedAt ? ` · ${String(item.decidedAt).slice(0, 10)}` : ''}{item.decidedNote ? ` · ${item.decidedNote}` : ''}
+                        </p>
+                      ) : null}
+                      <div className="penalty-stage-alert-actions">
+                        {!item.decision ? (
+                          <>
+                            <button type="button" className="danger" onClick={() => decideLongAway(item, 'penalty')} disabled={Boolean(longAwayWorkingKey)}>
+                              {working && longAwayWorkingKey.endsWith(':penalty') ? '기록 중...' : `벌점 ${longAway?.points || autoRules.longAwayPoints}점 부여`}
+                            </button>
+                            <button type="button" className="secondary" onClick={() => decideLongAway(item, 'skip')} disabled={Boolean(longAwayWorkingKey)}>
+                              {working && longAwayWorkingKey.endsWith(':skip') ? '처리 중...' : '사유 있음 · 제외'}
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" className="secondary" onClick={() => decideLongAway(item, 'undo')} disabled={Boolean(longAwayWorkingKey)}>
+                            {working ? '처리 중...' : '되돌리기'}
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="all-clear">{longAwayLoading ? '조회 중...' : `${longAwayDate}에는 기준을 넘는 자율학습 외출이 없습니다.`}</div>
+            )}
+          </div>
+        );
+      })() : null}
+
       {scopeRows(rewardState?.penaltyAlerts).length ? (
         <div className="penalty-stage-alert-card">
           <div className="penalty-stage-alert-head">
