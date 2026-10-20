@@ -16920,6 +16920,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                 외출 → 복귀로 <b>닫힌 외출</b> 중 자율학습 시간대에 겹치는 시간이 기준 이상이면
                 <b> 다음 날 명단</b>에 오릅니다. 복귀 없이 퇴실·자동 퇴실된 외출은 세지 않습니다. 벌점은 명단에서 <b>[벌점 부여]를 눌러야</b> 들어갑니다.
                 {' '}자율학습 시간대는 그 날짜에 적용되는 <b>기수별 기본 시간표의 "자율학습" 차시</b>(설정 › 기본 시간표)에서 가져옵니다. 그런 차시가 없으면 마지막 관리 차시 끝부터 기본 하원 시각까지로 봅니다.
+                {' '}<b>휴무일(일요일·공휴일 등 운영 안 함)</b>은 관리 차시가 없으므로 그날의 <b>공부 인정 구간 전체</b>가 자율학습입니다.
               </span>
             </div>
             <label className="point-auto-toggle">
@@ -17023,7 +17024,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
             <div className="penalty-stage-alert-head">
               <strong>자율학습 중 장시간 외출 확인 · {longAwayDate}{isYesterday ? ' (어제)' : ''} — {longAwayLoading ? '조회 중...' : `확인 대기 ${pending.length}건${rows.length > pending.length ? ` · 처리됨 ${rows.length - pending.length}건` : ''}`}</strong>
               <span>
-                외출 → 복귀로 닫힌 외출 중 자율학습 시간대{longAway?.selfStudyLabel ? `(${longAway.selfStudyLabel}${longAway.selfStudySource === 'window' ? ' · 기본 시간표의 자율학습 차시' : longAway.selfStudySource === 'tail' ? ' · 마지막 차시 이후' : ''})` : ''}에 <b>{longAway?.thresholdMinutes || autoRules.longAwayMinutes}분 이상</b> 겹친 건입니다.
+                외출 → 복귀로 닫힌 외출 중 자율학습 시간대{longAway?.selfStudyLabel ? `(${longAway.selfStudyLabel}${longAway.selfStudySource === 'window' ? ' · 기본 시간표의 자율학습 차시' : longAway.selfStudySource === 'tail' ? ' · 마지막 차시 이후' : longAway.selfStudySource === 'closed' ? ' · 휴무일 인정 구간 전체' : ''})` : ''}에 <b>{longAway?.thresholdMinutes || autoRules.longAwayMinutes}분 이상</b> 겹친 건입니다.
                 {' '}복귀 없이 퇴실·자동 퇴실된 외출은 들어 있지 않습니다. 특별한 사유가 없으면 <b>[벌점 {longAway?.points || autoRules.longAwayPoints}점]</b>, 사유가 있으면 <b>[사유 있음 · 제외]</b>를 누르세요.
               </span>
               <div className="long-away-nav">

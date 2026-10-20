@@ -153,7 +153,7 @@ export async function GET(request) {
       candidates,
       pendingCount: candidates.filter((item) => !item.decision).length,
       warning: reviews.warning || (built.reason === 'no_self_study'
-        ? (built.dayInfo.operating === false ? '이 날은 휴무일이라 자율학습 시간이 없습니다.' : '이 날짜의 기본 시간표에 자율학습 차시가 없습니다. 설정 › 기본 시간표에서 "자율학습" 차시를 추가하세요.')
+        ? (built.dayInfo.operating === false ? '이 날은 휴무일인데 기본 시간표에 공부 인정 구간이 없습니다. 설정 › 기본 시간표의 해당 요일 유형에 인정 구간을 넣으면 그 전체를 자율학습으로 봅니다.' : '이 날짜의 기본 시간표에 자율학습 차시가 없습니다. 설정 › 기본 시간표에서 "자율학습" 차시를 추가하세요.')
         : ''),
       missingTable: Boolean(reviews.missingTable),
     });
