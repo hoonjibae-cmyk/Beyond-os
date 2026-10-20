@@ -5,7 +5,7 @@
 
 import { Fragment, useMemo, useState } from 'react';
 import { formatSpecialDate, SPECIAL_TYPE_LABELS } from '../../../lib/specialScheduleParse';
-import { getSelfStudyWindow, describeSelfStudyWindows } from '../../../lib/selfStudyHours';
+import { selfStudyWindowFromBase, describeSelfStudyFromBaseByDay } from '../../../lib/selfStudyHours';
 import { buildShiftDescription } from '../../../lib/scheduleNoteReason';
 
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -214,9 +214,8 @@ export default function ConfirmForm({
               // v41-200: 그 요일의 자율학습 시간. 요일 유형을 모르는 예전 링크에서는
               // 줄마다 붙이지 않고 표 아래 안내만 보여 줍니다.
               const dayBase = baseByDay?.[dayKey];
-              const selfWindow = dayBase?.dayType && dayBase.operating !== false
-                ? getSelfStudyWindow(dayBase.dayType)
-                : null;
+              // v41-275.2: 기본 시간표의 자율학습 차시를 우선합니다. (예전 링크는 요일 고정값)
+              const selfWindow = dayBase?.dayType ? selfStudyWindowFromBase(dayBase) : null;
               const shiftRow = attend && (editing || Boolean(shift));
               return (
                 <Fragment key={dayKey}>
@@ -304,7 +303,7 @@ export default function ConfirmForm({
         <div className="self-study-box">
           <strong>자율학습</strong>
           <span>
-            {describeSelfStudyWindows()}
+            {describeSelfStudyFromBaseByDay(baseByDay)}
             {' — 이 시간은 미리 시간표를 정하지 않고 자유롭게 오갈 수 있습니다. '}
             위 표의 하원 시각은 관리시간이 끝나는 시각입니다.
           </span>

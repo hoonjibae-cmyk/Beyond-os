@@ -18,6 +18,7 @@ import { buildSpecialOverrides } from '../../../lib/specialScheduleParse';
 import { normalizeCohort } from '../../../lib/cohorts';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
+import { resolveSelfStudyRanges } from '../../../lib/selfStudyHours';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,11 +89,15 @@ async function buildBaseByDay(supabase, startDate, endDate) {
     const dayKey = dayKeyOfDate(cursor);
     if (!baseByDay[dayKey]) {
       const resolved = resolveScheduleForDate(scheduleConfig, cursor);
+      // v41-275.2: 자율학습 구간도 기본 시간표(자율학습 차시)에서 함께 내려 줍니다.
+      const selfStudy = resolveSelfStudyRanges(resolved);
       baseByDay[dayKey] = {
         dayType: resolved.dayType,
         operating: Boolean(resolved.operating),
         checkIn: clockOf(resolved.plannedCheckIn),
         checkOut: clockOf(resolved.plannedCheckOut),
+        selfStudy: selfStudy.ranges.map((range) => ({ start: range.start, end: range.end, startClock: range.startClock, endClock: range.endClock, label: range.label })),
+        selfStudySource: selfStudy.source,
       };
     }
     cursor = addDaysLocal(cursor, 1);
