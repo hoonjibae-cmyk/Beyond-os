@@ -3,6 +3,66 @@ import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermis
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { buildBulkPointRows, formatBulkPointMessage } from '../../../lib/pointQuickPresets';
 import { getKstDateString } from '../../../lib/date';
+import { getPointAutoRules } from '../../../lib/pointAutoRulesServer';
+import { matchesPenaltyNoticeKeyword } from '../../../lib/pointAutoRules';
+import { sendPointNotification, isPenaltyEventTemplateConfigured } from '../../../lib/pointNotifications';
+import { getCohortIdFromRequest, loadCohortRange } from '../../../lib/cohortScope';
+import { resolvePenaltyStages } from '../../../lib/studentPointCycle';
+
+// v41-277: 벌점 사유에 설정된 낱말(기본 'CCTV')이 들어가면 그 벌점을 보호자·학생에게 바로 알림톡으로 보냅니다.
+//   - '벌점 부여 안내' 템플릿(SOLAPI_TEMPLATE_ID_POINT_PENALTY_EVENT)이 설정돼 있으면 그 템플릿으로 한 건 안내.
+//   - 아직 승인·설정 전이면 승인된 '상벌점 누적 안내' 템플릿을 수시 안내 변수로 대신 보냅니다. (학생이 바로 알게 하는 것이 목적)
+// 누적 합계는 보고 있는 기수 기간 안에서 셉니다. (기수를 못 찾으면 전체)
+async function maybeSendPenaltyEventNotice(supabase, request, { point, studentId, actorName }) {
+  try {
+    const rules = await getPointAutoRules(supabase);
+    if (rules.penaltyNoticeEnabled === false) return null;
+    const matched = matchesPenaltyNoticeKeyword(point.reason, rules.penaltyNoticeKeywords);
+    if (!matched) return null;
+
+    const range = await loadCohortRange(supabase, getCohortIdFromRequest(request), getKstDateString()).catch(() => null);
+    let query = supabase
+      .from('student_points')
+      .select('*')
+      .eq('student_id', studentId)
+      .eq('is_deleted', false)
+      .order('point_date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (range?.start) query = query.gte('point_date', range.start);
+    if (range?.end) query = query.lte('point_date', range.end);
+    const { data: rows } = await query;
+    const totals = summarize(rows || []);
+
+    let result;
+    let usedTemplate = 'event';
+    if (isPenaltyEventTemplateConfigured()) {
+      result = await sendPointNotification({
+        kind: 'penalty_event',
+        supabase,
+        studentId,
+        point,
+        totals: { reward: totals.reward, penalty: totals.penalty, penaltyNet: totals.penalty - totals.reward },
+        actorName,
+      });
+    } else {
+      usedTemplate = 'cumulative';
+      const state = resolvePenaltyStages(rows || [], [], { rewardRows: [], penaltyAlertThreshold: rules.penaltyAlertThreshold });
+      result = await sendPointNotification({
+        kind: 'penalty',
+        manual: true,
+        supabase,
+        studentId,
+        stage: Number(state.currentStage?.stage || 0),
+        penaltyState: state,
+        recentRows: rows || [],
+        actorName,
+      });
+    }
+    return { ...result, keyword: matched, usedTemplate };
+  } catch (error) {
+    return { ok: false, message: error?.message || '벌점 안내 알림톡 처리 중 오류', keyword: '' };
+  }
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -125,7 +185,22 @@ export async function POST(request) {
         payload: { studentId, pointDate, pointType, points, reason, memo },
       });
 
-      return Response.json({ ok: true, row: data, message: `${pointType === 'reward' ? '상점' : '벌점'} ${points}점 기록 완료` });
+      // v41-277: 벌점 사유에 안내 낱말이 들어가면 바로 알림톡
+      const notice = pointType === 'penalty'
+        ? await maybeSendPenaltyEventNotice(supabase, request, { point: data, studentId, actorName })
+        : null;
+      const noticeNote = notice
+        ? (notice.ok
+          ? ` · 사유에 '${notice.keyword}'가 있어 보호자·학생 ${notice.recipients?.length || 0}명에게 ${notice.usedTemplate === 'cumulative' ? '누적 안내(벌점 부여 안내 템플릿 승인 전이라 대신)' : '벌점 부여 안내'} 알림톡을 보냈습니다.`
+          : ` · 벌점 안내 알림톡은 보내지 못했습니다: ${notice.message || '원인 미상'}`)
+        : '';
+
+      return Response.json({
+        ok: true,
+        row: data,
+        notice: notice ? { ok: Boolean(notice.ok), keyword: notice.keyword, usedTemplate: notice.usedTemplate || '', message: notice.message || '', recipientCount: notice.recipients?.length || 0 } : null,
+        message: `${pointType === 'reward' ? '상점' : '벌점'} ${points}점 기록 완료${noticeNote}`,
+      });
     }
 
     // v41-269: 자주 주는 상점(모범태도/플래너) 또는 같은 내용을 여러 학생에게 한 번에 기록합니다.

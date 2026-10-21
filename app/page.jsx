@@ -8,6 +8,7 @@ import { ENROLLMENT_BLOCK_LABEL, getEnrollmentBlock, formatEnrollmentBlockTitle 
 import { QUICK_REWARD_PRESETS, MAX_BULK_POINT_STUDENTS, summarizeStudentNames } from '../lib/pointQuickPresets';
 import { AUTO_SCHEDULE_NOTE_PATTERN, resolveAbsenceReasons, SCHEDULE_NOTE_HELP } from '../lib/scheduleNoteReason';
 import { previousDateString as previousKstDate } from '../lib/longAwayReview';
+import { matchesPenaltyNoticeKeyword, normalizePenaltyNoticeKeywords } from '../lib/pointAutoRules';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
@@ -16603,10 +16604,38 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
     }
   }
 
+  // v41-277: 벌점 기록이 있는 학생에게 관리자가 아무 때나 보내는 '상벌점 누적 안내' (승인된 템플릿 재활용)
+  async function notifyPenaltyNow(targetStudentId, studentName = '학생') {
+    const ok = confirm(`${studentName} 학생 — 보호자와 학생 본인에게 상벌점 누적 안내 알림톡을 지금 보낼까요?\n\n▶ 단계 기준(15/20/30점)과 무관하게 현재 누적 현황과 최근 내역이 나갑니다.\n▶ 조치 기록은 남기지 않으며, 필요하면 여러 번 보낼 수 있습니다.`);
+    if (!ok) return;
+    try {
+      setRewardWorkingId(`${targetStudentId}-notify`);
+      const data = await apiFetch('/api/student-point-rewards', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'penalty_notify', studentId: targetStudentId, createdBy: currentUser?.displayName || '관리자' }),
+      });
+      setMessage?.(data.message || '알림톡을 보냈습니다.');
+    } catch (error) {
+      setMessage?.(error.message || '알림톡 발송 실패');
+    } finally {
+      setRewardWorkingId('');
+    }
+  }
+
   async function submitPoint() {
     if (!studentId) return alert('학생을 선택하세요.');
     if (!String(form.reason || '').trim()) return alert('상벌점 사유를 입력하세요.');
     const points = Math.max(1, Number(form.points || 0));
+    // v41-277: 벌점 사유에 안내 낱말(기본 CCTV)이 있으면 저장 즉시 알림톡이 나갑니다. 한 번 더 확인합니다.
+    const noticeKeyword = form.pointType === 'penalty' && autoRules.penaltyNoticeEnabled !== false
+      ? matchesPenaltyNoticeKeyword(form.reason, autoRules.penaltyNoticeKeywords)
+      : '';
+    const savingStudentName = students.find((item) => String(item.id) === String(studentId))?.name || '해당 학생';
+    if (noticeKeyword) {
+      const ok = confirm(`사유에 '${noticeKeyword}'가 들어 있습니다.\n\n저장하면 ${savingStudentName} 학생의 보호자와 학생 본인에게 벌점 안내 알림톡이 바로 발송됩니다. 계속할까요?`);
+      if (!ok) return;
+    }
+    const savedPointType = form.pointType;
     // v41-156: 이번 기록으로 벌점 단계를 새로 넘겼는지 비교하기 위해 직전 단계를 기억해 둡니다.
     const stageBefore = Number(rewardState?.penaltyByStudent?.[String(studentId)]?.currentStage?.stage || 0);
     try {
@@ -16627,6 +16656,12 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
       setMessage?.(data.message || '상벌점 기록 완료');
       setForm((prev) => ({ ...prev, points: 1, reason: '', memo: '' }));
       const [, nextRewardState] = await Promise.all([loadPoints(), loadRewardState()]);
+
+      // v41-277: 낱말로 자동 발송되지 않은 벌점은 관리자가 그 자리에서 보낼지 고릅니다.
+      if (savedPointType === 'penalty' && !data?.notice) {
+        const sendNow = confirm(`${savingStudentName} 학생 벌점 ${points}점을 기록했습니다.\n\n이 벌점을 포함한 상벌점 누적 안내 알림톡을 보호자·학생에게 지금 보낼까요?\n(취소해도 벌점 기록은 그대로입니다. 나중에 기록 카드의 [누적 안내 알림톡]으로 보낼 수 있습니다)`);
+        if (sendNow) await notifyPenaltyNow(studentId, savingStudentName);
+      }
 
       // 벌점 단계를 새로 넘긴 경우에는 화면 상단 배너만이 아니라 그 자리에서 바로 알립니다.
       const after = nextRewardState?.penaltyByStudent?.[String(studentId)]?.currentStage;
@@ -16922,6 +16957,39 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
               지각·조기 외출의 허용치는 설정 · 운영 기준의 [지각 허용 시간]을 그대로 씁니다. 하원 기록이 없는 날은 조기 외출로 보지 않습니다.
               매주 월요일 06:00에 지난 주를 판정해 일요일 날짜로 상점을 넣습니다.
             </p>
+          </div>
+
+          {/* v41-277: 벌점 부여 즉시 안내 (사유 낱말) */}
+          <div className="point-auto-perfect-block point-auto-penalty-notice-block">
+            <div className="point-auto-tier-head">
+              <strong>벌점 부여 즉시 안내 알림톡</strong>
+              <span>
+                벌점 <b>사유에 아래 낱말</b>이 들어가면 누적 점수와 무관하게 그 벌점을 <b>보호자·학생 본인</b>에게 바로 알림톡으로 보냅니다.
+                의무 차시에 오지 않아 데일리 리포트가 나가지 않는 날에도 학생이 벌점을 받은 사실을 알 수 있게 하기 위한 것입니다. (직원 건의)
+                {' '}새 템플릿 '벌점 부여 안내'(환경변수 SOLAPI_TEMPLATE_ID_POINT_PENALTY_EVENT)가 승인·설정되면 그 템플릿으로, 그 전에는 승인된 '상벌점 누적 안내' 템플릿으로 대신 나갑니다.
+                {' '}낱말과 무관하게 보내고 싶을 때는 아래 기록 카드의 <b>[누적 안내 알림톡]</b>을 누르면 됩니다.
+              </span>
+            </div>
+            <label className="point-auto-toggle">
+              <input
+                type="checkbox"
+                checked={autoRules.penaltyNoticeEnabled !== false}
+                onChange={(e) => updateAutoRules({ penaltyNoticeEnabled: e.target.checked })}
+              />
+              <span>벌점 부여 즉시 안내 사용</span>
+            </label>
+            <div className="point-auto-perfect-grid">
+              <div className="field">
+                <label>안내를 보내는 사유 낱말 (쉼표로 구분)</label>
+                <input
+                  value={Array.isArray(autoRules.penaltyNoticeKeywords) ? autoRules.penaltyNoticeKeywords.join(', ') : String(autoRules.penaltyNoticeKeywords || '')}
+                  onChange={(e) => updateAutoRules({ penaltyNoticeKeywords: e.target.value })}
+                  onBlur={(e) => updateAutoRules({ penaltyNoticeKeywords: normalizePenaltyNoticeKeywords(e.target.value) })}
+                  placeholder="예: CCTV, 태도불량"
+                />
+                <em>대소문자 구분 없이 사유 안에 들어 있으면 보냅니다. 최대 10개. (기본 CCTV)</em>
+              </div>
+            </div>
           </div>
 
           {/* v41-275: 자율학습 중 장시간 외출 벌점 확인 */}
@@ -17390,7 +17458,13 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
           <div className="field"><label>날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={form.pointDate} onChange={(e) => setForm({ ...form, pointDate: e.target.value })} /></div>
           <div className="field"><label>구분</label><select value={form.pointType} onChange={(e) => setForm({ ...form, pointType: e.target.value })}><option value="reward">상점</option><option value="penalty">벌점</option></select></div>
           <div className="field"><label>점수</label><input type="number" min="1" value={form.points} onChange={(e) => setForm({ ...form, points: e.target.value })} /></div>
-          <div className="field full"><label>사유</label><input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="예: 플래너 성실 작성 / 무단 외출 / 순공 목표 달성" /></div>
+          <div className="field full">
+            <label>사유</label>
+            <input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="예: 플래너 성실 작성 / 무단 외출 / 순공 목표 달성" />
+            {form.pointType === 'penalty' && autoRules.penaltyNoticeEnabled !== false && matchesPenaltyNoticeKeyword(form.reason, autoRules.penaltyNoticeKeywords) ? (
+              <div className="hint penalty-notice-hint">⚠ 사유에 &apos;{matchesPenaltyNoticeKeyword(form.reason, autoRules.penaltyNoticeKeywords)}&apos;가 있어 저장 즉시 보호자·학생에게 벌점 안내 알림톡이 발송됩니다.</div>
+            ) : null}
+          </div>
           <div className="field full"><label>메모</label><input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="내부 참고 메모. 선택 입력" /></div>
         </div>
         <button className="primary" onClick={submitPoint} disabled={saving || !studentId}>{saving ? '저장 중...' : '상벌점 저장'}</button>
@@ -17421,6 +17495,17 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                     {group.reward ? <em className="reward" title="조회 기간 상점 합계">+{group.reward}</em> : null}
                     {group.penalty ? <em className="penalty" title="조회 기간 벌점 합계">-{group.penalty}</em> : null}
                     <b className={group.net >= 0 ? 'net-positive' : 'net-negative'} title="조회 기간 순점수">순 {group.net > 0 ? '+' : ''}{group.net}</b>
+                    {group.penalty > 0 || Number(rewardState?.penaltyByStudent?.[String(group.key)]?.penalty || 0) > 0 ? (
+                      <button
+                        type="button"
+                        className="secondary tiny-action points-notify-btn"
+                        onClick={() => notifyPenaltyNow(group.key, group.name)}
+                        disabled={Boolean(rewardWorkingId)}
+                        title="보호자·학생에게 상벌점 누적 안내 알림톡을 지금 보냅니다 (단계 기준과 무관)"
+                      >
+                        {rewardWorkingId === `${group.key}-notify` ? '발송 중...' : '누적 안내 알림톡'}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 {cycle ? (

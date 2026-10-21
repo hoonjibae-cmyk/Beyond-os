@@ -408,7 +408,7 @@ export async function POST(request) {
     const memo = String(body.memo || '').trim();
 
     if (!studentId) return Response.json({ error: 'studentId is required' }, { status: 400 });
-    if (!['grant', 'defer', 'penalty_done', 'penalty_defer'].includes(action)) {
+    if (!['grant', 'defer', 'penalty_done', 'penalty_defer', 'penalty_notify'].includes(action)) {
       return Response.json({ error: `Unknown action: ${action || '-'}` }, { status: 400 });
     }
 
@@ -417,6 +417,59 @@ export async function POST(request) {
     const actorName = actor?.displayName || body.createdBy || '관리자';
     // v41-236: 저장·판정도 화면과 같은 기수 기간을 봐야 숫자가 어긋나지 않습니다.
     const cohortRange = await resolvePointCohortRange(supabase, request);
+
+    // ── v41-277: 벌점 수시 안내 (관리자가 아무 때나 선택해서 발송) ──────────
+    // 단계 기준(15/20/30점)과 무관합니다. 벌점 기록이 1건이라도 있으면 보낼 수 있고,
+    // 승인된 '상벌점 누적 안내' 템플릿을 변수만 바꿔 그대로 씁니다. 조치 기록은 남기지 않습니다.
+    if (action === 'penalty_notify') {
+      const [points, penaltyRows, rewardsForStage] = await Promise.all([
+        loadPointRows(supabase, studentId, cohortRange),
+        loadPenaltyActionRows(supabase, studentId, cohortRange),
+        loadRewardRows(supabase, studentId, cohortRange),
+      ]);
+      const penaltyRules = await getPointAutoRules(supabase);
+      const state = resolvePenaltyStages(points, penaltyRows.rows, { rewardRows: rewardsForStage.rows, penaltyAlertThreshold: penaltyRules.penaltyAlertThreshold });
+      if (!(state.penalty > 0)) {
+        return Response.json({ error: '이 기수에 기록된 벌점이 없어 안내할 내용이 없습니다.' }, { status: 400 });
+      }
+
+      const notification = await sendPointNotification({
+        kind: 'penalty',
+        manual: true,
+        supabase,
+        studentId,
+        stage: Number(state.currentStage?.stage || 0),
+        penaltyState: state,
+        recentRows: points.slice().reverse(),
+        actorName,
+      });
+
+      await writeUserActionLog(supabase, request, {
+        actionType: 'student_penalty.notify',
+        targetType: 'student',
+        targetId: studentId,
+        payload: {
+          penaltyNet: state.penaltyNet, reward: state.reward, penalty: state.penalty, memo,
+          notified: Boolean(notification?.ok), message: notification?.message || '',
+          recipientCount: notification?.recipients?.length || 0,
+        },
+      }).catch(() => {});
+
+      if (!notification?.ok) {
+        return Response.json({
+          ok: false,
+          notified: false,
+          message: `알림톡을 보내지 못했습니다: ${notification?.message || '원인 미상'}`,
+          penaltyState: { penaltyNet: state.penaltyNet, reward: state.reward, penalty: state.penalty },
+        }, { status: notification?.skipped ? 400 : 502 });
+      }
+      return Response.json({
+        ok: true,
+        notified: true,
+        message: `보호자·학생 ${notification.recipients?.length || 0}명에게 상벌점 누적 안내 알림톡을 보냈습니다. (순벌점 ${state.penaltyNet}점 · 벌 ${state.penalty} - 상 ${state.reward})`,
+        penaltyState: { penaltyNet: state.penaltyNet, reward: state.reward, penalty: state.penalty },
+      });
+    }
 
     // ── v41-156: 벌점 단계 조치 기록 ─────────────────────────
     if (action === 'penalty_done' || action === 'penalty_defer') {

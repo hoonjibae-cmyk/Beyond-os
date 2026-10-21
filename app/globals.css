@@ -19465,3 +19465,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* v41-276 시간표 확인 링크 알림톡 — 마지막 발송 결과 */
 .main .confirm-send-result.has-failed{ border-color:#eab9b3 !important; }
 .main .confirm-send-result > p{ margin:4px 0 8px; font-size:var(--ui-fs-sm); }
+
+/* v41-277 벌점 부여 즉시 안내 + 누적 안내 수시 발송 */
+.main .penalty-notice-hint{ margin-top:4px; color:#9f1d35 !important; font-size:12px !important; font-weight:var(--ui-w-med) !important; }
+.main .points-student-score button.points-notify-btn{ margin-left:2px; white-space:nowrap; }
