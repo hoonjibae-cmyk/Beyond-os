@@ -19461,3 +19461,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .main .long-away-planned{ margin:0 !important; font-size:12px !important; color:#8a6d00; }
 .main .long-away-decision{ margin:0 !important; font-size:12px !important; color:var(--ap-text-2); }
 .main .penalty-stage-badge.tone-warn{ background:#fff3c4; color:#7a5a00; border-color:#f2c23b; }
+
+/* v41-276 시간표 확인 링크 알림톡 — 마지막 발송 결과 */
+.main .confirm-send-result.has-failed{ border-color:#eab9b3 !important; }
+.main .confirm-send-result > p{ margin:4px 0 8px; font-size:var(--ui-fs-sm); }
