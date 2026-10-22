@@ -16635,7 +16635,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
       const ok = confirm(`사유에 '${noticeKeyword}'가 들어 있습니다.\n\n저장하면 ${savingStudentName} 학생의 보호자와 학생 본인에게 벌점 안내 알림톡이 바로 발송됩니다. 계속할까요?`);
       if (!ok) return;
     }
-    const savedPointType = form.pointType;
+
     // v41-156: 이번 기록으로 벌점 단계를 새로 넘겼는지 비교하기 위해 직전 단계를 기억해 둡니다.
     const stageBefore = Number(rewardState?.penaltyByStudent?.[String(studentId)]?.currentStage?.stage || 0);
     try {
@@ -16656,12 +16656,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
       setMessage?.(data.message || '상벌점 기록 완료');
       setForm((prev) => ({ ...prev, points: 1, reason: '', memo: '' }));
       const [, nextRewardState] = await Promise.all([loadPoints(), loadRewardState()]);
-
-      // v41-277: 낱말로 자동 발송되지 않은 벌점은 관리자가 그 자리에서 보낼지 고릅니다.
-      if (savedPointType === 'penalty' && !data?.notice) {
-        const sendNow = confirm(`${savingStudentName} 학생 벌점 ${points}점을 기록했습니다.\n\n이 벌점을 포함한 상벌점 누적 안내 알림톡을 보호자·학생에게 지금 보낼까요?\n(취소해도 벌점 기록은 그대로입니다. 나중에 기록 카드의 [누적 안내 알림톡]으로 보낼 수 있습니다)`);
-        if (sendNow) await notifyPenaltyNow(studentId, savingStudentName);
-      }
+      // v41-277.1: 벌점 저장 뒤 '지금 보낼까요?' 확인창은 뺐습니다. 수시 안내는 기록 카드의 [누적 안내 알림톡]으로만 보냅니다.
 
       // 벌점 단계를 새로 넘긴 경우에는 화면 상단 배너만이 아니라 그 자리에서 바로 알립니다.
       const after = nextRewardState?.penaltyByStudent?.[String(studentId)]?.currentStage;
