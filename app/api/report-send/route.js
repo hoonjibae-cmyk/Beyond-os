@@ -3,7 +3,7 @@ import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermis
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { ensureReportShareLink } from '../../../lib/reportShare';
 import { validateKakaoTemplateVariables } from '../../../lib/reportTemplateValidation';
-import { diffMinutes } from '../../../lib/date';
+import { diffMinutes, getKstMinutesSinceDate } from '../../../lib/date';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
@@ -145,28 +145,7 @@ function normalizePlannedTime(value, fallback = '09:00:00') {
   return `${String(Number(match[1])).padStart(2, '0')}:${String(Number(match[2])).padStart(2, '0')}:00`;
 }
 
-function getKstMinutesFromIso(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-
-  try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Seoul',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(date);
-
-    const hour = Number(parts.find((part) => part.type === 'hour')?.value);
-    const minute = Number(parts.find((part) => part.type === 'minute')?.value);
-    if (Number.isFinite(hour) && Number.isFinite(minute)) return hour * 60 + minute;
-  } catch {
-    // fallback 아래에서 처리
-  }
-
-  return timeToMinutes(formatKstTime(value));
-}
+// v41-278: getKstMinutesFromIso(그날의 분) 는 lib/date.getKstMinutesSinceDate 로 대체했습니다.
 
 function normalizeDailySchedule(schedule = null, defaultSchedule = null) {
   const fallbackIn = `${defaultSchedule?.plannedCheckIn || '09:00'}:00`;
@@ -199,7 +178,8 @@ function getLateIssueLabel(session = {}, schedule = null, rules = DEFAULT_OPERAT
 
   const normalizedSchedule = normalizeDailySchedule(schedule, defaultSchedule);
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_in);
-  const actualMinutes = getKstMinutesFromIso(session.check_in_at);
+  // v41-278: 세션 날짜 기준 분으로 비교합니다. (자정 넘김 보정)
+  const actualMinutes = getKstMinutesSinceDate(session.check_in_at, session.session_date);
   const threshold = normalizeOperatingRules(rules).lateThresholdMinutes;
 
   if (plannedMinutes === null || actualMinutes === null) return '';
@@ -215,7 +195,8 @@ function getEarlyLeaveIssueLabel(session = {}, schedule = null, rules = DEFAULT_
 
   const normalizedSchedule = normalizeDailySchedule(schedule, defaultSchedule);
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_out);
-  const actualMinutes = getKstMinutesFromIso(session.check_out_at);
+  // v41-278: 00:04 하원을 '22:00 보다 1,316분 이른 조퇴'로 잘못 보던 것을 고칩니다.
+  const actualMinutes = getKstMinutesSinceDate(session.check_out_at, session.session_date);
   const threshold = normalizeOperatingRules(rules).earlyLeaveThresholdMinutes;
 
   if (plannedMinutes === null || actualMinutes === null) return '';

@@ -8,7 +8,7 @@ import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 import { BRAND_NAME } from '../../../lib/brand';
 import { getWeeklyInterviewTitle } from '../../../lib/weeklyInterview';
 import { getCohortIdFromRequest, resolveScopeCohort, loadCohortStudentIds } from '../../../lib/cohortScope';
-import { getKstDateString } from '../../../lib/date';
+import { getKstDateString, getKstMinutesSinceDate } from '../../../lib/date';
 
 export const dynamic = 'force-dynamic';
 
@@ -136,8 +136,9 @@ function createFlag(label, type, reason = '') {
 
 function getAttendanceFlags(row = {}, rules = DEFAULT_OPERATING_RULES) {
   const flags = [];
-  const checkInMinute = timeToMinutes(row.checkInTime);
-  const checkOutMinute = timeToMinutes(row.checkOutTime);
+  // v41-278: 자정 넘긴 하원은 날짜 기준 분(1440+)으로 비교해 조퇴 오판을 막습니다.
+  const checkInMinute = row.checkInAt ? getKstMinutesSinceDate(row.checkInAt, row.date) : timeToMinutes(row.checkInTime);
+  const checkOutMinute = row.checkOutAt ? getKstMinutesSinceDate(row.checkOutAt, row.date) : timeToMinutes(row.checkOutTime);
   const plannedIn = timeToMinutes(row.plannedCheckInTime || row.plannedCheckIn);
   const plannedOut = timeToMinutes(row.plannedCheckOutTime || row.plannedCheckOut);
 

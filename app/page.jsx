@@ -9,6 +9,7 @@ import { QUICK_REWARD_PRESETS, MAX_BULK_POINT_STUDENTS, summarizeStudentNames } 
 import { AUTO_SCHEDULE_NOTE_PATTERN, resolveAbsenceReasons, SCHEDULE_NOTE_HELP } from '../lib/scheduleNoteReason';
 import { previousDateString as previousKstDate } from '../lib/longAwayReview';
 import { matchesPenaltyNoticeKeyword, normalizePenaltyNoticeKeywords } from '../lib/pointAutoRules';
+import { getKstMinutesSinceDate } from '../lib/date';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
@@ -1309,8 +1310,9 @@ function averageClock(rows, key) {
 function getAttendanceFlags(row, rulesInput = DEFAULT_OPERATING_RULES) {
   const rules = normalizeOperatingRules(rulesInput);
   const flags = [];
-  const checkInMinutes = timeTextToMinutes(row?.checkInTime);
-  const checkOutMinutes = timeTextToMinutes(row?.checkOutTime);
+  // v41-278: 자정 넘긴 하원(00:04)은 날짜 기준 분(1440+)으로 비교해 조퇴로 잘못 잡지 않습니다.
+  const checkInMinutes = row?.checkInAt ? getKstMinutesSinceDate(row.checkInAt, row?.date) : timeTextToMinutes(row?.checkInTime);
+  const checkOutMinutes = row?.checkOutAt ? getKstMinutesSinceDate(row.checkOutAt, row?.date) : timeTextToMinutes(row?.checkOutTime);
   // v41-42: 개인 시간표가 없는 행은 예정 등하원이 비어 있고, 이 경우 지각/조퇴 판정을 하지 않습니다.
   const plannedCheckIn = timeTextToMinutes(row?.plannedCheckInTime || row?.plannedCheckIn);
   const plannedCheckOut = timeTextToMinutes(row?.plannedCheckOutTime || row?.plannedCheckOut);
@@ -3962,8 +3964,11 @@ export default function Page() {
   function getTimingIssueForStatus(seatStatus, currentSession, studentId, eventTimeValue) {
     const rules = normalizeOperatingRules(operatingRules);
     const schedule = getTodayScheduleForStudent(studentId);
-    const eventMinutes = timeToMinutes(eventTimeValue || getCurrentKstTime());
+    let eventMinutes = timeToMinutes(eventTimeValue || getCurrentKstTime());
     if (eventMinutes === null) return null;
+    // v41-278: 자정을 넘긴 새벽(05:00 전) 처리 시각은 전날 운영일의 연장(1440+)으로 봅니다.
+    // 00:04 퇴실을 '22:00 보다 1,316분 이른 조퇴'로 잡지 않기 위해서입니다.
+    if (eventMinutes < 5 * 60) eventMinutes += 1440;
 
     if (seatStatus === 'occupied') {
       const currentStatus = currentSession?.seat_status || 'not_arrived';

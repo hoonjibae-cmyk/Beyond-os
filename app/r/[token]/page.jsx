@@ -11,6 +11,7 @@ import { normalizePlannerRotation, isPlannerRotationSideways } from '../../../li
 import { normalizeCohort, resolveCohortForDate } from '../../../lib/cohorts';
 import { summarizeFocusRatings } from '../../../lib/focusRating';
 import { selectInChunksSafe } from '../../../lib/supabaseChunk';
+import { getKstMinutesSinceDate } from '../../../lib/date';
 
 export const dynamic = 'force-dynamic';
 
@@ -531,7 +532,8 @@ function getLateIssueLabel(session = {}, schedule = null, rules = DEFAULT_OPERAT
   // v41-42: 개인 시간표(또는 리포트 스냅샷)가 있는 날짜만 지각 판정.
   if (normalizedSchedule.is_default_schedule) return '';
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_in);
-  const actualMinutes = getKstMinutesFromIso(session.check_in_at);
+  // v41-278: 세션 날짜 기준 분으로 비교합니다. (자정 넘김 보정)
+  const actualMinutes = getKstMinutesSinceDate(session.check_in_at, session.session_date || session.date);
   const threshold = normalizeOperatingRules(rules).lateThresholdMinutes;
 
   if (plannedMinutes === null || actualMinutes === null) return '';
@@ -545,7 +547,8 @@ function getEarlyLeaveIssueLabel(session = {}, schedule = null, rules = DEFAULT_
   // v41-42: 개인 시간표(또는 리포트 스냅샷)가 있는 날짜만 조퇴 판정.
   if (normalizedSchedule.is_default_schedule) return '';
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_out);
-  const actualMinutes = getKstMinutesFromIso(session.check_out_at);
+  // v41-278: 자정 넘긴 하원(00:04)이 조퇴로 찍히지 않게 세션 날짜 기준 분으로 비교합니다.
+  const actualMinutes = getKstMinutesSinceDate(session.check_out_at, session.session_date || session.date);
   const threshold = normalizeOperatingRules(rules).earlyLeaveThresholdMinutes;
 
   if (plannedMinutes === null || actualMinutes === null) return '';
