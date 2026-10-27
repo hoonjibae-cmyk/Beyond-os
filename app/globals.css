@@ -19469,3 +19469,7 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 /* v41-277 벌점 부여 즉시 안내 + 누적 안내 수시 발송 */
 .main .penalty-notice-hint{ margin-top:4px; color:#9f1d35 !important; font-size:12px !important; font-weight:var(--ui-w-med) !important; }
 .main .points-student-score button.points-notify-btn{ margin-left:2px; white-space:nowrap; }
+
+/* v41-279 출결 기록 삭제 (좌석 패널 전체 삭제 · 최근 출결 이력 한 건 삭제) */
+.panel button.session-delete-btn{ min-width:96px; }
+.panel .attendance-event-actions button.attendance-event-delete-btn{ margin-left:auto; }

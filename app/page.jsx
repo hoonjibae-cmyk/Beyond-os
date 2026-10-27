@@ -4269,6 +4269,82 @@ export default function Page() {
     setAttendanceEventTimeEditor(null);
   }
 
+  // v41-279: [최근 출결 이력] 한 건 삭제. 지우기 전에 무엇이 달라지는지 서버가 계산한 경고를 보여 주고 확인받습니다.
+  async function deleteAttendanceEvent(event) {
+    const label = getAttendanceEventLabel(event.event_type);
+    const timeText = formatKstTime(event.event_at || event.created_at);
+    const first = confirm(
+      `⚠ ${label} ${timeText} 기록을 삭제하려고 합니다.\n\n`
+      + '이 작업은 되돌릴 수 없습니다. 삭제하면 이 기록을 뺀 나머지 기록으로 입실·퇴실·외출·순공시간과 현재 상태를 다시 계산합니다.\n\n'
+      + '다음 단계에서 정확히 무엇이 바뀌는지 보여 드립니다. 계속할까요?',
+    );
+    if (!first) return;
+    try {
+      setMessage('삭제 영향 확인 중...');
+      const preview = await apiFetch('/api/attendance-event-delete', {
+        method: 'POST',
+        body: JSON.stringify({ eventId: event.id, confirm: false, adminName: currentUser?.displayName || '관리자' }),
+      });
+      if (preview?.needsConfirm) {
+        const lines = (preview.warnings || []).map((item, index) => `${index + 1}. ${item}`).join('\n');
+        const ok = confirm(`${label} ${timeText} 기록을 지우면 아래와 같이 됩니다.\n\n${lines}\n\n정말 삭제할까요? (되돌릴 수 없습니다)`);
+        if (!ok) { setMessage('삭제를 취소했습니다.'); return; }
+      }
+      const result = await apiFetch('/api/attendance-event-delete', {
+        method: 'POST',
+        body: JSON.stringify({ eventId: event.id, confirm: true, adminName: currentUser?.displayName || '관리자' }),
+      });
+      await loadDashboard({ silent: true, suppressChangeNotice: true });
+      setMessage(result?.message || '출결 기록을 삭제했습니다.');
+      setAttendanceActionNotice({ type: 'success', title: '출결 기록 삭제 완료', message: result?.message || `${label} ${timeText} 기록을 삭제했습니다.` });
+    } catch (error) {
+      setMessage(error.message || '출결 기록 삭제 실패');
+      setAttendanceActionNotice({ type: 'failed', title: '출결 기록 삭제 실패', message: error.message || '삭제하지 못했습니다.' });
+    }
+  }
+
+  // v41-279: 그날 출결 기록 전체 삭제(미입실로 되돌리기). 경고 → 영향 상세 → '삭제' 입력 세 단계를 거칩니다.
+  async function deleteSelectedSessionRecords() {
+    const session = getSessionForSeat(selectedSeatNo);
+    if (!session?.id) return alert('이 좌석에는 오늘 출결 기록이 없습니다.');
+    const studentName = form.name?.trim() || '선택 학생';
+    const first = confirm(
+      `⚠ ${studentName} 학생의 오늘(${session.session_date}) 출결 기록을 전부 삭제하려고 합니다.\n\n`
+      + '입실·외출·복귀·퇴실 기록과 순찰 기록이 모두 지워지고 이 날은 "미입실"(기록 없음)로 돌아갑니다. 되돌릴 수 없습니다.\n\n'
+      + '잘못 눌린 입실·결석을 아예 없던 일로 만들 때만 쓰세요. 시각만 틀렸다면 [출결시간 조정]이나 [시간 수정]을 쓰는 것이 맞습니다.\n\n'
+      + '다음 단계에서 지워질 내용과 영향을 자세히 보여 드립니다. 계속할까요?',
+    );
+    if (!first) return;
+    try {
+      setMessage('삭제 영향 확인 중...');
+      const preview = await apiFetch('/api/session-delete', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: session.id, confirm: false, adminName: currentUser?.displayName || '관리자' }),
+      });
+      if (!preview?.needsConfirm) throw new Error(preview?.error || '삭제 영향을 확인하지 못했습니다.');
+      const detail = [
+        `[지워질 기록]`,
+        ...(preview.lines || []).map((line) => `· ${line}`),
+        '',
+        `[삭제하면 일어나는 일]`,
+        ...(preview.effects || []).map((line, index) => `${index + 1}. ${line}`),
+      ].join('\n');
+      const typed = prompt(`${preview.studentName || studentName} 학생 · ${preview.sessionDate || session.session_date}\n\n${detail}\n\n정말 삭제하려면 아래에 "삭제"라고 입력하세요.`, '');
+      if (typed === null) { setMessage('삭제를 취소했습니다.'); return; }
+      if (String(typed).trim() !== '삭제') { setMessage('"삭제"라고 정확히 입력해야 지워집니다. 취소했습니다.'); return; }
+      const result = await apiFetch('/api/session-delete', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: session.id, confirm: true, adminName: currentUser?.displayName || '관리자' }),
+      });
+      await loadDashboard({ silent: true, suppressChangeNotice: true });
+      setMessage(result?.message || '출결 기록을 모두 삭제했습니다.');
+      setAttendanceActionNotice({ type: 'success', title: '출결 기록 전체 삭제 완료', message: result?.message || '이 날은 미입실로 돌아갔습니다.' });
+    } catch (error) {
+      setMessage(error.message || '출결 기록 삭제 실패');
+      setAttendanceActionNotice({ type: 'failed', title: '출결 기록 삭제 실패', message: error.message || '삭제하지 못했습니다.' });
+    }
+  }
+
   async function saveAttendanceEventTime(event) {
     const editor = attendanceEventTimeEditor;
     if (!editor || editor.id !== event.id) return;
@@ -6575,6 +6651,17 @@ export default function Page() {
           </div>
           <div className="btn-row">
             <button className="secondary" onClick={openAttendanceAdjustPopup}>출결시간 조정</button>
+            {selectedSession?.id ? (
+              <button
+                type="button"
+                className="danger session-delete-btn"
+                onClick={deleteSelectedSessionRecords}
+                disabled={Boolean(attendanceSavingStatus)}
+                title="오늘 출결 기록 전체(입실·외출·퇴실·순찰)를 지우고 미입실로 되돌립니다. 되돌릴 수 없습니다."
+              >
+                기록 삭제 · 미입실로
+              </button>
+            ) : null}
           </div>
           <div className="hint">버튼을 늦게 눌렀을 때 실제 입실/퇴실/외출 시간을 보정하는 용도입니다. 외출 사유는 외출 버튼을 누르면 입력합니다.</div>
         </PanelSection>
@@ -6725,11 +6812,14 @@ export default function Page() {
                     <button type="button" className="secondary tiny-action" onClick={() => openAttendanceEventTimeEditor(event)}>시간 수정</button>
                   ) : null}
                   <button type="button" className="secondary tiny-action" onClick={() => editAttendanceEventMemo(event)}>사유 수정</button>
+                  {event.event_type !== 'absent' ? (
+                    <button type="button" className="danger tiny-action attendance-event-delete-btn" onClick={() => deleteAttendanceEvent(event)} title="이 기록 한 건만 삭제합니다. 나머지 기록으로 입실·퇴실·외출·순공시간을 다시 계산합니다.">삭제</button>
+                  ) : null}
                 </div>
               </div>
             );
           }) : <div className="muted">아직 출결 기록이 없습니다.</div>}
-          <div className="hint">[시간 수정]은 입실 · 외출 · 복귀 · 퇴실 기록에만 있습니다. 고치면 [오늘 출결 요약]의 입실/퇴실 시각과 순공시간도 함께 맞춰집니다.</div>
+          <div className="hint">[시간 수정]은 입실 · 외출 · 복귀 · 퇴실 기록에만 있습니다. 고치면 [오늘 출결 요약]의 입실/퇴실 시각과 순공시간도 함께 맞춰집니다. [삭제]는 그 한 건만 지우고 나머지로 다시 계산하며, 지우기 전에 무엇이 바뀌는지 보여 줍니다. 되돌릴 수 없습니다.</div>
         </PanelSection>
 
         <PanelSection title="오늘 순찰 기록" defaultMobileOpen={false} className="history patrol-history-section">
