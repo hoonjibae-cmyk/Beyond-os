@@ -11,6 +11,7 @@ import { previousDateString as previousKstDate } from '../lib/longAwayReview';
 import { matchesPenaltyNoticeKeyword, normalizePenaltyNoticeKeywords } from '../lib/pointAutoRules';
 import { PENALTY_CATEGORIES, CUSTOM_PENALTY_CATEGORY_KEY, buildPenaltyReason, getPenaltyCategoryDefaultPoints } from '../lib/penaltyCategories';
 import { getKstMinutesSinceDate } from '../lib/date';
+import { isPlannedAbsentSchedule } from '../lib/plannedAbsence';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
 import { buildSpecialOverrides, formatSpecialItem } from '../lib/specialScheduleParse';
@@ -1315,8 +1316,9 @@ function getAttendanceFlags(row, rulesInput = DEFAULT_OPERATING_RULES) {
   const checkInMinutes = row?.checkInAt ? getKstMinutesSinceDate(row.checkInAt, row?.date) : timeTextToMinutes(row?.checkInTime);
   const checkOutMinutes = row?.checkOutAt ? getKstMinutesSinceDate(row.checkOutAt, row?.date) : timeTextToMinutes(row?.checkOutTime);
   // v41-42: 개인 시간표가 없는 행은 예정 등하원이 비어 있고, 이 경우 지각/조퇴 판정을 하지 않습니다.
-  const plannedCheckIn = timeTextToMinutes(row?.plannedCheckInTime || row?.plannedCheckIn);
-  const plannedCheckOut = timeTextToMinutes(row?.plannedCheckOutTime || row?.plannedCheckOut);
+  // v41-281: 결석으로 등록한 날(plannedAbsent)도 예정 등하원을 기준으로 삼지 않습니다.
+  const plannedCheckIn = row?.plannedAbsent ? null : timeTextToMinutes(row?.plannedCheckInTime || row?.plannedCheckIn);
+  const plannedCheckOut = row?.plannedAbsent ? null : timeTextToMinutes(row?.plannedCheckOutTime || row?.plannedCheckOut);
   const pureStudyMinutes = Number(row?.pureStudyMinutes || 0);
   const awayMinutes = Number(row?.awayMinutes || 0);
   const awayCount = Number(row?.awayCount || 0);
@@ -3961,12 +3963,15 @@ export default function Page() {
     return {
       plannedCheckIn: schedule?.planned_check_in?.slice(0, 5) || normalizeDefaultScheduleSettings(defaultSchedule).plannedCheckIn,
       plannedCheckOut: schedule?.planned_check_out?.slice(0, 5) || normalizeDefaultScheduleSettings(defaultSchedule).plannedCheckOut,
+      plannedAbsent: isPlannedAbsentSchedule(schedule),
     };
   }
 
   function getTimingIssueForStatus(seatStatus, currentSession, studentId, eventTimeValue) {
     const rules = normalizeOperatingRules(operatingRules);
     const schedule = getTodayScheduleForStudent(studentId);
+    // v41-281: 결석으로 등록한 날은 지각/조퇴 안내를 띄우지 않습니다.
+    if (schedule.plannedAbsent) return null;
     let eventMinutes = timeToMinutes(eventTimeValue || getCurrentKstTime());
     if (eventMinutes === null) return null;
     // v41-278: 자정을 넘긴 새벽(05:00 전) 처리 시각은 전날 운영일의 연장(1440+)으로 봅니다.
@@ -13366,6 +13371,7 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
       checkOutTime: session.check_out_at ? formatKstTime(session.check_out_at) : '',
       plannedCheckInTime: schedule.planned_check_in || '',
       plannedCheckOutTime: schedule.planned_check_out || '',
+      plannedAbsent: isPlannedAbsentSchedule(schedule),
       awayCount: awayEvents.length,
       awayMinutes: getTotalAwayMinutes(session, nowTick),
       pureStudyMinutes: calculateLivePureStudyMinutes(session, nowTick, eventsBySessionForReport[session.id] || [], defaultSchedule),

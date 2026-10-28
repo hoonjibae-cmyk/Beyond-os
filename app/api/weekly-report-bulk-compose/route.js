@@ -9,6 +9,7 @@ import { BRAND_NAME } from '../../../lib/brand';
 import { getWeeklyInterviewTitle } from '../../../lib/weeklyInterview';
 import { getCohortIdFromRequest, resolveScopeCohort, loadCohortStudentIds } from '../../../lib/cohortScope';
 import { getKstDateString, getKstMinutesSinceDate } from '../../../lib/date';
+import { isPlannedAbsentSchedule } from '../../../lib/plannedAbsence';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,11 +152,12 @@ function getAttendanceFlags(row = {}, rules = DEFAULT_OPERATING_RULES) {
     flags.push(createFlag('미등원', 'warning', row.attendanceMemo || row.absentReason));
   }
 
-  if (checkInMinute !== null && plannedIn !== null && checkInMinute > plannedIn + rules.lateThresholdMinutes) {
+  // v41-281: 결석으로 등록한 날(plannedAbsent)은 예정 등하원을 기준으로 지각/조퇴를 판정하지 않습니다.
+  if (!row.plannedAbsent && checkInMinute !== null && plannedIn !== null && checkInMinute > plannedIn + rules.lateThresholdMinutes) {
     flags.push(createFlag('지각', 'warning', row.lateReason));
   }
 
-  if (checkOutMinute !== null && plannedOut !== null && checkOutMinute < plannedOut - rules.earlyLeaveThresholdMinutes) {
+  if (!row.plannedAbsent && checkOutMinute !== null && plannedOut !== null && checkOutMinute < plannedOut - rules.earlyLeaveThresholdMinutes) {
     flags.push(createFlag('조퇴', 'warning', row.earlyLeaveReason));
   }
 
@@ -272,6 +274,7 @@ function buildRowsFromSessions({ sessions = [], eventsBySession = {}, reportsByS
       plannedCheckOut: schedule.planned_check_out || '',
       plannedCheckInTime: schedule.planned_check_in || '',
       plannedCheckOutTime: schedule.planned_check_out || '',
+      plannedAbsent: isPlannedAbsentSchedule(schedule),
       mentorComment: report.mentor_comment || '',
       attendanceMemo: session.attendance_memo || '',
       absentReason: getLatestEventReason(events, 'absent', '결석'),

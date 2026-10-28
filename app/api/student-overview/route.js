@@ -11,7 +11,8 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
-import { getKstDateString, diffMinutes, formatMinutes } from '../../../lib/date';
+import { getKstDateString, diffMinutes, formatMinutes, getKstMinutesSinceDate } from '../../../lib/date';
+import { isPlannedAbsentSchedule } from '../../../lib/plannedAbsence';
 import { resolvePointCycle, resolvePenaltyStages } from '../../../lib/studentPointCycle';
 import { getPointAutoRules } from '../../../lib/pointAutoRulesServer';
 import { loadCohortContext, resolveDefaultCohort, resolveStudentCohortRange, sortCohorts, isUsableCohort, formatCohortLabel } from '../../../lib/cohorts';
@@ -264,7 +265,7 @@ export async function GET(request) {
     // 최근 구간의 지각/조퇴 판정을 위해 개인 시간표를 함께 읽습니다.
     const scheduleResult = await safeSelect('개인 시간표', () => supabase
       .from('student_daily_schedules')
-      .select('schedule_date,planned_check_in,planned_check_out')
+      .select('*')
       .eq('student_id', studentId)
       .gte('schedule_date', recentStart)
       .lte('schedule_date', today));
@@ -280,10 +281,13 @@ export async function GET(request) {
       if (session.check_in_at) flags.attendDays += 1;
 
       const schedule = scheduleByDate[session.session_date] || {};
-      const plannedIn = timeToMinutes(schedule.planned_check_in);
-      const plannedOut = timeToMinutes(schedule.planned_check_out);
-      const actualIn = timeToMinutes(formatKstTime(session.check_in_at));
-      const actualOut = timeToMinutes(formatKstTime(session.check_out_at));
+      // v41-281: 결석으로 등록한 날은 예정 등하원을 기준으로 지각/조퇴를 세지 않습니다.
+      const plannedAbsent = isPlannedAbsentSchedule(schedule);
+      const plannedIn = plannedAbsent ? null : timeToMinutes(schedule.planned_check_in);
+      const plannedOut = plannedAbsent ? null : timeToMinutes(schedule.planned_check_out);
+      // 자정 넘긴 하원(00:04)을 조퇴로 세지 않도록 세션 날짜 기준 분으로 비교합니다.
+      const actualIn = session.check_in_at ? getKstMinutesSinceDate(session.check_in_at, session.session_date) : null;
+      const actualOut = session.check_out_at ? getKstMinutesSinceDate(session.check_out_at, session.session_date) : null;
       if (plannedIn !== null && actualIn !== null && actualIn - plannedIn >= rules.lateThresholdMinutes) flags.lateDays += 1;
       if (plannedOut !== null && actualOut !== null && plannedOut - actualOut >= rules.earlyLeaveThresholdMinutes) flags.earlyLeaveDays += 1;
 

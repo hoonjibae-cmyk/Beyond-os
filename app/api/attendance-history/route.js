@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { selectInChunks, selectInChunksSafe } from '../../../lib/supabaseChunk';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString, diffMinutes } from '../../../lib/date';
+import { isPlannedAbsentSchedule } from '../../../lib/plannedAbsence';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
@@ -195,6 +196,8 @@ export async function GET(request) {
         plannedCheckOut: schedule.planned_check_out || '',
         plannedCheckInTime: schedule.planned_check_in || '',
         plannedCheckOutTime: schedule.planned_check_out || '',
+        // v41-281: 결석으로 등록한 날은 지각/조퇴 판정에서 제외합니다.
+        plannedAbsent: isPlannedAbsentSchedule(schedule),
         scheduleNote: schedule.schedule_note || '',
         mentorComment: report.mentor_comment || '',
         attendanceMemo: session.attendance_memo || '',

@@ -12,6 +12,7 @@ import { normalizeCohort, resolveCohortForDate } from '../../../lib/cohorts';
 import { summarizeFocusRatings } from '../../../lib/focusRating';
 import { selectInChunksSafe } from '../../../lib/supabaseChunk';
 import { getKstMinutesSinceDate } from '../../../lib/date';
+import { isPlannedAbsentSchedule } from '../../../lib/plannedAbsence';
 
 export const dynamic = 'force-dynamic';
 
@@ -531,6 +532,8 @@ function getLateIssueLabel(session = {}, schedule = null, rules = DEFAULT_OPERAT
   const normalizedSchedule = normalizeDailySchedule(schedule);
   // v41-42: 개인 시간표(또는 리포트 스냅샷)가 있는 날짜만 지각 판정.
   if (normalizedSchedule.is_default_schedule) return '';
+  // v41-281: 결석으로 등록한 날은 지각 판정을 하지 않습니다. (결석 예정인데 잠깐 들른 경우)
+  if (isPlannedAbsentSchedule(normalizedSchedule)) return '';
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_in);
   // v41-278: 세션 날짜 기준 분으로 비교합니다. (자정 넘김 보정)
   const actualMinutes = getKstMinutesSinceDate(session.check_in_at, session.session_date || session.date);
@@ -546,6 +549,8 @@ function getEarlyLeaveIssueLabel(session = {}, schedule = null, rules = DEFAULT_
   const normalizedSchedule = normalizeDailySchedule(schedule);
   // v41-42: 개인 시간표(또는 리포트 스냅샷)가 있는 날짜만 조퇴 판정.
   if (normalizedSchedule.is_default_schedule) return '';
+  // v41-281: 결석으로 등록한 날은 조퇴 판정을 하지 않습니다.
+  if (isPlannedAbsentSchedule(normalizedSchedule)) return '';
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_out);
   // v41-278: 자정 넘긴 하원(00:04)이 조퇴로 찍히지 않게 세션 날짜 기준 분으로 비교합니다.
   const actualMinutes = getKstMinutesSinceDate(session.check_out_at, session.session_date || session.date);

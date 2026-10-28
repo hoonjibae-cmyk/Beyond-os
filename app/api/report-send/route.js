@@ -4,6 +4,7 @@ import { writeUserActionLog } from '../../../lib/actionLog';
 import { ensureReportShareLink } from '../../../lib/reportShare';
 import { validateKakaoTemplateVariables } from '../../../lib/reportTemplateValidation';
 import { diffMinutes, getKstMinutesSinceDate } from '../../../lib/date';
+import { isPlannedAbsentSchedule } from '../../../lib/plannedAbsence';
 import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
 import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
@@ -175,6 +176,8 @@ function getLateIssueLabel(session = {}, schedule = null, rules = DEFAULT_OPERAT
   if (!session.check_in_at) return '';
   // v41-42: 개인 시간표가 저장된 날짜만 지각 판정. (기본 시간표 폴백 기준 판정 제거)
   if (!schedule?.id) return '';
+  // v41-281: 결석으로 등록한 날은 등원 예정 시각을 기준으로 삼지 않습니다. (잠깐 들러 공부해도 지각 아님)
+  if (isPlannedAbsentSchedule(schedule)) return '';
 
   const normalizedSchedule = normalizeDailySchedule(schedule, defaultSchedule);
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_in);
@@ -192,6 +195,8 @@ function getEarlyLeaveIssueLabel(session = {}, schedule = null, rules = DEFAULT_
   if (!session.check_out_at || session.seat_status === 'absent') return '';
   // v41-42: 개인 시간표가 저장된 날짜만 조퇴 판정. (기본 시간표 폴백 기준 판정 제거)
   if (!schedule?.id) return '';
+  // v41-281: 결석으로 등록한 날은 하원 예정 시각을 기준으로 삼지 않습니다.
+  if (isPlannedAbsentSchedule(schedule)) return '';
 
   const normalizedSchedule = normalizeDailySchedule(schedule, defaultSchedule);
   const plannedMinutes = timeToMinutes(normalizedSchedule.planned_check_out);
@@ -636,7 +641,7 @@ export async function POST(request) {
       reportId: report.id,
       idempotencyKey: `daily:${report.id}:${recipients.map((item) => item.phoneDigits).join(',') || 'no-recipient'}`,
       reportDate: session.session_date,
-      scheduleSnapshot: schedule ? { plannedCheckIn: schedule.planned_check_in, plannedCheckOut: schedule.planned_check_out, isDefaultSchedule: Boolean(schedule.is_default_schedule) } : null,
+      scheduleSnapshot: schedule ? { plannedCheckIn: schedule.planned_check_in, plannedCheckOut: schedule.planned_check_out, isDefaultSchedule: Boolean(schedule.is_default_schedule), plannedAbsent: isPlannedAbsentSchedule(schedule) } : null,
       dailyIssueRules: operatingRules,
       defaultScheduleSnapshot: defaultSchedule,
       dailyPointRows,
