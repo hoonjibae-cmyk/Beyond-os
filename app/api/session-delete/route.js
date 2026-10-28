@@ -6,7 +6,7 @@
 // confirm:true 가 아니면 지우지 않고 요약·영향만 돌려줍니다. 지운 내용은 활동 로그에 통째로 남깁니다.
 
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../lib/auth';
+import { getAuthorizedUser, requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
 import { describeSessionDeletion } from '../../../lib/attendanceEventTime';
@@ -14,7 +14,9 @@ import { describeSessionDeletion } from '../../../lib/attendanceEventTime';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
-  if (!isAuthorized(request)) return unauthorizedResponse();
+  // v41-279.1: 총괄관리자(설정 권한)만 지울 수 있습니다. 화면 버튼도 같은 기준으로 숨깁니다.
+  const denied = requireTabPermission(request, 'settings');
+  if (denied) return denied;
   try {
     const body = await request.json();
     const sessionId = String(body.sessionId || '').trim();

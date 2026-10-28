@@ -2644,6 +2644,8 @@ export default function Page() {
   const effectivePermissions = useMemo(() => getEffectivePermissions(currentUser), [currentUser]);
   const allowedTabs = useMemo(() => TABS.filter(([key]) => hasPagePermission(currentUser, key)), [currentUser]);
   const canUseUserManagement = hasUserManagementPermission(currentUser);
+  // v41-279.1: 출결 기록 전체 삭제는 총괄관리자(설정 권한)만. (부원장님 지시)
+  const canDeleteSessionRecords = hasPagePermission(currentUser, 'settings');
   const isActiveTabAllowed = allowedTabs.some(([key]) => key === activeTab);
 
   useEffect(() => {
@@ -6651,7 +6653,7 @@ export default function Page() {
           </div>
           <div className="btn-row">
             <button className="secondary" onClick={openAttendanceAdjustPopup}>출결시간 조정</button>
-            {selectedSession?.id ? (
+            {selectedSession?.id && canDeleteSessionRecords ? (
               <button
                 type="button"
                 className="danger session-delete-btn"
