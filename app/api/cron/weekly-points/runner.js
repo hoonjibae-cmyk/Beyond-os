@@ -22,7 +22,7 @@ import { getPointAutoRules } from '../../../../lib/pointAutoRulesServer';
 import { resolvePointCyclesByStudent, resolveWeeklyRewardState } from '../../../../lib/studentPointCycle';
 import { AUTO_TABLE_HINT, getPreviousWeekRange, addDaysToDateString, resolveStudyTier, evaluatePerfectAttendance, formatMinutesKo, resolveStreakWeeks } from '../../../../lib/pointAutoRules';
 import { loadPointTotals } from '../../../../lib/pointTotals';
-import { sendPointSlackNotice } from '../../../../lib/slackNotify';
+import { sendPointSlackBatch } from '../../../../lib/slackNotify';
 
 export const AUTO_AWARD_ACTOR = '시스템 자동';
 
@@ -252,18 +252,17 @@ async function insertAutoAward({ supabase, student, week, runDate, kind, points,
     .update({ point_id: pointResult.data.id })
     .eq('id', claim.data.id);
 
-  // v41-280: 자동 상점도 슬랙에 알립니다. 부여자는 '시스템'.
-  try {
-    const totals = await loadPointTotals(supabase, String(student.id), cohortRange);
-    await sendPointSlackNotice({
-      studentName: student.name || '학생', pointType: 'reward', points,
-      category: kind === 'perfect' ? '주간 개근 자동 상점' : '주간 순공 자동 상점',
-      detail: reason.replace(/^주간 (개근|순공) 자동 상점 · /, ''),
-      totals, isSystem: true, pointDate: week.end,
-    });
-  } catch { /* 알림 실패는 상점 부여를 막지 않습니다 */ }
+  // v41-280.1: 슬랙 알림은 여기서 바로 보내지 않고 모아서 한 메시지로 보냅니다. (awardWeeklyPoints)
+  let totals = null;
+  try { totals = await loadPointTotals(supabase, String(student.id), cohortRange); } catch { totals = null; }
+  const slackItem = {
+    studentName: student.name || '학생', points,
+    category: kind === 'perfect' ? '주간 개근 자동 상점' : '주간 순공 자동 상점',
+    detail: reason.replace(/^주간 (개근|순공) 자동 상점 · /, ''),
+    totals,
+  };
 
-  return { status: 'awarded', row: claim.data };
+  return { status: 'awarded', row: claim.data, slackItem };
 }
 
 /** 1) 자동 상점 부여 — 주간 순공 구간 + 주간 개근 (둘 다 받을 수 있습니다) */
@@ -307,6 +306,7 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, coh
 
   const awarded = [];
   const failures = [];
+  const slackItems = [];
 
   for (const student of students) {
     const key = String(student.id);
@@ -329,6 +329,7 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, coh
         memo: `구간 ${tierNote} · ${runDate} 자동 부여`,
       });
       if (result.status === 'awarded') {
+        if (result.slackItem) slackItems.push(result.slackItem);
         awarded.push({
           studentId: key, name: student.name || '학생', kind: 'study',
           studyMinutes: minutes, studyLabel: formatMinutesKo(minutes),
@@ -369,6 +370,7 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, coh
       memo: `결석·지각·조기 외출 없음 · ${runDate} 자동 부여`,
     });
     if (result.status === 'awarded') {
+      if (result.slackItem) slackItems.push(result.slackItem);
       awarded.push({
         studentId: key, name: student.name || '학생', kind: 'perfect',
         studyMinutes: minutes, studyLabel: formatMinutesKo(minutes),
@@ -377,6 +379,16 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, coh
     } else if (result.status === 'failed') {
       failures.push({ studentId: key, name: student.name || '', kind: 'perfect', message: result.message });
     }
+  }
+
+  // v41-280.1: 이번 배치에서 생긴 자동 상점을 슬랙 메시지 하나로. 부여자는 '시스템'.
+  if (slackItems.length) {
+    try {
+      await sendPointSlackBatch({
+        pointType: 'reward', items: slackItems, isSystem: true, pointDate: week.end,
+        subtitle: `주간 자동 상점 · ${week.start}~${week.end}`,
+      });
+    } catch { /* 알림 실패는 상점 부여를 막지 않습니다 */ }
   }
 
   return { awarded, failures, skipped: '', warning: '' };

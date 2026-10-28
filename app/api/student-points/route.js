@@ -10,7 +10,7 @@ import { getCohortIdFromRequest, loadCohortRange } from '../../../lib/cohortScop
 import { resolvePenaltyStages } from '../../../lib/studentPointCycle';
 import { buildPenaltyReason } from '../../../lib/penaltyCategories';
 import { loadPointTotals } from '../../../lib/pointTotals';
-import { sendPointSlackNotice } from '../../../lib/slackNotify';
+import { sendPointSlackNotice, sendPointSlackBatch } from '../../../lib/slackNotify';
 
 // v41-280: 카테고리·상세 칸이 아직 없는 DB(SQL 실행 전)에서는 그 칸을 빼고 다시 넣습니다.
 function isMissingPointColumn(error) {
@@ -272,12 +272,21 @@ export async function POST(request) {
       if (error) throw error;
 
       const inserted = data || [];
-      // v41-280: 학생마다 슬랙 알림 (실패해도 저장은 끝난 상태)
+      // v41-280.1: 여러 명이면 슬랙 메시지 하나에 학생별 한 줄씩 담습니다. (실패해도 저장은 끝난 상태)
       let slackSent = 0;
-      for (const row of inserted) {
-        const result = await notifySlackForPoint(supabase, request, { data: row, studentId: String(row.student_id), category: '', detail: '', actorName });
-        if (result?.ok) slackSent += 1;
-      }
+      try {
+        const range = await loadCohortRange(supabase, getCohortIdFromRequest(request), getKstDateString()).catch(() => null);
+        const ids = inserted.map((row) => String(row.student_id));
+        const { data: nameRows } = ids.length ? await supabase.from('students').select('id, name').in('id', ids) : { data: [] };
+        const nameById = Object.fromEntries((nameRows || []).map((row) => [String(row.id), row.name]));
+        const items = [];
+        for (const row of inserted) {
+          const totals = await loadPointTotals(supabase, String(row.student_id), range);
+          items.push({ studentName: nameById[String(row.student_id)] || '학생', category: row.reason, detail: '', points: row.points, totals });
+        }
+        const result = await sendPointSlackBatch({ pointType: plan.pointType, items, actorName, pointDate: plan.pointDate, subtitle: `자주 주는 상점 일괄 부여 · ${plan.reason}` });
+        if (result?.ok) slackSent = items.length;
+      } catch { /* 알림 실패는 저장을 막지 않습니다 */ }
       await writeUserActionLog(supabase, request, {
         actionType: 'student_points.bulk_create',
         targetType: 'student_points',
@@ -299,7 +308,7 @@ export async function POST(request) {
         ok: true,
         rows: inserted,
         count: inserted.length,
-        message: `${formatBulkPointMessage({ pointType: plan.pointType, points: plan.points, reason: plan.reason, count: inserted.length })}${slackSent ? ` · 슬랙 알림 ${slackSent}건` : ''}`,
+        message: `${formatBulkPointMessage({ pointType: plan.pointType, points: plan.points, reason: plan.reason, count: inserted.length })}${slackSent ? ` · 슬랙 알림 1건(${slackSent}명)` : ''}`,
       });
     }
 
