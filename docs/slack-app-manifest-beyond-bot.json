@@ -6,7 +6,7 @@
   },
   "features": {
     "bot_user": {
-      "display_name": "비욘드 봇",
+      "display_name": "beyond-bot",
       "always_online": true
     }
   },
