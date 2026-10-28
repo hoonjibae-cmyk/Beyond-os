@@ -9,6 +9,7 @@ import { QUICK_REWARD_PRESETS, MAX_BULK_POINT_STUDENTS, summarizeStudentNames } 
 import { AUTO_SCHEDULE_NOTE_PATTERN, resolveAbsenceReasons, SCHEDULE_NOTE_HELP } from '../lib/scheduleNoteReason';
 import { previousDateString as previousKstDate } from '../lib/longAwayReview';
 import { matchesPenaltyNoticeKeyword, normalizePenaltyNoticeKeywords } from '../lib/pointAutoRules';
+import { PENALTY_CATEGORIES, CUSTOM_PENALTY_CATEGORY_KEY, buildPenaltyReason, getPenaltyCategoryDefaultPoints } from '../lib/penaltyCategories';
 import { getKstMinutesSinceDate } from '../lib/date';
 import { appendTranscriptChunk, buildPromptHint } from '../lib/transcriptCleanup';
 import { DAY_KEYS, DAY_LABELS, guessColumnMapping, buildWeeklyPatterns, matchPatternsToStudents, formatWeeklySummary } from '../lib/scheduleImport';
@@ -16433,7 +16434,23 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   const [summary, setSummary] = useState({ reward: 0, penalty: 0, net: 0, count: 0 });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ pointDate: today, pointType: 'reward', points: 1, reason: '', memo: '' });
+  // v41-280: 벌점은 카테고리(기본 점수) + 상세 사유로 입력합니다. 상점은 예전처럼 사유 한 칸.
+  const [form, setForm] = useState({ pointDate: today, pointType: 'reward', points: 1, reason: '', memo: '', penaltyCategory: '', penaltyCustomLabel: '', reasonDetail: '' });
+  // 화면에 보이는 '저장될 사유' (벌점이면 카테고리 · 상세)
+  const composedReason = form.pointType === 'penalty' && form.penaltyCategory
+    ? buildPenaltyReason({ categoryKey: form.penaltyCategory, customLabel: form.penaltyCustomLabel, detail: form.reasonDetail }).reason
+    : form.reason;
+
+  function selectPenaltyCategory(key) {
+    const defaultPoints = getPenaltyCategoryDefaultPoints(key);
+    setForm((prev) => ({
+      ...prev,
+      penaltyCategory: key,
+      // 기본 점수가 있는 카테고리는 점수를 자동으로 채웁니다. (사용자가 고칠 수 있습니다)
+      points: defaultPoints !== null ? defaultPoints : prev.points,
+      penaltyCustomLabel: key === CUSTOM_PENALTY_CATEGORY_KEY ? prev.penaltyCustomLabel : '',
+    }));
+  }
   // v41-269: 자주 주는 상점(모범태도/플래너) — 학생 여러 명을 골라 한 번에 기록합니다.
   const [quickPresetKey, setQuickPresetKey] = useState(QUICK_REWARD_PRESETS[0]?.key || '');
   const [quickStudentIds, setQuickStudentIds] = useState([]);
@@ -16721,11 +16738,18 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
 
   async function submitPoint() {
     if (!studentId) return alert('학생을 선택하세요.');
-    if (!String(form.reason || '').trim()) return alert('상벌점 사유를 입력하세요.');
+    const isPenalty = form.pointType === 'penalty';
+    if (isPenalty) {
+      if (!form.penaltyCategory) return alert('벌점 카테고리를 선택하세요.');
+      const built = buildPenaltyReason({ categoryKey: form.penaltyCategory, customLabel: form.penaltyCustomLabel, detail: form.reasonDetail });
+      if (!built.ok) return alert(built.error);
+    } else if (!String(form.reason || '').trim()) {
+      return alert('상점 사유를 입력하세요.');
+    }
     const points = Math.max(1, Number(form.points || 0));
     // v41-277: 벌점 사유에 안내 낱말(기본 CCTV)이 있으면 저장 즉시 알림톡이 나갑니다. 한 번 더 확인합니다.
-    const noticeKeyword = form.pointType === 'penalty' && autoRules.penaltyNoticeEnabled !== false
-      ? matchesPenaltyNoticeKeyword(form.reason, autoRules.penaltyNoticeKeywords)
+    const noticeKeyword = isPenalty && autoRules.penaltyNoticeEnabled !== false
+      ? matchesPenaltyNoticeKeyword(composedReason, autoRules.penaltyNoticeKeywords)
       : '';
     const savingStudentName = students.find((item) => String(item.id) === String(studentId))?.name || '해당 학생';
     if (noticeKeyword) {
@@ -16745,13 +16769,16 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
           pointDate: form.pointDate,
           pointType: form.pointType,
           points,
-          reason: form.reason,
+          reason: isPenalty ? composedReason : form.reason,
           memo: form.memo,
+          penaltyCategory: isPenalty ? form.penaltyCategory : undefined,
+          penaltyCustomLabel: isPenalty ? form.penaltyCustomLabel : undefined,
+          reasonDetail: isPenalty ? form.reasonDetail : undefined,
           createdBy: currentUser?.displayName || '관리자',
         }),
       });
       setMessage?.(data.message || '상벌점 기록 완료');
-      setForm((prev) => ({ ...prev, points: 1, reason: '', memo: '' }));
+      setForm((prev) => ({ ...prev, points: 1, reason: '', memo: '', penaltyCategory: '', penaltyCustomLabel: '', reasonDetail: '' }));
       const [, nextRewardState] = await Promise.all([loadPoints(), loadRewardState()]);
       // v41-277.1: 벌점 저장 뒤 '지금 보낼까요?' 확인창은 뺐습니다. 수시 안내는 기록 카드의 [누적 안내 알림톡]으로만 보냅니다.
 
@@ -17548,15 +17575,41 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
         </div>
         <div className="points-form-grid">
           <div className="field"><label>날짜</label><input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={form.pointDate} onChange={(e) => setForm({ ...form, pointDate: e.target.value })} /></div>
-          <div className="field"><label>구분</label><select value={form.pointType} onChange={(e) => setForm({ ...form, pointType: e.target.value })}><option value="reward">상점</option><option value="penalty">벌점</option></select></div>
-          <div className="field"><label>점수</label><input type="number" min="1" value={form.points} onChange={(e) => setForm({ ...form, points: e.target.value })} /></div>
-          <div className="field full">
-            <label>사유</label>
-            <input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="예: 플래너 성실 작성 / 무단 외출 / 순공 목표 달성" />
-            {form.pointType === 'penalty' && autoRules.penaltyNoticeEnabled !== false && matchesPenaltyNoticeKeyword(form.reason, autoRules.penaltyNoticeKeywords) ? (
-              <div className="hint penalty-notice-hint">⚠ 사유에 &apos;{matchesPenaltyNoticeKeyword(form.reason, autoRules.penaltyNoticeKeywords)}&apos;가 있어 저장 즉시 보호자·학생에게 벌점 안내 알림톡이 발송됩니다.</div>
-            ) : null}
-          </div>
+          <div className="field"><label>구분</label><select value={form.pointType} onChange={(e) => setForm({ ...form, pointType: e.target.value, points: e.target.value === 'penalty' ? (getPenaltyCategoryDefaultPoints(form.penaltyCategory) ?? form.points) : form.points })}><option value="reward">상점</option><option value="penalty">벌점</option></select></div>
+          <div className="field"><label>점수{form.pointType === 'penalty' && getPenaltyCategoryDefaultPoints(form.penaltyCategory) !== null ? <span className="hint-inline"> (기본 {getPenaltyCategoryDefaultPoints(form.penaltyCategory)}점 · 수정 가능)</span> : null}</label><input type="number" min="1" value={form.points} onChange={(e) => setForm({ ...form, points: e.target.value })} /></div>
+          {form.pointType === 'penalty' ? (
+            <>
+              {/* v41-280: 벌점 카테고리 + 상세 사유 */}
+              <div className={`field ${form.penaltyCategory === CUSTOM_PENALTY_CATEGORY_KEY ? '' : 'full'}`}>
+                <label>벌점 카테고리</label>
+                <select value={form.penaltyCategory} onChange={(e) => selectPenaltyCategory(e.target.value)}>
+                  <option value="">카테고리 선택</option>
+                  {PENALTY_CATEGORIES.map((item, index) => (
+                    <option key={item.key} value={item.key}>{index + 1}. {item.label}{item.points !== null ? ` (${item.points}점)` : ''}</option>
+                  ))}
+                </select>
+              </div>
+              {form.penaltyCategory === CUSTOM_PENALTY_CATEGORY_KEY ? (
+                <div className="field">
+                  <label>사유 이름 (직접 입력)</label>
+                  <input value={form.penaltyCustomLabel} onChange={(e) => setForm({ ...form, penaltyCustomLabel: e.target.value })} placeholder="예: 복도 배회" maxLength={60} />
+                </div>
+              ) : null}
+              <div className="field full">
+                <label>상세 사유</label>
+                <input value={form.reasonDetail} onChange={(e) => setForm({ ...form, reasonDetail: e.target.value })} placeholder="예: 3차시 중 CCTV 확인 · 휴대폰 사용 10분" maxLength={200} />
+                {composedReason ? <div className="hint">저장될 사유: <b>{composedReason}</b></div> : null}
+                {autoRules.penaltyNoticeEnabled !== false && matchesPenaltyNoticeKeyword(composedReason, autoRules.penaltyNoticeKeywords) ? (
+                  <div className="hint penalty-notice-hint">⚠ 사유에 &apos;{matchesPenaltyNoticeKeyword(composedReason, autoRules.penaltyNoticeKeywords)}&apos;가 있어 저장 즉시 보호자·학생에게 벌점 안내 알림톡이 발송됩니다.</div>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <div className="field full">
+              <label>사유</label>
+              <input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="예: 플래너 성실 작성 / 순공 목표 달성 / 청소 봉사" />
+            </div>
+          )}
           <div className="field full"><label>메모</label><input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="내부 참고 메모. 선택 입력" /></div>
         </div>
         <button className="primary" onClick={submitPoint} disabled={saving || !studentId}>{saving ? '저장 중...' : '상벌점 저장'}</button>

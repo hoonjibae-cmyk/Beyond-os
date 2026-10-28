@@ -16,6 +16,9 @@ import { getDefaultScheduleConfig } from '../../../lib/defaultScheduleServer';
 import { resolveScheduleForDate } from '../../../lib/defaultSchedule';
 import { getPointAutoRules } from '../../../lib/pointAutoRulesServer';
 import { findLongAwayCandidates, buildLongAwayPenaltyReason, previousDateString, LONG_AWAY_SQL_HINT } from '../../../lib/longAwayReview';
+import { loadPointTotals } from '../../../lib/pointTotals';
+import { sendPointSlackNotice } from '../../../lib/slackNotify';
+import { loadCohortRange, getCohortIdFromRequest } from '../../../lib/cohortScope';
 
 export const dynamic = 'force-dynamic';
 
@@ -244,6 +247,16 @@ export async function POST(request) {
         .single();
       if (pointError) throw pointError;
       pointId = point.id;
+      // v41-280: 슬랙 알림 (카테고리 '자율학습 중 장시간 외출')
+      try {
+        const range = await loadCohortRange(supabase, getCohortIdFromRequest(request), getKstDateString()).catch(() => null);
+        const totals = await loadPointTotals(supabase, String(candidate.studentId), range);
+        await sendPointSlackNotice({
+          studentName: candidate.name || '학생', pointType: 'penalty', points,
+          category: '자율학습 중 장시간 외출', detail: `${candidate.awayLabel || ''} ${candidate.awayMinutes || 0}분${note ? ` · ${note}` : ''}`.trim(),
+          totals, actorName, pointDate: sessionDate,
+        });
+      } catch { /* 알림 실패는 벌점 기록을 막지 않습니다 */ }
     }
 
     const { data: review, error: reviewError } = await supabase

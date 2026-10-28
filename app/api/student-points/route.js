@@ -8,6 +8,51 @@ import { matchesPenaltyNoticeKeyword } from '../../../lib/pointAutoRules';
 import { sendPointNotification, isPenaltyEventTemplateConfigured } from '../../../lib/pointNotifications';
 import { getCohortIdFromRequest, loadCohortRange } from '../../../lib/cohortScope';
 import { resolvePenaltyStages } from '../../../lib/studentPointCycle';
+import { buildPenaltyReason } from '../../../lib/penaltyCategories';
+import { loadPointTotals } from '../../../lib/pointTotals';
+import { sendPointSlackNotice } from '../../../lib/slackNotify';
+
+// v41-280: 카테고리·상세 칸이 아직 없는 DB(SQL 실행 전)에서는 그 칸을 빼고 다시 넣습니다.
+function isMissingPointColumn(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('category') || message.includes('reason_detail') || message.includes('schema cache');
+}
+
+async function insertPointRow(supabase, row) {
+  const first = await supabase.from('student_points').insert(row).select().single();
+  if (!first.error) return { data: first.data, columnsMissing: false };
+  if (!isMissingPointColumn(first.error) || (row.category === undefined && row.reason_detail === undefined)) throw first.error;
+  const { category, reason_detail, ...rest } = row;
+  void category; void reason_detail;
+  const second = await supabase.from('student_points').insert(rest).select().single();
+  if (second.error) throw second.error;
+  return { data: second.data, columnsMissing: true };
+}
+
+// v41-280: 상벌점 발생 슬랙 알림. 저장을 막지 않습니다.
+async function notifySlackForPoint(supabase, request, { data, studentId, category, detail, actorName, isSystem = false }) {
+  try {
+    const [{ data: student }, range] = await Promise.all([
+      supabase.from('students').select('name').eq('id', studentId).maybeSingle(),
+      loadCohortRange(supabase, getCohortIdFromRequest(request), getKstDateString()).catch(() => null),
+    ]);
+    const totals = await loadPointTotals(supabase, studentId, range);
+    return await sendPointSlackNotice({
+      studentName: student?.name || '학생',
+      pointType: data.point_type,
+      points: data.points,
+      category: category || data.reason,
+      detail,
+      reason: data.reason,
+      totals,
+      actorName,
+      pointDate: data.point_date,
+      isSystem,
+    });
+  } catch (error) {
+    return { ok: false, message: error?.message || '슬랙 알림 오류' };
+  }
+}
 
 // v41-277: 벌점 사유에 설정된 낱말(기본 'CCTV')이 들어가면 그 벌점을 보호자·학생에게 바로 알림톡으로 보냅니다.
 //   - '벌점 부여 안내' 템플릿(SOLAPI_TEMPLATE_ID_POINT_PENALTY_EVENT)이 설정돼 있으면 그 템플릿으로 한 건 안내.
@@ -154,36 +199,44 @@ export async function POST(request) {
       const pointDate = toDate(body.pointDate) || new Date().toISOString().slice(0, 10);
       const pointType = normalizePointType(body.pointType);
       const points = Math.max(1, Math.round(Number(body.points || 1)));
-      const reason = String(body.reason || '').trim();
       const memo = String(body.memo || '').trim();
-
       if (!studentId) return Response.json({ error: 'studentId is required' }, { status: 400 });
+
+      // v41-280: 벌점은 카테고리 + 상세 사유로 받습니다. (예전 방식의 reason 만 와도 받습니다)
+      let reason = String(body.reason || '').trim();
+      let category = '';
+      let detail = String(body.reasonDetail || '').trim().slice(0, 200);
+      if (pointType === 'penalty' && body.penaltyCategory) {
+        const built = buildPenaltyReason({ categoryKey: body.penaltyCategory, customLabel: body.penaltyCustomLabel, detail });
+        if (!built.ok) return Response.json({ error: built.error }, { status: 400 });
+        reason = built.reason;
+        category = built.category;
+        detail = built.detail;
+      }
       if (!reason) return Response.json({ error: '상벌점 사유를 입력하세요.' }, { status: 400 });
 
-      const { data, error } = await supabase
-        .from('student_points')
-        .insert({
-          student_id: studentId,
-          point_date: pointDate,
-          point_type: pointType,
-          points,
-          reason,
-          memo: memo || null,
-          created_by: actorName,
-          is_deleted: false,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+      const { data, columnsMissing } = await insertPointRow(supabase, {
+        student_id: studentId,
+        point_date: pointDate,
+        point_type: pointType,
+        points,
+        reason,
+        memo: memo || null,
+        created_by: actorName,
+        is_deleted: false,
+        category: category || null,
+        reason_detail: detail || null,
+      });
 
       await writeUserActionLog(supabase, request, {
         actionType: 'student_points.create',
         targetType: 'student_points',
         targetId: data.id,
         targetName: studentId,
-        payload: { studentId, pointDate, pointType, points, reason, memo },
+        payload: { studentId, pointDate, pointType, points, reason, category, detail, memo, columnsMissing },
       });
+
+      const slack = await notifySlackForPoint(supabase, request, { data, studentId, category, detail, actorName });
 
       // v41-277: 벌점 사유에 안내 낱말이 들어가면 바로 알림톡
       const notice = pointType === 'penalty'
@@ -195,11 +248,15 @@ export async function POST(request) {
           : ` · 벌점 안내 알림톡은 보내지 못했습니다: ${notice.message || '원인 미상'}`)
         : '';
 
+      const slackNote = slack?.skipped ? '' : slack?.ok ? ' · 슬랙 알림 발송' : ` · 슬랙 알림 실패(${slack?.message || '원인 미상'})`;
+      const columnNote = columnsMissing ? ' · (카테고리 칸이 없어 사유 문구에만 남김 — beyond-os-supabase-student-points-category-v41-280.sql 실행 권장)' : '';
+
       return Response.json({
         ok: true,
         row: data,
         notice: notice ? { ok: Boolean(notice.ok), keyword: notice.keyword, usedTemplate: notice.usedTemplate || '', message: notice.message || '', recipientCount: notice.recipients?.length || 0 } : null,
-        message: `${pointType === 'reward' ? '상점' : '벌점'} ${points}점 기록 완료${noticeNote}`,
+        slack: slack ? { ok: Boolean(slack.ok), skipped: Boolean(slack.skipped), message: slack.message || '' } : null,
+        message: `${pointType === 'reward' ? '상점' : '벌점'} ${points}점 기록 완료${noticeNote}${slackNote}${columnNote}`,
       });
     }
 
@@ -215,6 +272,12 @@ export async function POST(request) {
       if (error) throw error;
 
       const inserted = data || [];
+      // v41-280: 학생마다 슬랙 알림 (실패해도 저장은 끝난 상태)
+      let slackSent = 0;
+      for (const row of inserted) {
+        const result = await notifySlackForPoint(supabase, request, { data: row, studentId: String(row.student_id), category: '', detail: '', actorName });
+        if (result?.ok) slackSent += 1;
+      }
       await writeUserActionLog(supabase, request, {
         actionType: 'student_points.bulk_create',
         targetType: 'student_points',
@@ -236,7 +299,7 @@ export async function POST(request) {
         ok: true,
         rows: inserted,
         count: inserted.length,
-        message: formatBulkPointMessage({ pointType: plan.pointType, points: plan.points, reason: plan.reason, count: inserted.length }),
+        message: `${formatBulkPointMessage({ pointType: plan.pointType, points: plan.points, reason: plan.reason, count: inserted.length })}${slackSent ? ` · 슬랙 알림 ${slackSent}건` : ''}`,
       });
     }
 

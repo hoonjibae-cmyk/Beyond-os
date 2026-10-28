@@ -21,6 +21,8 @@ import { loadCohortRange, loadCohortStudentIds } from '../../../../lib/cohortSco
 import { getPointAutoRules } from '../../../../lib/pointAutoRulesServer';
 import { resolvePointCyclesByStudent, resolveWeeklyRewardState } from '../../../../lib/studentPointCycle';
 import { AUTO_TABLE_HINT, getPreviousWeekRange, addDaysToDateString, resolveStudyTier, evaluatePerfectAttendance, formatMinutesKo, resolveStreakWeeks } from '../../../../lib/pointAutoRules';
+import { loadPointTotals } from '../../../../lib/pointTotals';
+import { sendPointSlackNotice } from '../../../../lib/slackNotify';
 
 export const AUTO_AWARD_ACTOR = '시스템 자동';
 
@@ -200,7 +202,7 @@ async function loadWeeklySchedules(supabase, week, studentIds) {
  *
  * @returns {{status: 'awarded'|'duplicate'|'failed', row?: Object, message?: string}}
  */
-async function insertAutoAward({ supabase, student, week, runDate, kind, points, studyMinutes, tierMinMinutes, tierLabel, reason, memo }) {
+async function insertAutoAward({ supabase, student, week, runDate, kind, points, studyMinutes, tierMinMinutes, tierLabel, reason, memo, cohortRange = null }) {
   const claim = await supabase
     .from('student_point_auto_awards')
     .insert({
@@ -250,11 +252,22 @@ async function insertAutoAward({ supabase, student, week, runDate, kind, points,
     .update({ point_id: pointResult.data.id })
     .eq('id', claim.data.id);
 
+  // v41-280: 자동 상점도 슬랙에 알립니다. 부여자는 '시스템'.
+  try {
+    const totals = await loadPointTotals(supabase, String(student.id), cohortRange);
+    await sendPointSlackNotice({
+      studentName: student.name || '학생', pointType: 'reward', points,
+      category: kind === 'perfect' ? '주간 개근 자동 상점' : '주간 순공 자동 상점',
+      detail: reason.replace(/^주간 (개근|순공) 자동 상점 · /, ''),
+      totals, isSystem: true, pointDate: week.end,
+    });
+  } catch { /* 알림 실패는 상점 부여를 막지 않습니다 */ }
+
   return { status: 'awarded', row: claim.data };
 }
 
 /** 1) 자동 상점 부여 — 주간 순공 구간 + 주간 개근 (둘 다 받을 수 있습니다) */
-async function awardWeeklyPoints({ supabase, rules, week, runDate, students, minutesByStudent, minutesByStudentDate, sessionByStudentDate, schedulesByStudent, schedulesFailed = false, operatingDates, lateThresholdMinutes }) {
+async function awardWeeklyPoints({ supabase, rules, week, runDate, students, cohortRange = null, minutesByStudent, minutesByStudentDate, sessionByStudentDate, schedulesByStudent, schedulesFailed = false, operatingDates, lateThresholdMinutes }) {
   // v41-270: 개근 판정은 운영일이 아니라 그 주 7일 전부입니다.
   const weekDates = [];
   for (let offset = 0; offset < 7; offset += 1) {
@@ -306,7 +319,7 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, min
         ? `${tier.label} (${formatMinutesKo(tier.minMinutes)} 이상)`
         : `${formatMinutesKo(tier.minMinutes)} 이상`;
       const result = await insertAutoAward({
-        supabase, student, week, runDate,
+        supabase, student, week, runDate, cohortRange,
         kind: 'study',
         points: tier.points,
         studyMinutes: minutes,
@@ -346,7 +359,7 @@ async function awardWeeklyPoints({ supabase, rules, week, runDate, students, min
       ? ` · 차시 없는 날 ${perfect.freeDays}일 자율학습 ${formatMinutesKo(rules.perfectAttendanceDailyMinutes)} 이상`
       : '';
     const result = await insertAutoAward({
-      supabase, student, week, runDate,
+      supabase, student, week, runDate, cohortRange,
       kind: 'perfect',
       points: rules.perfectAttendancePoints,
       studyMinutes: minutes,
@@ -530,7 +543,7 @@ export async function runWeeklyPointBatch({ supabase, runDate: requestedRunDate,
     if (scheduleResult.warning) warnings.push(scheduleResult.warning);
     operatingDayCount = operatingDates.length;
     awardResult = await awardWeeklyPoints({
-      supabase, rules, week, runDate, students,
+      supabase, rules, week, runDate, students, cohortRange,
       minutesByStudent, minutesByStudentDate, sessionByStudentDate,
       schedulesByStudent: scheduleResult.byStudent,
       schedulesFailed: Boolean(scheduleResult.failed),
