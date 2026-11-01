@@ -153,15 +153,16 @@ function getAttendanceFlags(row = {}, rules = DEFAULT_OPERATING_RULES) {
   }
 
   // v41-281: 결석으로 등록한 날(plannedAbsent)은 예정 등하원을 기준으로 지각/조퇴를 판정하지 않습니다.
-  if (!row.plannedAbsent && checkInMinute !== null && plannedIn !== null && checkInMinute > plannedIn + rules.lateThresholdMinutes) {
+  // v41-283: 관리자 화면·데일리 리포트와 같은 '이상(>=)' 기준으로 통일합니다.
+  if (!row.plannedAbsent && checkInMinute !== null && plannedIn !== null && checkInMinute - plannedIn >= rules.lateThresholdMinutes) {
     flags.push(createFlag('지각', 'warning', row.lateReason));
   }
 
-  if (!row.plannedAbsent && checkOutMinute !== null && plannedOut !== null && checkOutMinute < plannedOut - rules.earlyLeaveThresholdMinutes) {
+  if (!row.plannedAbsent && checkOutMinute !== null && plannedOut !== null && plannedOut - checkOutMinute >= rules.earlyLeaveThresholdMinutes) {
     flags.push(createFlag('조퇴', 'warning', row.earlyLeaveReason));
   }
 
-  if (Number(row.awayCount || 0) > rules.excessiveAwayCount || Number(row.awayMinutes || 0) > rules.excessiveAwayMinutes) {
+  if (Number(row.awayCount || 0) >= rules.excessiveAwayCount || Number(row.awayMinutes || 0) >= rules.excessiveAwayMinutes) {
     flags.push(createFlag('외출과다', 'warning'));
   }
 
