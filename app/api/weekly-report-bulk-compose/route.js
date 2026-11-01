@@ -426,6 +426,8 @@ async function processStudent({ supabase, student, startDate, endDate, existingR
     end_date: endDate,
     summary_payload: {
       ...summaryPayload,
+      // v41-282: 작성 시점의 판정 기준을 남겨, 학부모 리포트 페이지가 같은 기준으로 일자별 상태를 그립니다.
+      issueRules: rules,
       autoComposedAt: new Date().toISOString(),
       autoComposedBy: actorName,
       autoComposeVersion: 'v41-24',

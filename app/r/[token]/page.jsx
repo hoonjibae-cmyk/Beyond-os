@@ -661,7 +661,9 @@ function getWeeklyDetailRows(summary = {}) {
   }));
 }
 
-function buildWeeklyRowsFromSessions(sessions = [], eventsBySession = {}, scheduleConfig = null) {
+function buildWeeklyRowsFromSessions(sessions = [], eventsBySession = {}, scheduleConfig = null, rules = DEFAULT_OPERATING_RULES) {
+  // v41-282: 순공부족 기준을 300분 고정값이 아니라 운영 기준 설정(lowStudyMinutes)에서 읽습니다.
+  const lowStudyMinutes = normalizeOperatingRules(rules).lowStudyMinutes;
   return (sessions || []).map((session) => {
     const studyWindows = resolveScheduleForDate(scheduleConfig, session.session_date).studyWindows;
     const pureStudyMinutes = calculateLivePureStudyMinutes(session, eventsBySession[session.id] || [], studyWindows);
@@ -672,7 +674,7 @@ function buildWeeklyRowsFromSessions(sessions = [], eventsBySession = {}, schedu
     // v41-208: 외출 중이면 '학습중'을 함께 붙이지 않습니다. (같은 줄에 두 상태가 겹쳐 보였습니다)
     if (session.seat_status === 'away') flags.push('외출 중');
     else if (session.check_in_at && !session.check_out_at) flags.push('학습중');
-    if (session.check_in_at && pureStudyMinutes > 0 && pureStudyMinutes < 300) flags.push('순공부족');
+    if (session.check_in_at && pureStudyMinutes > 0 && pureStudyMinutes < lowStudyMinutes) flags.push('순공부족');
     if (!flags.length) flags.push('정상');
 
     return {
@@ -1140,7 +1142,9 @@ async function loadReport(token) {
       ? await getWeeklyPlannerImages(supabase, report.student_id, report.start_date, report.end_date)
       : [];
 
-    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, scheduleConfig, mentorCommentTarget, weeklyMentorComments, plannerImageTarget, weeklyPlannerImages };
+    // v41-282: 일자별 표의 순공부족 판정 기준. 리포트에 저장된 스냅샷(issueRules)이 있으면 그 값을, 없으면 지금 설정을 씁니다.
+    const operatingRules = normalizeOperatingRules(report.summary_payload?.issueRules || await getOperatingRules(supabase));
+    return { link, reportType: 'weekly', report, student, weeklySessions: weeklySessions || [], weeklyEventsBySession, scheduleConfig, operatingRules, mentorCommentTarget, weeklyMentorComments, plannerImageTarget, weeklyPlannerImages };
   }
 
   return { error: 'unknown-type' };
@@ -1164,7 +1168,7 @@ export default async function PublicReportPage({ params }) {
     ? `${report.start_date || '-'} ~ ${report.end_date || '-'}`
     : (session?.session_date || report.report_date || '-');
 
-  const liveWeeklyRows = isWeekly ? buildWeeklyRowsFromSessions(weeklySessions, weeklyEventsBySession, scheduleConfig) : [];
+  const liveWeeklyRows = isWeekly ? buildWeeklyRowsFromSessions(weeklySessions, weeklyEventsBySession, scheduleConfig, operatingRules) : [];
   const weeklySummary = isWeekly ? summarizeWeeklyRows(report.summary_payload || {}, liveWeeklyRows) : {};
   const weeklyRows = getWeeklySummaryRows(report, weeklySummary);
   const savedWeeklyDetailRows = getWeeklyDetailRows(weeklySummary);
