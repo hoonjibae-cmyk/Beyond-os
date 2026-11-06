@@ -16467,6 +16467,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   // v41-137: 순점수가 기준(10점)을 초과한 학생의 상품 지급 처리 상태
   const [rewardState, setRewardState] = useState(null);
   const [rewardWorkingId, setRewardWorkingId] = useState('');
+  // v41-285: 벌점 단계 알림 중 [보류]한 학생 카드를 펼쳐 볼지 여부
+  const [showDeferredPenalty, setShowDeferredPenalty] = useState(false);
 
   // v41-241: 주간 순공 자동 상점 구간표 / 상품 지급 기준 설정
   const [autoRules, setAutoRules] = useState(DEFAULT_POINT_AUTO_RULES);
@@ -16681,11 +16683,13 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   }
 
   // v41-156: 벌점 단계 조치 기록 (v41-284: 15·20·30점 모두 '이상')
-  async function handlePenaltyAction(studentId, stage, action, studentName = '학생', stageLabel = '조치') {
+  async function handlePenaltyAction(studentId, stage, action, studentName = '학생', stageLabel = '조치', thresholdLabel = '') {
     const done = action === 'penalty_done';
+    // v41-285: 확인창에 단계 번호(10/20/30) 대신 실제 기준(예: 순벌점 15점 이상)을 씁니다.
+    const stageText = thresholdLabel ? `순벌점 ${thresholdLabel}` : `벌점 ${stage}점 단계`;
     const confirmText = done
-      ? `${studentName} 학생 — 벌점 ${stage}점 단계 [${stageLabel}] 안내 알림톡을 발송할까요?\n\n▶ 보호자와 학생 본인에게 상벌점 누적 안내가 실제로 발송됩니다.\n▶ 발송과 함께 이 단계 조치가 완료로 기록되어 목록에서 내려갑니다. 벌점이 다음 단계를 넘으면 다시 알림이 뜹니다.`
-      : `${studentName} 학생 — 벌점 ${stage}점 단계 [${stageLabel}]을 보류로 기록할까요?\n\n알림톡은 발송되지 않습니다. 알림은 목록에 그대로 남고, 보류로 표시만 됩니다.`;
+      ? `${studentName} 학생 — ${stageText} [${stageLabel}] 안내 알림톡을 발송할까요?\n\n▶ 보호자와 학생 본인에게 상벌점 누적 안내가 실제로 발송됩니다.\n▶ 발송과 함께 이 단계 조치가 완료로 기록되어 목록에서 내려갑니다.`
+      : `${studentName} 학생 — ${stageText} [${stageLabel}]을 보류할까요?\n\n▶ 알림톡은 발송되지 않습니다.\n▶ 이 카드는 목록에서 내려가고 [보류 명단 보기]로 옮겨집니다. 나중에 거기서 알림톡을 보낼 수 있습니다.\n▶ 순벌점이 더 쌓여 다음 단계에 닿으면 다시 목록에 뜹니다.`;
     if (!confirm(confirmText)) return;
 
     try {
@@ -17289,56 +17293,97 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
         );
       })() : null}
 
-      {scopeRows(rewardState?.penaltyAlerts).length ? (
-        <div className="penalty-stage-alert-card">
-          <div className="penalty-stage-alert-head">
-            <strong>벌점 단계 조치 대상 {scopeRows(rewardState.penaltyAlerts).length}명</strong>
-            <span>
-              순벌점(벌점 - 상점) {rewardState?.autoRules?.penaltyAlertThreshold ?? 15}점 <b>이상</b>(화면의 순점수 -{rewardState?.autoRules?.penaltyAlertThreshold ?? 15}점 이하) → 학부모 알림 · 20점 이상 → 센터장 면담 · 30점 이상 → 제적 검토.
-              {' '}상점을 받으면 그만큼 상계됩니다. <b>[알림톡 발송]을 누르면 학부모·학생에게 상벌점 누적 안내가 한 번 발송</b>되고 이 경고가 내려갑니다.
-              {' '}기준은 [자동 상점 기준]에서 바꿀 수 있습니다.
-            </span>
-          </div>
-          <div className="penalty-stage-alert-list">
-            {scopeRows(rewardState.penaltyAlerts).map((item) => (
-              <article key={`penalty-${item.studentId}`} className={`tone-${item.tone}`}>
-                <div className="penalty-stage-alert-student">
-                  <strong>{item.name}</strong>
-                  <span>{item.subtitle || '학교/학년 미입력'}</span>
-                </div>
-                <div className="penalty-stage-alert-score">
-                  <b className={`penalty-stage-badge tone-${item.tone}`}>{item.thresholdLabel || `${item.stage}점 이상`} · {item.stageLabel}</b>
-                  <em>순벌점 {item.penaltyNet}점 (벌 {item.penalty} - 상 {item.reward}){item.deferred ? ' · 보류 중' : ''}</em>
-                </div>
-                <p>{item.message}. {item.actionHint}</p>
-                {item.pendingStages.length > 1 ? (
-                  <em className="penalty-stage-pending">
-                    미조치 단계: {item.pendingStages.map((stage) => `${stage.thresholdLabel || `${stage.stage}점 이상`} ${stage.label}${stage.deferred ? '(보류)' : ''}`).join(' · ')}
-                  </em>
+      {(() => {
+        // v41-285: [보류]한 학생은 목록에서 내리고 [보류 명단 보기]에서만 보여 줍니다.
+        // 대표 단계(가장 높은 미조치 단계)가 보류 상태인 학생이 보류 명단입니다.
+        // 보류 뒤 다음 단계에 닿으면 그 단계는 보류가 아니므로 다시 목록에 뜹니다.
+        const allAlerts = scopeRows(rewardState?.penaltyAlerts);
+        const activeAlerts = allAlerts.filter((item) => !item.deferred);
+        const deferredAlerts = allAlerts.filter((item) => item.deferred);
+        if (!allAlerts.length) return null;
+        const threshold = rewardState?.autoRules?.penaltyAlertThreshold ?? 15;
+        const renderAlert = (item, inDeferredList) => (
+          <article key={`penalty-${item.studentId}`} className={`tone-${item.tone}${inDeferredList ? ' is-deferred' : ''}`}>
+            <div className="penalty-stage-alert-student">
+              <strong>{item.name}</strong>
+              <span>{item.subtitle || '학교/학년 미입력'}</span>
+            </div>
+            <div className="penalty-stage-alert-score">
+              <b className={`penalty-stage-badge tone-${item.tone}`}>{item.thresholdLabel || `${item.stage}점 이상`} · {item.stageLabel}</b>
+              <em>순벌점 {item.penaltyNet}점 (벌 {item.penalty} - 상 {item.reward}){inDeferredList ? ' · 보류 중' : ''}</em>
+            </div>
+            <p>{item.message}. {item.actionHint}</p>
+            {item.pendingStages.length > 1 ? (
+              <em className="penalty-stage-pending">
+                미조치 단계: {item.pendingStages.map((stage) => `${stage.thresholdLabel || `${stage.stage}점 이상`} ${stage.label}${stage.deferred ? '(보류)' : ''}`).join(' · ')}
+              </em>
+            ) : null}
+            <div className="penalty-stage-alert-actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => handlePenaltyAction(item.studentId, item.stage, 'penalty_done', item.name, item.stageLabel, item.thresholdLabel)}
+                disabled={Boolean(rewardWorkingId)}
+              >
+                {rewardWorkingId === `${item.studentId}-p${item.stage}-done` ? '발송 중...' : '알림톡 발송'}
+              </button>
+              {!inDeferredList ? (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => handlePenaltyAction(item.studentId, item.stage, 'penalty_defer', item.name, item.stageLabel, item.thresholdLabel)}
+                  disabled={Boolean(rewardWorkingId)}
+                >
+                  {rewardWorkingId === `${item.studentId}-p${item.stage}-defer` ? '처리 중...' : '보류'}
+                </button>
+              ) : null}
+            </div>
+          </article>
+        );
+        return (
+          <div className={`penalty-stage-alert-card${activeAlerts.length ? '' : ' is-quiet'}`}>
+            <div className="penalty-stage-alert-head">
+              <div className="penalty-stage-alert-title">
+                <strong>{activeAlerts.length ? `벌점 단계 조치 대상 ${activeAlerts.length}명` : '벌점 단계 조치 대상 없음'}</strong>
+                {deferredAlerts.length ? (
+                  <button
+                    type="button"
+                    className="secondary penalty-deferred-toggle"
+                    onClick={() => setShowDeferredPenalty((open) => !open)}
+                    aria-expanded={showDeferredPenalty}
+                  >
+                    {showDeferredPenalty ? '보류 명단 닫기' : `보류 명단 보기 (${deferredAlerts.length}명)`}
+                  </button>
                 ) : null}
-                <div className="penalty-stage-alert-actions">
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={() => handlePenaltyAction(item.studentId, item.stage, 'penalty_done', item.name, item.stageLabel)}
-                    disabled={Boolean(rewardWorkingId)}
-                  >
-                    {rewardWorkingId === `${item.studentId}-p${item.stage}-done` ? '발송 중...' : '알림톡 발송'}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => handlePenaltyAction(item.studentId, item.stage, 'penalty_defer', item.name, item.stageLabel)}
-                    disabled={Boolean(rewardWorkingId) || item.deferred}
-                  >
-                    {rewardWorkingId === `${item.studentId}-p${item.stage}-defer` ? '처리 중...' : '보류'}
-                  </button>
+              </div>
+              {activeAlerts.length ? (
+                <span>
+                  순벌점(벌점 - 상점) {threshold}점 <b>이상</b>(화면의 순점수 -{threshold}점 이하) → 학부모 알림 · 20점 이상 → 센터장 면담 · 30점 이상 → 제적 검토.
+                  {' '}상점을 받으면 그만큼 상계됩니다. <b>[알림톡 발송]을 누르면 학부모·학생에게 상벌점 누적 안내가 한 번 발송</b>되고 이 경고가 내려갑니다.
+                  {' '}<b>[보류]</b>를 누르면 카드가 [보류 명단 보기]로 옮겨집니다. 기준은 [자동 상점 기준]에서 바꿀 수 있습니다.
+                </span>
+              ) : (
+                <span>지금 조치할 학생은 없습니다. 보류한 학생은 [보류 명단 보기]에서 알림톡을 보낼 수 있습니다.</span>
+              )}
+            </div>
+            {activeAlerts.length ? (
+              <div className="penalty-stage-alert-list">
+                {activeAlerts.map((item) => renderAlert(item, false))}
+              </div>
+            ) : null}
+            {showDeferredPenalty && deferredAlerts.length ? (
+              <div className="penalty-deferred-section">
+                <div className="penalty-deferred-head">
+                  보류 명단 {deferredAlerts.length}명 · [알림톡 발송]을 누르면 그 단계가 완료로 기록되고 명단에서 내려갑니다.
                 </div>
-              </article>
-            ))}
+                <div className="penalty-stage-alert-list">
+                  {deferredAlerts.map((item) => renderAlert(item, true))}
+                </div>
+              </div>
+            ) : null}
           </div>
-        </div>
-      ) : null}
+        );
+      })()}
 
       {/* v41-137: 순점수가 기준을 초과한 학생은 상품 지급 대상으로 알립니다.
           v41-241: 실시간 판정을 없애고 매주 월요일 스캔 결과를 보여 줍니다. */}
