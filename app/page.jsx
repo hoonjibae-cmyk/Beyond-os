@@ -16680,7 +16680,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
     }
   }
 
-  // v41-156: 벌점 단계(10/20/30점 초과) 조치 기록
+  // v41-156: 벌점 단계 조치 기록 (v41-284: 15·20·30점 모두 '이상')
   async function handlePenaltyAction(studentId, stage, action, studentName = '학생', stageLabel = '조치') {
     const done = action === 'penalty_done';
     const confirmText = done
@@ -16792,7 +16792,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
       const after = nextRewardState?.penaltyByStudent?.[String(studentId)]?.currentStage;
       if (after && Number(after.stage) > stageBefore) {
         const studentName = students.find((item) => String(item.id) === String(studentId))?.name || '해당 학생';
-        alert(`⚠ ${studentName} 학생 — 순벌점 ${after.stage}점 초과\n\n순벌점 ${after.penaltyNet}점 (벌점 ${after.penalty} - 상점 ${after.reward})\n조치 단계: ${after.label}\n\n${after.action}`);
+        alert(`⚠ ${studentName} 학생 — 순벌점 ${after.thresholdLabel || `${after.threshold}점 이상`}\n\n순벌점 ${after.penaltyNet}점 (벌점 ${after.penalty} - 상점 ${after.reward})\n조치 단계: ${after.label}\n\n${after.action}`);
       }
     } catch (error) {
       setMessage?.(error.message);
@@ -17198,7 +17198,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                 순벌점(벌점 - 상점)이 이 점수 <b>이상</b>이면 경고가 뜹니다.
                 {' '}({autoRules.penaltyAlertThreshold}점 설정 → 화면의 <b>순점수 -{autoRules.penaltyAlertThreshold}점 이하</b>부터)
                 {Number(autoRules.penaltyAlertThreshold || 0) > 20
-                  ? ' 20점보다 높게 두면 센터장 면담(20점 초과) 단계가 먼저 뜹니다.'
+                  ? ' 20점보다 높게 두면 센터장 면담(20점 이상) 단계가 먼저 뜹니다.'
                   : ''}
               </em>
             </div>
@@ -17211,8 +17211,8 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
             <button type="button" className="secondary" onClick={loadAutoRules} disabled={autoRulesSaving}>되돌리기</button>
           </div>
           <p className="point-auto-rules-note">
-            벌점 단계는 <b>학부모 알림(위 설정값 이상)</b> · 센터장 면담(순벌점 20점 초과) · 제적 검토(순벌점 30점 초과) 세 단계입니다.
-            센터장 면담과 제적 검토는 설정과 무관하게 예전 그대로입니다.
+            벌점 단계는 <b>학부모 알림(위 설정값 이상)</b> · 센터장 면담(순벌점 20점 이상) · 제적 검토(순벌점 30점 이상) 세 단계입니다.
+            센터장 면담과 제적 검토 기준은 설정과 무관하게 고정입니다.
           </p>
         </div>
       ) : null}
@@ -17294,7 +17294,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
           <div className="penalty-stage-alert-head">
             <strong>벌점 단계 조치 대상 {scopeRows(rewardState.penaltyAlerts).length}명</strong>
             <span>
-              순벌점(벌점 - 상점) {rewardState?.autoRules?.penaltyAlertThreshold ?? 15}점 <b>이상</b>(화면의 순점수 -{rewardState?.autoRules?.penaltyAlertThreshold ?? 15}점 이하) → 학부모 알림 · 20점 초과 → 센터장 면담 · 30점 초과 → 제적 검토.
+              순벌점(벌점 - 상점) {rewardState?.autoRules?.penaltyAlertThreshold ?? 15}점 <b>이상</b>(화면의 순점수 -{rewardState?.autoRules?.penaltyAlertThreshold ?? 15}점 이하) → 학부모 알림 · 20점 이상 → 센터장 면담 · 30점 이상 → 제적 검토.
               {' '}상점을 받으면 그만큼 상계됩니다. <b>[알림톡 발송]을 누르면 학부모·학생에게 상벌점 누적 안내가 한 번 발송</b>되고 이 경고가 내려갑니다.
               {' '}기준은 [자동 상점 기준]에서 바꿀 수 있습니다.
             </span>
@@ -17307,13 +17307,13 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                   <span>{item.subtitle || '학교/학년 미입력'}</span>
                 </div>
                 <div className="penalty-stage-alert-score">
-                  <b className={`penalty-stage-badge tone-${item.tone}`}>{item.thresholdLabel || `${item.stage}점 초과`} · {item.stageLabel}</b>
+                  <b className={`penalty-stage-badge tone-${item.tone}`}>{item.thresholdLabel || `${item.stage}점 이상`} · {item.stageLabel}</b>
                   <em>순벌점 {item.penaltyNet}점 (벌 {item.penalty} - 상 {item.reward}){item.deferred ? ' · 보류 중' : ''}</em>
                 </div>
                 <p>{item.message}. {item.actionHint}</p>
                 {item.pendingStages.length > 1 ? (
                   <em className="penalty-stage-pending">
-                    미조치 단계: {item.pendingStages.map((stage) => `${stage.thresholdLabel || `${stage.stage}점 초과`} ${stage.label}${stage.deferred ? '(보류)' : ''}`).join(' · ')}
+                    미조치 단계: {item.pendingStages.map((stage) => `${stage.thresholdLabel || `${stage.stage}점 이상`} ${stage.label}${stage.deferred ? '(보류)' : ''}`).join(' · ')}
                   </em>
                 ) : null}
                 <div className="penalty-stage-alert-actions">
