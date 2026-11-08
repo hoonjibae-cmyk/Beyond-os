@@ -25,6 +25,7 @@ import { DEFAULT_POINT_AUTO_RULES, SAMPLE_POINT_AUTO_TIERS, MAX_AUTO_TIERS, norm
 import { normalizePlannerRotation, turnPlannerRotation, isPlannerRotationSideways } from '../lib/plannerRotation';
 import { FOCUS_MAX, FOCUS_LABELS, normalizeFocusRating, getFocusLabel, summarizeFocusRatings } from '../lib/focusRating';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
+import { WEEKDAY_LABELS_KO, DEFAULT_WEEKLY_AUTO_SEND_SETTINGS } from '../lib/weeklyAutoSend';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory, SEAT_NICKNAME_SAMPLE_VARIABLES } from '../lib/noticeTemplates';
 import { NOTICE_AUDIENCES, DEFAULT_NOTICE_AUDIENCE, getNoticeAudience } from '../lib/noticeAudience';
@@ -14686,6 +14687,12 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   const [weeklyHistoryNotice, setWeeklyHistoryNotice] = useState('이번 주를 기본 기간으로 조회합니다. 상단의 기간 검색에서 과거 주간을 선택할 수 있습니다.');
   const [weeklyRangePickerOpen, setWeeklyRangePickerOpen] = useState(false);
   const [weeklyRangePickerDate, setWeeklyRangePickerDate] = useState(initialRange.start);
+  // v41-287: 위클리 리포트 자동 생성·발송 (요일·시각 예약)
+  const [weeklyAuto, setWeeklyAuto] = useState(null);
+  const [weeklyAutoDraft, setWeeklyAutoDraft] = useState(DEFAULT_WEEKLY_AUTO_SEND_SETTINGS);
+  const [weeklyAutoOpen, setWeeklyAutoOpen] = useState(false);
+  const [weeklyAutoSaving, setWeeklyAutoSaving] = useState(false);
+  const [weeklyAutoRunning, setWeeklyAutoRunning] = useState(false);
   const rules = normalizeOperatingRules(operatingRules);
   const activeStudents = (students || []).filter((student) => student.status !== 'inactive');
   const selectedStudent = activeStudents.find((student) => String(student.id) === String(studentId));
@@ -14832,6 +14839,70 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
     loadWeeklyStatus(start, end);
     loadWeeklyActivity(start, end);
   }, [start, end]);
+
+  // v41-287: 자동 발송 설정·실행 기록
+  async function loadWeeklyAuto() {
+    try {
+      const data = await apiFetch('/api/weekly-report-auto');
+      setWeeklyAuto(data);
+      setWeeklyAutoDraft({ ...DEFAULT_WEEKLY_AUTO_SEND_SETTINGS, ...(data.settings || {}) });
+    } catch (error) {
+      setWeeklyAuto({ error: error.message || '자동 발송 설정을 읽지 못했습니다.', runs: [] });
+    }
+  }
+  useEffect(() => { loadWeeklyAuto(); }, []);
+
+  async function saveWeeklyAuto(patch = {}) {
+    const next = { ...weeklyAutoDraft, ...patch };
+    if (!/^\d{2}:\d{2}$/.test(String(next.time || ''))) return alert('실행 시각을 HH:MM 형식으로 입력하세요.');
+    if (next.enabled && !weeklyAutoDraft.enabled) {
+      const weekText = next.weekTarget === 'current' ? '실행일이 속한 주(월~일)' : '직전 주(월~일)';
+      const ok = confirm(`위클리 리포트 자동 발송을 켤까요?\n\n매주 ${WEEKDAY_LABELS_KO[next.weekday]}요일 ${next.time}에 ${weekText} 리포트를 ${next.composeMode === 'all' ? '전원 최신 데이터로 갱신 구성' : '미작성 학생만 자동 구성'}한 뒤, 아직 발송하지 않은 학생의 보호자에게 알림톡이 실제로 발송됩니다.\n\n▶ 테스트모드·수신자 정책은 수동 발송과 같은 설정을 따릅니다.\n▶ 이미 발송 완료된 학생에게는 다시 보내지 않습니다.`);
+      if (!ok) return;
+    }
+    try {
+      setWeeklyAutoSaving(true);
+      const data = await apiFetch('/api/weekly-report-auto', { method: 'POST', body: JSON.stringify({ action: 'save', settings: next }) });
+      setWeeklyAuto(data);
+      setWeeklyAutoDraft({ ...DEFAULT_WEEKLY_AUTO_SEND_SETTINGS, ...(data.settings || {}) });
+      setMessage?.(data.message || '자동 발송 설정 저장 완료');
+    } catch (error) {
+      setMessage?.(error.message || '자동 발송 설정 저장 실패');
+    } finally {
+      setWeeklyAutoSaving(false);
+    }
+  }
+
+  async function runWeeklyAutoNow() {
+    const ok = confirm(`${start} ~ ${end} 주간을 지금 바로 자동 처리할까요?\n\n1) 리포트 ${weeklyAutoDraft.composeMode === 'all' ? '전원 갱신 구성' : '미작성 학생 자동 구성'}\n2) 본문이 있고 아직 발송 완료가 아닌 학생에게 알림톡 발송\n\n▶ 보호자에게 실제로 발송됩니다. (테스트모드면 테스트 수신자에게)\n▶ 이미 발송 완료된 학생은 건너뜁니다.`);
+    if (!ok) return;
+    try {
+      setWeeklyAutoRunning(true);
+      showWeeklyBulkNotice({ type: 'neutral', title: '위클리 자동 처리 실행 중...', message: `${start} ~ ${end} 리포트를 구성하고 발송하고 있습니다. 창을 닫지 마세요.` });
+      const data = await apiFetch('/api/weekly-report-auto', { method: 'POST', body: JSON.stringify({ action: 'run_now', weekStart: start, weekEnd: end }) });
+      setWeeklyAuto(data);
+      const send = data.result?.send || {};
+      showWeeklyBulkNotice({
+        type: send.failed ? 'warning' : 'success',
+        title: '위클리 자동 처리 완료',
+        message: data.message || '완료',
+      });
+      await loadWeeklyStatus(start, end);
+      await loadWeeklyHistory(historyStart, historyEnd).catch(() => {});
+      await loadWeeklyActivity(start, end);
+    } catch (error) {
+      showWeeklyBulkNotice({ type: 'failed', title: '위클리 자동 처리 실패', message: error.message || '실행 중 오류가 발생했습니다.' });
+      await loadWeeklyAuto();
+    } finally {
+      setWeeklyAutoRunning(false);
+    }
+  }
+
+  function formatAutoRunStatus(run) {
+    if (run.status === 'processing') return '실행 중';
+    if (run.status === 'failed') return '실패';
+    return '완료';
+  }
 
   function formatSavedAt(value) {
     if (!value) return '';
@@ -15881,6 +15952,95 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
             <div className="all-clear">조회 조건에 맞는 과거 위클리 리포트가 없습니다. 기간을 넓히거나 학생/상태 필터를 조정해 보세요.</div>
           )}
         </div>
+      </section>
+
+      {/* v41-287: 요일·시각을 정해 두면 서버가 리포트를 자동 구성하고 미발송 학생에게 알림톡을 보냅니다. */}
+      <section className={`weekly-auto-compose-console clean-panel weekly-auto-send-panel${weeklyAutoDraft.enabled ? ' is-on' : ''}`}>
+        <div className="weekly-auto-compose-head compact-console-head">
+          <strong>위클리 리포트 자동 발송</strong>
+          <span>
+            {weeklyAuto?.error
+              ? weeklyAuto.error
+              : weeklyAutoDraft.enabled
+                ? `켜짐 · ${weeklyAuto?.description || ''}${weeklyAuto?.nextRun ? ` · 다음 실행 ${weeklyAuto.nextRun.runDate.slice(5).replace('-', '/')}(${weeklyAuto.nextRun.weekdayLabel}) ${weeklyAuto.nextRun.time} → ${weeklyAuto.nextRun.week.start.slice(5).replace('-', '/')}~${weeklyAuto.nextRun.week.end.slice(5).replace('-', '/')} 주간` : ''}`
+                : '꺼짐 · 요일과 시각을 정해 두면 그 시각에 리포트를 자동 구성하고 미발송 학생에게 알림톡을 보냅니다.'}
+          </span>
+          <div className="weekly-auto-compose-actions">
+            <button type="button" className={`section-action ${weeklyAutoDraft.enabled ? 'secondary' : 'primary'}`} onClick={() => saveWeeklyAuto({ enabled: !weeklyAutoDraft.enabled })} disabled={weeklyAutoSaving || Boolean(weeklyAuto?.error)}>
+              {weeklyAutoSaving ? '저장 중...' : weeklyAutoDraft.enabled ? '자동 발송 끄기' : '자동 발송 켜기'}
+            </button>
+            <button type="button" className="secondary section-action" onClick={() => setWeeklyAutoOpen((open) => !open)} aria-expanded={weeklyAutoOpen}>
+              {weeklyAutoOpen ? '설정 닫기' : '설정 · 실행 기록'}
+            </button>
+          </div>
+        </div>
+        {weeklyAutoOpen ? (
+          <div className="weekly-auto-send-body">
+            <div className="weekly-auto-send-form">
+              <div className="field">
+                <label>실행 요일</label>
+                <select value={weeklyAutoDraft.weekday} onChange={(e) => setWeeklyAutoDraft({ ...weeklyAutoDraft, weekday: Number(e.target.value) })}>
+                  {WEEKDAY_LABELS_KO.map((label, index) => <option key={label} value={index}>{label}요일</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>실행 시각 (한국시간)</label>
+                <input type="time" value={weeklyAutoDraft.time} onChange={(e) => setWeeklyAutoDraft({ ...weeklyAutoDraft, time: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>보낼 주간</label>
+                <select value={weeklyAutoDraft.weekTarget} onChange={(e) => setWeeklyAutoDraft({ ...weeklyAutoDraft, weekTarget: e.target.value })}>
+                  <option value="previous">직전 주 (월~일) · 월요일 실행용</option>
+                  <option value="current">실행일이 속한 주 (월~일) · 일요일 밤 실행용</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>리포트 구성 방식</label>
+                <select value={weeklyAutoDraft.composeMode} onChange={(e) => setWeeklyAutoDraft({ ...weeklyAutoDraft, composeMode: e.target.value })}>
+                  <option value="missing">미작성 학생만 자동 구성 (손으로 쓴 리포트 유지)</option>
+                  <option value="all">전원 최신 데이터로 갱신 구성 (면담·코멘트 유지)</option>
+                </select>
+              </div>
+              <label className="weekly-auto-send-check">
+                <input type="checkbox" checked={weeklyAutoDraft.notifySlack} onChange={(e) => setWeeklyAutoDraft({ ...weeklyAutoDraft, notifySlack: e.target.checked })} />
+                <span>실행 결과를 슬랙(비욘드 봇)으로 알림{weeklyAuto && !weeklyAuto.slackConfigured ? ' · 슬랙 설정 없음(건너뜀)' : ''}</span>
+              </label>
+            </div>
+            <div className="weekly-auto-send-actions">
+              <button type="button" className="primary section-action" onClick={() => saveWeeklyAuto()} disabled={weeklyAutoSaving}>{weeklyAutoSaving ? '저장 중...' : '설정 저장'}</button>
+              <button type="button" className="secondary section-action" onClick={runWeeklyAutoNow} disabled={weeklyAutoRunning || weeklyBulkLoading} title="위에서 고른 기간을 지금 바로 자동 구성·발송합니다. 설정이 꺼져 있어도 실행됩니다.">
+                {weeklyAutoRunning ? '실행 중...' : `지금 실행 (${start.slice(5).replace('-', '/')}~${end.slice(5).replace('-', '/')})`}
+              </button>
+            </div>
+            <div className="hint">
+              실행 시각이 되면 서버가 ① 그 주 리포트를 자동 구성하고 ② 본문이 있고 아직 발송 완료가 아닌 학생의 보호자에게 알림톡을 보냅니다. 이미 보낸 학생에게는 다시 보내지 않으므로 손으로 미리 보낸 학생과 겹치지 않습니다.
+              테스트모드·수신자 정책·학생 본인 발송 설정은 수동 발송과 같습니다. 같은 주는 자동으로 한 번만 처리되며, 전부 실패하면 30분 뒤 한 번 더 시도합니다.
+              {weeklyAuto?.warning ? ` ⚠ ${weeklyAuto.warning}` : ''}
+            </div>
+            {weeklyAuto?.runs?.length ? (
+              <div className="weekly-auto-send-runs">
+                <strong>최근 실행 기록</strong>
+                <table>
+                  <thead><tr><th>실행</th><th>대상 주간</th><th>구성</th><th>발송</th><th>상태</th></tr></thead>
+                  <tbody>
+                    {weeklyAuto.runs.map((run) => {
+                      const c = run.compose_summary || {}; const sd = run.send_summary || {};
+                      return (
+                        <tr key={run.id} className={`status-${run.status}`}>
+                          <td>{formatScheduleTime(run.started_at)}<br /><small>{run.trigger === 'auto' ? '예약' : `수동 · ${run.triggered_by || ''}`}</small></td>
+                          <td>{String(run.week_start).slice(5).replace('-', '/')}~{String(run.week_end).slice(5).replace('-', '/')}</td>
+                          <td>{run.compose_summary ? `신규 ${c.created || 0} · 갱신 ${c.updated || 0} · 건너뜀 ${c.skipped || 0}${c.failed ? ` · 실패 ${c.failed}` : ''}` : '-'}</td>
+                          <td>{run.send_summary ? `대상 ${sd.total || 0} · 발송 ${sd.sent || 0}${sd.ready ? ` · 대기 ${sd.ready}` : ''}${sd.failed ? ` · 실패 ${sd.failed}` : ''}${sd.skipped?.alreadySent ? ` · 기발송 제외 ${sd.skipped.alreadySent}` : ''}` : '-'}</td>
+                          <td><b>{formatAutoRunStatus(run)}</b>{run.last_error ? <><br /><small>{String(run.last_error).slice(0, 80)}</small></> : null}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <section className="weekly-auto-compose-console clean-panel">

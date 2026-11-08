@@ -19492,3 +19492,23 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .login-remember { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px; font-size: var(--ui-fs-sm, 13px); color: var(--ap-text-2, #555); cursor: pointer; user-select: none; }
 .login-remember input { width: 16px; height: 16px; margin: 0; accent-color: var(--ap-accent, #2563eb); }
 .login-card .login-remember input, .login-card .login-remember input[type="checkbox"] { height: 16px !important; width: 16px !important; padding: 0 !important; margin: 0 !important; border-radius: 4px !important; }
+
+/* v41-287: 위클리 리포트 자동 발송 패널 */
+.weekly-auto-send-panel.is-on { border-color: rgba(37, 99, 235, .35); }
+.weekly-auto-send-body { display: grid; gap: 10px; }
+.weekly-auto-send-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-items: end; }
+.weekly-auto-send-form .field { display: grid; gap: 4px; }
+.weekly-auto-send-form .field label { font-size: var(--ui-fs-sm, 12px); color: var(--ap-text-2, #555); }
+.weekly-auto-send-form select, .weekly-auto-send-form input[type="time"] { width: 100%; min-height: 36px; }
+.weekly-auto-send-check { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: var(--ui-fs-sm, 13px); color: var(--ap-text-2, #555); cursor: pointer; }
+.weekly-auto-send-check input { width: 16px; height: 16px; margin: 0; }
+.weekly-auto-send-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.weekly-auto-send-runs { display: grid; gap: 6px; }
+.weekly-auto-send-runs strong { font-size: var(--ui-fs-sm, 13px); color: var(--ap-text-2, #555); }
+.weekly-auto-send-runs table { width: 100%; border-collapse: collapse; font-size: var(--ui-fs-sm, 12.5px); }
+.weekly-auto-send-runs th, .weekly-auto-send-runs td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--ap-sep, #e5e5ea); vertical-align: top; }
+.weekly-auto-send-runs th { color: var(--ap-text-3, #888); font-weight: var(--ui-w-med, 600); border-top: 0; }
+.weekly-auto-send-runs small { color: var(--ap-text-3, #888); }
+.weekly-auto-send-runs tr.status-failed b { color: #b42318; }
+.weekly-auto-send-runs tr.status-done b { color: #1d7a3a; }
+@media (max-width: 900px) { .weekly-auto-send-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

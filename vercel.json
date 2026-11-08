@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/weekly-points",
       "schedule": "0 21 * * 0"
+    },
+    {
+      "path": "/api/cron/weekly-report-auto",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
