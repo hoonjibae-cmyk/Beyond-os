@@ -1147,6 +1147,8 @@ const REMOTE_NOTICE_AUTO_DISMISS_MS = 5200;
 const ATTENDANCE_ACTION_UNLOCK_MS = 450;
 // v41-183: 로그인 상태에서 계정 상태(활성/비활성)를 다시 확인하는 주기입니다.
 const SESSION_RECHECK_MS = 3 * 60 * 1000;
+// v41-286: 기기별 자동 로그인 토큰 저장 키 (비밀번호가 아니라 서버가 발급한 무작위 토큰)
+const REMEMBER_TOKEN_STORAGE_KEY = 'beyond_app_remember_token';
 
 // v41-194: 부재(늦은 등원 / 이른 하원) 구간의 이름.
 //
@@ -2257,6 +2259,8 @@ export default function Page() {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordStatus, setPasswordStatus] = useState(null);
   const [accountLoginForm, setAccountLoginForm] = useState({ username: '', password: '' });
+  // v41-286: 개인 계정 로그인 때 [이 기기에서 로그인 상태 유지] 체크 (기본 켜짐)
+  const [rememberLogin, setRememberLogin] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   // v41-183: 저장된 토큰으로 서버에 계정 상태를 확인하는 동안의 대기 상태입니다.
   const [sessionChecking, setSessionChecking] = useState(false);
@@ -2670,9 +2674,10 @@ export default function Page() {
   useEffect(() => {
     const savedToken = window.localStorage.getItem('beyond_app_session_token');
     const savedUser = window.localStorage.getItem('beyond_app_user');
+    const savedRemember = window.localStorage.getItem(REMEMBER_TOKEN_STORAGE_KEY);
 
-    if (savedToken) {
-      setAppSessionToken(savedToken);
+    if (savedToken || savedRemember) {
+      if (savedToken) setAppSessionToken(savedToken);
       try {
         setCurrentUser(savedUser ? JSON.parse(savedUser) : null);
       } catch {
@@ -2682,8 +2687,9 @@ export default function Page() {
       // 예전에는 여기서 바로 로그인 상태로 만들었기 때문에, 유저 관리에서
       // 계정을 비활성화해도 그 사람 브라우저는 새로고침해도 그대로 들어왔습니다.
       // 이제 서버에 계정 상태를 먼저 확인하고, 통과한 경우에만 들어갑니다.
+      // v41-286: 로그인 토큰(2시간)이 만료됐거나 없으면 자동 로그인 토큰으로 새로 받습니다.
       setSessionChecking(true);
-      revalidateSession(savedToken)
+      (savedToken ? revalidateSession(savedToken) : tryRememberedLogin(savedRemember))
         .then((ok) => { if (ok) setIsLoggedIn(true); })
         .finally(() => setSessionChecking(false));
       return;
@@ -2950,13 +2956,18 @@ export default function Page() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (response.status === 401) {
-        window.localStorage.removeItem('beyond_admin_password');
-        window.localStorage.removeItem('beyond_app_session_token');
-        window.localStorage.removeItem('beyond_app_user');
-        setAdminPassword('');
-        setAppSessionToken('');
-        setCurrentUser(null);
-        setIsLoggedIn(false);
+        // v41-286: 로그인 토큰이 만료된 것이면 자동 로그인 토큰으로 새 토큰을 받아 한 번 다시 시도합니다.
+        if (!options.__retriedAfterRefresh && appSessionToken && !adminPassword) {
+          const refreshedToken = await refreshSessionWithRememberToken();
+          if (refreshedToken) {
+            return apiFetch(url, {
+              ...options,
+              __retriedAfterRefresh: true,
+              headers: { ...(options.headers || {}), 'x-app-session-token': refreshedToken },
+            });
+          }
+        }
+        clearStoredLogin();
         throw new Error('로그인이 만료되었거나 인증 정보가 올바르지 않습니다.');
       }
       if (response.status === 403) {
@@ -3538,6 +3549,7 @@ export default function Page() {
 
       window.localStorage.removeItem('beyond_app_session_token');
       window.localStorage.removeItem('beyond_app_user');
+      window.localStorage.removeItem(REMEMBER_TOKEN_STORAGE_KEY);
       window.localStorage.setItem('beyond_admin_password', trimmed);
       setAppSessionToken('');
       setCurrentUser({ displayName: '공용 관리자', username: 'admin', role: 'super_admin' });
@@ -3559,6 +3571,64 @@ export default function Page() {
   //   · 정상             → 새 토큰·권한을 받아 두고 true
   //   · 네트워크/DB 장애  → 로그아웃시키지 않고 true (토큰 수명으로 자연 만료)
   // 토큰을 인자로 받는 이유는, 앱이 처음 뜰 때는 아직 상태에 반영되기 전이기 때문입니다.
+  // v41-286: 저장된 로그인 정보를 지웁니다. keepRemember 면 자동 로그인 토큰은 남깁니다.
+  // (네트워크 장애처럼 '계정이 잘못된 것이 아닌' 경우에만 남깁니다)
+  function clearStoredLogin({ keepRemember = false } = {}) {
+    window.localStorage.removeItem('beyond_admin_password');
+    window.localStorage.removeItem('beyond_app_session_token');
+    window.localStorage.removeItem('beyond_app_user');
+    if (!keepRemember) window.localStorage.removeItem(REMEMBER_TOKEN_STORAGE_KEY);
+    setAdminPassword('');
+    setAppSessionToken('');
+    setCurrentUser(null);
+    setIsLoggedIn(false);
+  }
+
+  function applyIssuedSession(data) {
+    if (data?.token) {
+      window.localStorage.setItem('beyond_app_session_token', data.token);
+      setAppSessionToken(data.token);
+    }
+    if (data?.user) {
+      window.localStorage.setItem('beyond_app_user', JSON.stringify(data.user));
+      setCurrentUser(data.user);
+    }
+  }
+
+  // v41-286: 자동 로그인 토큰으로 새 로그인 토큰을 받습니다.
+  //   · 성공            → 새 토큰 문자열 (상태·저장소에도 반영)
+  //   · 계정 비활성·삭제·토큰 해지·만료 → 저장된 로그인 정보를 모두 지우고 '' (안내 문구 표시)
+  //   · 서버 503·네트워크 장애 → 아무것도 지우지 않고 ''
+  async function refreshSessionWithRememberToken(tokenOverride) {
+    const rememberToken = String(tokenOverride || window.localStorage.getItem(REMEMBER_TOKEN_STORAGE_KEY) || '');
+    if (!rememberToken) return '';
+    let response;
+    let data = {};
+    try {
+      response = await fetch('/api/account-refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(clientIdRef.current ? { 'x-beyond-client-id': clientIdRef.current } : {}) },
+        body: JSON.stringify({ rememberToken }),
+      });
+      data = await response.json().catch(() => ({}));
+    } catch {
+      return '';
+    }
+    if (response.status === 401) {
+      clearStoredLogin();
+      setLoginError(data.error || '자동 로그인이 해지되었습니다. 다시 로그인해 주세요.');
+      return '';
+    }
+    if (!response.ok || !data.token) return '';
+    applyIssuedSession(data);
+    return data.token;
+  }
+
+  async function tryRememberedLogin(rememberToken) {
+    const token = await refreshSessionWithRememberToken(rememberToken);
+    return Boolean(token);
+  }
+
   async function revalidateSession(tokenOverride) {
     const token = String(tokenOverride || appSessionToken || '');
     if (!token) return false;
@@ -3573,13 +3643,19 @@ export default function Page() {
     }
 
     if (response.status === 401 || response.status === 403) {
-      window.localStorage.removeItem('beyond_admin_password');
-      window.localStorage.removeItem('beyond_app_session_token');
-      window.localStorage.removeItem('beyond_app_user');
-      setAdminPassword('');
-      setAppSessionToken('');
-      setCurrentUser(null);
-      setIsLoggedIn(false);
+      // v41-286: 계정 자체가 비활성·삭제된 것이면 자동 로그인도 함께 끝냅니다.
+      // 그 밖의 401(2시간 토큰 만료)이면 자동 로그인 토큰으로 새 토큰을 받아 이어 갑니다.
+      const accountGone = data.reason === 'inactive' || data.reason === 'missing';
+      if (!accountGone && window.localStorage.getItem(REMEMBER_TOKEN_STORAGE_KEY)) {
+        const refreshed = await refreshSessionWithRememberToken();
+        if (refreshed) return true;
+        if (!window.localStorage.getItem(REMEMBER_TOKEN_STORAGE_KEY)) return false; // 해지 안내는 refresh 쪽에서 띄움
+        // 서버 장애로 확인하지 못함: 자동 로그인 토큰은 남기고 로그인 화면으로
+        clearStoredLogin({ keepRemember: true });
+        setLoginError('로그인 상태를 확인하지 못했습니다. 잠시 후 다시 열어 주세요.');
+        return false;
+      }
+      clearStoredLogin();
       setLoginError(data.error || '로그인이 만료되었습니다. 다시 로그인해 주세요.');
       return false;
     }
@@ -3610,8 +3686,9 @@ export default function Page() {
       setLoginError('');
       const response = await fetch('/api/account-login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        headers: { 'Content-Type': 'application/json', ...(clientIdRef.current ? { 'x-beyond-client-id': clientIdRef.current } : {}) },
+        // v41-286: remember 가 true 면 서버가 이 기기용 자동 로그인 토큰을 함께 줍니다.
+        body: JSON.stringify({ username, password, remember: rememberLogin }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || '로그인에 실패했습니다.');
@@ -3619,14 +3696,18 @@ export default function Page() {
       window.localStorage.removeItem('beyond_admin_password');
       window.localStorage.setItem('beyond_app_session_token', data.token);
       window.localStorage.setItem('beyond_app_user', JSON.stringify(data.user || null));
+      if (rememberLogin && data.rememberToken) window.localStorage.setItem(REMEMBER_TOKEN_STORAGE_KEY, data.rememberToken);
+      else window.localStorage.removeItem(REMEMBER_TOKEN_STORAGE_KEY);
       setAdminPassword('');
       setAppSessionToken(data.token);
       setCurrentUser(data.user || null);
       setIsLoggedIn(true);
       setAccountLoginForm({ username: '', password: '' });
+      if (rememberLogin && data.rememberWarning) setMessage(data.rememberWarning);
     } catch (error) {
       window.localStorage.removeItem('beyond_app_session_token');
       window.localStorage.removeItem('beyond_app_user');
+      window.localStorage.removeItem(REMEMBER_TOKEN_STORAGE_KEY);
       setAppSessionToken('');
       setCurrentUser(null);
       setLoginError(error.message);
@@ -3832,9 +3913,15 @@ export default function Page() {
   }
 
   function logout() {
+    // v41-286: 이 기기의 자동 로그인 토큰을 서버에서도 폐기합니다. (실패해도 화면은 로그아웃)
+    const rememberToken = window.localStorage.getItem(REMEMBER_TOKEN_STORAGE_KEY);
+    if (rememberToken) {
+      fetch('/api/account-logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rememberToken }) }).catch(() => {});
+    }
     window.localStorage.removeItem('beyond_admin_password');
     window.localStorage.removeItem('beyond_app_session_token');
     window.localStorage.removeItem('beyond_app_user');
+    window.localStorage.removeItem(REMEMBER_TOKEN_STORAGE_KEY);
     setIsLoggedIn(false);
     setAdminPassword('');
     setAppSessionToken('');
@@ -5986,9 +6073,14 @@ export default function Page() {
                   if (e.key === 'Enter') handleAccountLogin();
                 }}
               />
+              <label className="login-remember">
+                <input type="checkbox" checked={rememberLogin} onChange={(e) => setRememberLogin(e.target.checked)} />
+                <span>이 기기에서 로그인 상태 유지</span>
+              </label>
               <button onClick={handleAccountLogin}>개인 계정으로 로그인</button>
               {loginError ? <div className="error">{loginError}</div> : null}
               <div className="hint">승인된 계정 중 비밀번호가 설정된 유저만 접속할 수 있습니다.</div>
+              <div className="hint">로그인 상태 유지를 켜면 브라우저를 닫았다가 다시 열어도 자동으로 접속됩니다. 비밀번호는 저장하지 않으며, 계정이 비활성화되면 즉시 해지됩니다. 공용 PC에서는 끄세요.</div>
             </div>
           ) : null}
 

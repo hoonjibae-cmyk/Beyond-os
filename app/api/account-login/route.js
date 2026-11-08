@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { createAppSessionToken, verifyPassword } from '../../../lib/auth';
+import { issueRememberToken } from '../../../lib/rememberLogin';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,7 +84,20 @@ export async function POST(request) {
     };
 
     const token = createAppSessionToken(user);
-    return Response.json({ ok: true, token, user: safeUser });
+
+    // v41-286: [이 기기에서 로그인 상태 유지]를 켰으면 기기별 자동 로그인 토큰을 함께 줍니다.
+    let rememberToken = null;
+    let rememberWarning = '';
+    if (body.remember === true) {
+      const issued = await issueRememberToken(supabase, user.id, {
+        userAgent: request.headers.get('user-agent') || '',
+        clientId: request.headers.get('x-beyond-client-id') || '',
+      });
+      rememberToken = issued.token;
+      rememberWarning = issued.warning;
+    }
+
+    return Response.json({ ok: true, token, user: safeUser, rememberToken, rememberWarning });
   } catch (error) {
     return Response.json({
       error: error.message || '로그인 처리 중 오류가 발생했습니다.',

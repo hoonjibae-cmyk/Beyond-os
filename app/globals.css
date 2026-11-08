@@ -19487,3 +19487,8 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .penalty-deferred-section { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--ap-sep-strong, #d6d6dc); display: grid; gap: 8px; }
 .penalty-deferred-head { font-size: var(--ui-fs-sm, 12px); color: var(--ap-text-2, #555); font-weight: var(--ui-w-med, 600); }
 .penalty-stage-alert-list > article.is-deferred { background: var(--ap-surface-2, #fafafa); border-style: dashed; }
+
+/* v41-286: 로그인 상태 유지 체크 */
+.login-remember { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px; font-size: var(--ui-fs-sm, 13px); color: var(--ap-text-2, #555); cursor: pointer; user-select: none; }
+.login-remember input { width: 16px; height: 16px; margin: 0; accent-color: var(--ap-accent, #2563eb); }
+.login-card .login-remember input, .login-card .login-remember input[type="checkbox"] { height: 16px !important; width: 16px !important; padding: 0 !important; margin: 0 !important; border-radius: 4px !important; }

@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { createAppSessionToken, getAuthorizedUser, unauthorizedResponse } from '../../../lib/auth';
+import { revokeRememberTokensForUser } from '../../../lib/rememberLogin';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,12 +34,15 @@ export async function GET(request) {
     if (error) throw error;
 
     if (!row) {
+      await revokeRememberTokensForUser(supabase, user.id, 'deleted');
       return Response.json(
         { error: '삭제된 계정입니다. 관리자에게 문의하세요.', reason: 'missing' },
         { status: 401 },
       );
     }
     if (row.status !== 'active') {
+      // v41-286: 비활성 계정은 모든 기기의 자동 로그인도 함께 해지합니다.
+      await revokeRememberTokensForUser(supabase, row.id, 'inactive');
       return Response.json(
         { error: '사용이 중지된 계정입니다. 관리자에게 문의하세요.', reason: 'inactive', status: row.status },
         { status: 401 },

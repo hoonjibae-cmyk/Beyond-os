@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { revokeRememberTokensForUser } from '../../../lib/rememberLogin';
 import { canManageUsers, forbiddenResponse, hashPassword, isAuthorized, unauthorizedResponse, getAuthorizedUser } from '../../../lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -174,12 +175,15 @@ export async function POST(request) {
 
       if (error) throw error;
 
+      // v41-286: 임시 비밀번호를 새로 주면 이전 기기의 자동 로그인은 모두 해지합니다.
+      const revokedRemember = await revokeRememberTokensForUser(supabase, body.id, 'password_reset');
+
       const actor = getAuthorizedUser(request);
       await writeLog(supabase, {
         actionType: 'user.password.set',
         targetId: saved.id,
         targetName: saved.display_name || saved.username,
-        payload: { requirePasswordChange: Boolean(body.requirePasswordChange ?? true), actor: actor?.displayName || '관리자' },
+        payload: { requirePasswordChange: Boolean(body.requirePasswordChange ?? true), actor: actor?.displayName || '관리자', revokedRememberTokens: revokedRemember },
       });
 
       return Response.json(await loadPayload(supabase));
@@ -213,11 +217,14 @@ export async function POST(request) {
 
       if (error) throw error;
 
+      // v41-286: 활성이 아닌 상태(비활성·대기·거절)로 바꾸면 그 사용자의 자동 로그인을 모든 기기에서 즉시 해지합니다.
+      const revokedRemember = status !== 'active' ? await revokeRememberTokensForUser(supabase, body.id, 'inactive') : 0;
+
       await writeLog(supabase, {
         actionType: 'user.update',
         targetId: saved.id,
         targetName: saved.display_name || saved.username,
-        payload: { role, status, permissions },
+        payload: { role, status, permissions, revokedRememberTokens: revokedRemember },
       });
 
       return Response.json(await loadPayload(supabase));
