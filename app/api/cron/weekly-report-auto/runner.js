@@ -18,6 +18,7 @@ import { getReportSendSettings } from '../../../../lib/reportSendSettings';
 import { getCohortIdFromRequest, resolveScopeCohort, loadCohortStudentIds } from '../../../../lib/cohortScope';
 import { getKstDateString } from '../../../../lib/date';
 import { selectInChunksSafe } from '../../../../lib/supabaseChunk';
+import { findWeeklyInactiveStudentIds } from '../../../../lib/weeklyActivity';
 import { sendSlackText } from '../../../../lib/slackNotify';
 import {
   normalizeWeeklyAutoSendSettings, isWeeklyAutoSendDue, getKstNowParts, resolveTargetWeek, buildAutoRunKey, WEEKDAY_LABELS_KO,
@@ -85,16 +86,21 @@ export async function pickSendTargets(supabase, week) {
     if (cohort) inCohort = new Set((await loadCohortStudentIds(supabase, cohort.id)) || []);
   } catch { inCohort = null; }
 
+  // v41-288: 그 주 개인 시간표가 없고 등원 기록도 없는 학생은 미발송 대상입니다.
+  const activity = await findWeeklyInactiveStudentIds(supabase, studentIds, week);
+
   const targets = [];
-  const skipped = { noText: 0, alreadySent: 0, inactive: 0, outOfCohort: 0 };
+  const skipped = { noText: 0, alreadySent: 0, inactive: 0, outOfCohort: 0, noActivity: 0, noActivityNames: [] };
   for (const report of reports || []) {
     const student = studentMap[String(report.student_id)];
     if (!String(report.report_text || '').trim()) { skipped.noText += 1; continue; }
     if (String(report.send_status || '').toLowerCase() === 'sent') { skipped.alreadySent += 1; continue; }
     if (!student || student.status === 'inactive') { skipped.inactive += 1; continue; }
     if (inCohort && !inCohort.has(String(report.student_id))) { skipped.outOfCohort += 1; continue; }
+    if (activity.inactiveIds.has(String(report.student_id))) { skipped.noActivity += 1; skipped.noActivityNames.push(student.name || '학생'); continue; }
     targets.push({ reportId: report.id, studentId: report.student_id, studentName: student.name || '학생' });
   }
+  if (activity.warning) skipped.activityWarning = activity.warning;
   targets.sort((a, b) => String(a.studentName).localeCompare(String(b.studentName), 'ko'));
   return { targets, skipped };
 }
@@ -174,6 +180,7 @@ function buildSlackSummary({ week, trigger, compose, send, error }) {
     `리포트 구성: 신규 ${compose?.created || 0} · 갱신 ${compose?.updated || 0} · 건너뜀 ${compose?.skipped || 0} · 실패 ${compose?.failed || 0}`,
     `알림톡 발송(${targetLabel}): 대상 ${send?.total || 0}명 · 발송 ${send?.sent || 0} · 대기 ${send?.ready || 0} · 실패 ${send?.failed || 0}`,
   ];
+  if (send?.skipped?.noActivity) lines.push(`미발송(시간표·등원 기록 없음): ${send.skipped.noActivity}명${send.skipped.noActivityNames?.length ? ` · ${send.skipped.noActivityNames.slice(0, 12).join(', ')}${send.skipped.noActivityNames.length > 12 ? ' 외' : ''}` : ''}`);
   const failedNames = (send?.details || []).filter((d) => d.status === 'failed').map((d) => `${d.studentName}(${String(d.message || '').slice(0, 40)})`);
   if (failedNames.length) lines.push(`실패 학생: ${failedNames.slice(0, 15).join(', ')}${failedNames.length > 15 ? ` 외 ${failedNames.length - 15}명` : ''}`);
   const text = `[${title}]\n${lines.join('\n')}\n실행: ${trigger === 'auto' ? '시스템(예약)' : '관리자 수동'}`;
@@ -226,7 +233,7 @@ export async function runWeeklyReportAuto({ supabase, force = false, week: weekO
     if (settings.notifySlack) await sendSlackText(buildSlackSummary({ week, trigger, compose, send })).catch(() => {});
     return {
       ok: true, status, week, trigger, compose, send, run: row,
-      message: `${formatWeek(week)} · 구성 신규 ${compose.created || 0}·갱신 ${compose.updated || 0} · 발송 ${send.sent}명${send.ready ? ` · 대기 ${send.ready}` : ''}${send.failed ? ` · 실패 ${send.failed}` : ''}${send.total === 0 ? ' · 보낼 대상 없음' : ''}`,
+      message: `${formatWeek(week)} · 구성 신규 ${compose.created || 0}·갱신 ${compose.updated || 0} · 발송 ${send.sent}명${send.ready ? ` · 대기 ${send.ready}` : ''}${send.failed ? ` · 실패 ${send.failed}` : ''}${send.skipped?.noActivity ? ` · 미발송(시간표·등원 없음) ${send.skipped.noActivity}` : ''}${send.total === 0 ? ' · 보낼 대상 없음' : ''}`,
     };
   } catch (error) {
     const message = String(error?.message || error).slice(0, 500);

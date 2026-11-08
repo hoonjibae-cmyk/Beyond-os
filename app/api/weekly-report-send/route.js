@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { isStudentInactiveForWeek, WEEKLY_NO_ACTIVITY_CODE, WEEKLY_NO_ACTIVITY_MESSAGE } from '../../../lib/weeklyActivity';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { ensureReportShareLink } from '../../../lib/reportShare';
@@ -306,6 +307,26 @@ export async function POST(request) {
       .maybeSingle();
 
     if (studentError) throw studentError;
+
+    // v41-288: 그 주 개인 시간표가 없고 등원 기록도 없으면 보내지 않습니다. (미리보기는 허용)
+    if (action === 'send' && body.force !== true) {
+      const activity = await isStudentInactiveForWeek(supabase, report.student_id, { start: report.start_date, end: report.end_date });
+      if (activity.inactive) {
+        await writeUserActionLog(supabase, request, {
+          actionType: 'weekly_report.skipped',
+          targetType: 'weekly_report',
+          targetId: report.id,
+          targetName: student?.name,
+          payload: { studentId: student?.id, startDate: report.start_date, endDate: report.end_date, reason: WEEKLY_NO_ACTIVITY_MESSAGE, code: WEEKLY_NO_ACTIVITY_CODE },
+        });
+        return Response.json({
+          error: `${WEEKLY_NO_ACTIVITY_MESSAGE} (${student?.name || '학생'} · ${report.start_date} ~ ${report.end_date}) 학생 시간표를 등록하거나 출결을 기록한 뒤 다시 보내세요.`,
+          code: WEEKLY_NO_ACTIVITY_CODE,
+          skipped: true,
+          status: 'skipped',
+        }, { status: 409 });
+      }
+    }
 
     const { settings: reportSendSettings } = await getReportSendSettings(supabase);
     // v41-287.1: 자동 발송이 정한 대상(학부모만 / 학생만 / 둘 다). 없으면 기존 규칙(보호자 + 설정 시 학생).

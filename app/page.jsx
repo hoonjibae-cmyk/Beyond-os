@@ -15624,6 +15624,21 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
       const params = new URLSearchParams({ mode: 'history', start, end });
       const data = await apiFetch(`/api/weekly-report?${params.toString()}`);
       const reports = (data.reports || []).filter((report) => String(report.report_text || '').trim());
+      // v41-288: 그 주 개인 시간표가 없고 등원 기록도 없는 학생은 발송 대상에서 뺍니다. (서버도 같은 기준으로 거부)
+      let noActivityIds = new Set();
+      let noActivityNames = [];
+      let noActivityWarning = '';
+      try {
+        const ids = [...new Set(reports.map((report) => String(report.student_id)))];
+        if (ids.length) {
+          const activity = await apiFetch(`/api/weekly-report-activity?${new URLSearchParams({ start, end, studentIds: ids.join(',') }).toString()}`);
+          noActivityIds = new Set((activity.inactiveStudentIds || []).map(String));
+          noActivityNames = (activity.inactive || []).map((row) => row.name);
+          noActivityWarning = activity.warning || '';
+        }
+      } catch (error) {
+        noActivityWarning = `시간표·등원 기록 확인 실패 (${error.message}). 제외 없이 목록을 보여 줍니다. 서버가 발송 시점에 다시 확인합니다.`;
+      }
       // v41-227: 지금 보고 있는 기수의 학생만 발송 대상에 올립니다.
       //
       // report.student 는 서버가 붙여 준 값이라 기수와 무관하게 들어옵니다.
@@ -15635,9 +15650,12 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
         .map((report) => ({ report, student: studentLookup[report.student_id] || report.student || null }))
         .filter(({ report, student }) => studentLookup[report.student_id]
           && student && student.status !== 'inactive'
-          && getActiveGuardians(student, 'weekly').length);
+          && getActiveGuardians(student, 'weekly').length
+          && !noActivityIds.has(String(report.student_id)));
       if (!targets.length) {
-        alert('이번 기간에 발송할 저장된 위클리 리포트가 없습니다. 먼저 "자동 구성"으로 리포트를 만든 뒤 다시 시도하세요.');
+        alert(noActivityNames.length
+          ? `이번 기간에 발송할 위클리 리포트가 없습니다.\n\n시간표·등원 기록이 모두 없어 미발송 처리된 학생 ${noActivityNames.length}명: ${noActivityNames.join(', ')}`
+          : '이번 기간에 발송할 저장된 위클리 리포트가 없습니다. 먼저 "자동 구성"으로 리포트를 만든 뒤 다시 시도하세요.');
         return;
       }
       const safety = getReportSendSafetySummary(sendConfig);
@@ -15659,6 +15677,8 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
         safety,
         acknowledged: !safety.requiresAcknowledgement,
         confirmPhrase: '',
+        noActivityNames,
+        noActivityWarning,
       });
     } catch (error) {
       alert(error.message || '위클리 발송 대상 조회에 실패했습니다.');
@@ -16022,7 +16042,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
               </button>
             </div>
             <div className="hint">
-              실행 시각이 되면 서버가 ① 그 주 리포트를 자동 구성하고 ② 본문이 있고 아직 발송 완료가 아닌 학생의 보호자에게 알림톡을 보냅니다. 이미 보낸 학생에게는 다시 보내지 않으므로 손으로 미리 보낸 학생과 겹치지 않습니다.
+              실행 시각이 되면 서버가 ① 그 주 리포트를 자동 구성하고 ② 본문이 있고 아직 발송 완료가 아닌 학생에게 알림톡을 보냅니다. 이미 보낸 학생에게는 다시 보내지 않으므로 손으로 미리 보낸 학생과 겹치지 않습니다. 그 주 개인 시간표가 없고 등원 기록도 없는 학생은 미발송 대상으로 제외됩니다.
               발송 대상은 위 [발송 대상] 설정을 따르며(설정 › 리포트 발송의 '학생 본인 발송' 토글과 무관), 테스트모드·수신자 정책은 수동 발송과 같습니다. 같은 주는 자동으로 한 번만 처리되며, 전부 실패하면 30분 뒤 한 번 더 시도합니다.
               {weeklyAuto?.warning ? ` ⚠ ${weeklyAuto.warning}` : ''}
             </div>
@@ -16039,7 +16059,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
                           <td>{formatScheduleTime(run.started_at)}<br /><small>{run.trigger === 'auto' ? '예약' : `수동 · ${run.triggered_by || ''}`}</small></td>
                           <td>{String(run.week_start).slice(5).replace('-', '/')}~{String(run.week_end).slice(5).replace('-', '/')}</td>
                           <td>{run.compose_summary ? `신규 ${c.created || 0} · 갱신 ${c.updated || 0} · 건너뜀 ${c.skipped || 0}${c.failed ? ` · 실패 ${c.failed}` : ''}` : '-'}</td>
-                          <td>{run.send_summary ? `${{ parent: '학부모', student: '학생', both: '학부모+학생' }[sd.recipientTarget] || '학부모'} · 대상 ${sd.total || 0} · 발송 ${sd.sent || 0}${sd.ready ? ` · 대기 ${sd.ready}` : ''}${sd.failed ? ` · 실패 ${sd.failed}` : ''}${sd.skipped?.alreadySent ? ` · 기발송 제외 ${sd.skipped.alreadySent}` : ''}` : '-'}</td>
+                          <td>{run.send_summary ? `${{ parent: '학부모', student: '학생', both: '학부모+학생' }[sd.recipientTarget] || '학부모'} · 대상 ${sd.total || 0} · 발송 ${sd.sent || 0}${sd.ready ? ` · 대기 ${sd.ready}` : ''}${sd.failed ? ` · 실패 ${sd.failed}` : ''}${sd.skipped?.alreadySent ? ` · 기발송 제외 ${sd.skipped.alreadySent}` : ''}${sd.skipped?.noActivity ? ` · 미발송(시간표·등원 없음) ${sd.skipped.noActivity}` : ''}` : '-'}</td>
                           <td><b>{formatAutoRunStatus(run)}</b>{run.last_error ? <><br /><small>{String(run.last_error).slice(0, 80)}</small></> : null}</td>
                         </tr>
                       );
@@ -16521,7 +16541,15 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
             <div className="send-confirm-summary-grid v40-95-summary">
               <div><strong>{weeklyBulkSelectedCount}/{weeklyBulkSendConfirm.targets.length}</strong><span>발송 선택/대상</span></div>
               <div><strong>{weeklyBulkSendConfirm.recipientCount || 0}</strong><span>예상 수신 보호자</span></div>
+              <div><strong>{weeklyBulkSendConfirm.noActivityNames?.length || 0}</strong><span>미발송(시간표·등원 없음)</span></div>
             </div>
+            {weeklyBulkSendConfirm.noActivityNames?.length ? (
+              <div className="weekly-no-activity-note">
+                <strong>미발송 대상 {weeklyBulkSendConfirm.noActivityNames.length}명</strong>
+                <span>이번 주 개인 시간표가 없고 등원 기록도 없어 자동으로 제외했습니다: {weeklyBulkSendConfirm.noActivityNames.join(', ')}</span>
+              </div>
+            ) : null}
+            {weeklyBulkSendConfirm.noActivityWarning ? <div className="hint">⚠ {weeklyBulkSendConfirm.noActivityWarning}</div> : null}
 
             <div className="send-recipient-preview-box send-recipient-select-box">
               <div className="send-recipient-select-head">
