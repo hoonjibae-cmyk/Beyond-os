@@ -308,12 +308,18 @@ export async function POST(request) {
     if (studentError) throw studentError;
 
     const { settings: reportSendSettings } = await getReportSendSettings(supabase);
-    const recipients = withStudentRecipient(
-      getReportGuardians(student || {}, 'weekly'),
-      student || {},
-      isStudentRecipientEnabled('weekly', reportSendSettings),
-    );
+    // v41-287.1: 자동 발송이 정한 대상(학부모만 / 학생만 / 둘 다). 없으면 기존 규칙(보호자 + 설정 시 학생).
+    const recipientTarget = ['parent', 'student', 'both'].includes(String(body.recipientTarget || '')) ? String(body.recipientTarget) : '';
+    const guardians = getReportGuardians(student || {}, 'weekly');
+    const recipients = recipientTarget === 'student'
+      ? withStudentRecipient([], student || {}, true)
+      : recipientTarget === 'both'
+        ? withStudentRecipient(guardians, student || {}, true)
+        : recipientTarget === 'parent'
+          ? guardians
+          : withStudentRecipient(guardians, student || {}, isStudentRecipientEnabled('weekly', reportSendSettings));
     const recipientPhone = recipients[0]?.phoneDigits || '';
+    const noRecipientReason = recipientTarget === 'student' ? '학생 연락처가 없습니다.' : '학부모 연락처가 없습니다.';
 
     let liveWeeklySummary = report.summary_payload || {};
     try {
@@ -354,7 +360,7 @@ export async function POST(request) {
         {
           ...basePayload,
           send_status: 'failed',
-          send_error: '학부모 연락처가 없습니다.',
+          send_error: noRecipientReason,
           send_payload: {
             reportType: 'weekly',
             studentName: student?.name,
@@ -378,12 +384,12 @@ export async function POST(request) {
           startDate: report.start_date,
           endDate: report.end_date,
           status: 'failed',
-          reason: '학부모 연락처가 없습니다.',
+          reason: noRecipientReason,
         },
       });
 
       return Response.json({
-        error: '학부모 연락처가 없어 발송할 수 없습니다.',
+        error: recipientTarget === 'student' ? '학생 연락처가 없어 발송할 수 없습니다.' : '학부모 연락처가 없어 발송할 수 없습니다.',
         status: 'failed',
         report: update.report || report,
         warning: update.warning,
@@ -410,6 +416,7 @@ export async function POST(request) {
       studentId: student?.id,
       weeklyReportId: report.id,
       idempotencyKey: `weekly:${report.id}:${recipients.map((item) => item.phoneDigits).join(',') || 'no-recipient'}`,
+      recipientTarget: recipientTarget || 'default',
       startDate: report.start_date,
       endDate: report.end_date,
       messageText: report.report_text,

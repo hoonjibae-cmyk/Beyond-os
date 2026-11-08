@@ -25,7 +25,7 @@ import { DEFAULT_POINT_AUTO_RULES, SAMPLE_POINT_AUTO_TIERS, MAX_AUTO_TIERS, norm
 import { normalizePlannerRotation, turnPlannerRotation, isPlannerRotationSideways } from '../lib/plannerRotation';
 import { FOCUS_MAX, FOCUS_LABELS, normalizeFocusRating, getFocusLabel, summarizeFocusRatings } from '../lib/focusRating';
 import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
-import { WEEKDAY_LABELS_KO, DEFAULT_WEEKLY_AUTO_SEND_SETTINGS } from '../lib/weeklyAutoSend';
+import { WEEKDAY_LABELS_KO, DEFAULT_WEEKLY_AUTO_SEND_SETTINGS, WEEKLY_AUTO_RECIPIENT_TARGETS } from '../lib/weeklyAutoSend';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory, SEAT_NICKNAME_SAMPLE_VARIABLES } from '../lib/noticeTemplates';
 import { NOTICE_AUDIENCES, DEFAULT_NOTICE_AUDIENCE, getNoticeAudience } from '../lib/noticeAudience';
@@ -14857,7 +14857,8 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
     if (!/^\d{2}:\d{2}$/.test(String(next.time || ''))) return alert('실행 시각을 HH:MM 형식으로 입력하세요.');
     if (next.enabled && !weeklyAutoDraft.enabled) {
       const weekText = next.weekTarget === 'current' ? '실행일이 속한 주(월~일)' : '직전 주(월~일)';
-      const ok = confirm(`위클리 리포트 자동 발송을 켤까요?\n\n매주 ${WEEKDAY_LABELS_KO[next.weekday]}요일 ${next.time}에 ${weekText} 리포트를 ${next.composeMode === 'all' ? '전원 최신 데이터로 갱신 구성' : '미작성 학생만 자동 구성'}한 뒤, 아직 발송하지 않은 학생의 보호자에게 알림톡이 실제로 발송됩니다.\n\n▶ 테스트모드·수신자 정책은 수동 발송과 같은 설정을 따릅니다.\n▶ 이미 발송 완료된 학생에게는 다시 보내지 않습니다.`);
+      const targetText = WEEKLY_AUTO_RECIPIENT_TARGETS.find((item) => item.key === next.recipientTarget)?.label || '학부모만';
+      const ok = confirm(`위클리 리포트 자동 발송을 켤까요?\n\n매주 ${WEEKDAY_LABELS_KO[next.weekday]}요일 ${next.time}에 ${weekText} 리포트를 ${next.composeMode === 'all' ? '전원 최신 데이터로 갱신 구성' : '미작성 학생만 자동 구성'}한 뒤, 아직 발송하지 않은 학생의 [${targetText}]에게 알림톡이 실제로 발송됩니다.\n\n▶ 테스트모드·수신자 정책은 수동 발송과 같은 설정을 따릅니다.\n▶ 이미 발송 완료된 학생에게는 다시 보내지 않습니다.`);
       if (!ok) return;
     }
     try {
@@ -14874,7 +14875,8 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   }
 
   async function runWeeklyAutoNow() {
-    const ok = confirm(`${start} ~ ${end} 주간을 지금 바로 자동 처리할까요?\n\n1) 리포트 ${weeklyAutoDraft.composeMode === 'all' ? '전원 갱신 구성' : '미작성 학생 자동 구성'}\n2) 본문이 있고 아직 발송 완료가 아닌 학생에게 알림톡 발송\n\n▶ 보호자에게 실제로 발송됩니다. (테스트모드면 테스트 수신자에게)\n▶ 이미 발송 완료된 학생은 건너뜁니다.`);
+    const runTargetText = WEEKLY_AUTO_RECIPIENT_TARGETS.find((item) => item.key === weeklyAutoDraft.recipientTarget)?.label || '학부모만';
+    const ok = confirm(`${start} ~ ${end} 주간을 지금 바로 자동 처리할까요?\n\n1) 리포트 ${weeklyAutoDraft.composeMode === 'all' ? '전원 갱신 구성' : '미작성 학생 자동 구성'}\n2) 본문이 있고 아직 발송 완료가 아닌 학생의 [${runTargetText}]에게 알림톡 발송 (저장된 설정 기준)\n\n▶ 실제로 발송됩니다. (테스트모드면 테스트 수신자에게)\n▶ 이미 발송 완료된 학생은 건너뜁니다.`);
     if (!ok) return;
     try {
       setWeeklyAutoRunning(true);
@@ -16001,6 +16003,13 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
                   <option value="all">전원 최신 데이터로 갱신 구성 (면담·코멘트 유지)</option>
                 </select>
               </div>
+              <div className="field">
+                <label>발송 대상</label>
+                <select value={weeklyAutoDraft.recipientTarget} onChange={(e) => setWeeklyAutoDraft({ ...weeklyAutoDraft, recipientTarget: e.target.value })}>
+                  {WEEKLY_AUTO_RECIPIENT_TARGETS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                </select>
+                <small className="hint">{WEEKLY_AUTO_RECIPIENT_TARGETS.find((item) => item.key === weeklyAutoDraft.recipientTarget)?.description}</small>
+              </div>
               <label className="weekly-auto-send-check">
                 <input type="checkbox" checked={weeklyAutoDraft.notifySlack} onChange={(e) => setWeeklyAutoDraft({ ...weeklyAutoDraft, notifySlack: e.target.checked })} />
                 <span>실행 결과를 슬랙(비욘드 봇)으로 알림{weeklyAuto && !weeklyAuto.slackConfigured ? ' · 슬랙 설정 없음(건너뜀)' : ''}</span>
@@ -16014,7 +16023,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
             </div>
             <div className="hint">
               실행 시각이 되면 서버가 ① 그 주 리포트를 자동 구성하고 ② 본문이 있고 아직 발송 완료가 아닌 학생의 보호자에게 알림톡을 보냅니다. 이미 보낸 학생에게는 다시 보내지 않으므로 손으로 미리 보낸 학생과 겹치지 않습니다.
-              테스트모드·수신자 정책·학생 본인 발송 설정은 수동 발송과 같습니다. 같은 주는 자동으로 한 번만 처리되며, 전부 실패하면 30분 뒤 한 번 더 시도합니다.
+              발송 대상은 위 [발송 대상] 설정을 따르며(설정 › 리포트 발송의 '학생 본인 발송' 토글과 무관), 테스트모드·수신자 정책은 수동 발송과 같습니다. 같은 주는 자동으로 한 번만 처리되며, 전부 실패하면 30분 뒤 한 번 더 시도합니다.
               {weeklyAuto?.warning ? ` ⚠ ${weeklyAuto.warning}` : ''}
             </div>
             {weeklyAuto?.runs?.length ? (
@@ -16030,7 +16039,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
                           <td>{formatScheduleTime(run.started_at)}<br /><small>{run.trigger === 'auto' ? '예약' : `수동 · ${run.triggered_by || ''}`}</small></td>
                           <td>{String(run.week_start).slice(5).replace('-', '/')}~{String(run.week_end).slice(5).replace('-', '/')}</td>
                           <td>{run.compose_summary ? `신규 ${c.created || 0} · 갱신 ${c.updated || 0} · 건너뜀 ${c.skipped || 0}${c.failed ? ` · 실패 ${c.failed}` : ''}` : '-'}</td>
-                          <td>{run.send_summary ? `대상 ${sd.total || 0} · 발송 ${sd.sent || 0}${sd.ready ? ` · 대기 ${sd.ready}` : ''}${sd.failed ? ` · 실패 ${sd.failed}` : ''}${sd.skipped?.alreadySent ? ` · 기발송 제외 ${sd.skipped.alreadySent}` : ''}` : '-'}</td>
+                          <td>{run.send_summary ? `${{ parent: '학부모', student: '학생', both: '학부모+학생' }[sd.recipientTarget] || '학부모'} · 대상 ${sd.total || 0} · 발송 ${sd.sent || 0}${sd.ready ? ` · 대기 ${sd.ready}` : ''}${sd.failed ? ` · 실패 ${sd.failed}` : ''}${sd.skipped?.alreadySent ? ` · 기발송 제외 ${sd.skipped.alreadySent}` : ''}` : '-'}</td>
                           <td><b>{formatAutoRunStatus(run)}</b>{run.last_error ? <><br /><small>{String(run.last_error).slice(0, 80)}</small></> : null}</td>
                         </tr>
                       );

@@ -106,11 +106,11 @@ export function classifySendResult(data) {
   return 'sent';
 }
 
-async function sendReports({ targets, actorName }) {
+async function sendReports({ targets, actorName, recipientTarget = 'parent' }) {
   const details = [];
   for (const target of targets) {
     try {
-      const response = await sendWeeklyReport(buildInternalRequest('/api/weekly-report-send', { action: 'send', reportId: target.reportId, adminName: actorName }));
+      const response = await sendWeeklyReport(buildInternalRequest('/api/weekly-report-send', { action: 'send', reportId: target.reportId, adminName: actorName, recipientTarget }));
       const data = await response.json().catch(() => ({}));
       if (!response.ok) details.push({ ...target, status: 'failed', message: data?.error || `HTTP ${response.status}` });
       else details.push({ ...target, status: classifySendResult(data), message: data?.message || '' });
@@ -169,9 +169,10 @@ function buildSlackSummary({ week, trigger, compose, send, error }) {
       { type: 'section', text: { type: 'mrkdwn', text: `:x: 실행 실패\n${error}` } },
     ] };
   }
+  const targetLabel = { parent: '학부모', student: '학생', both: '학부모+학생' }[send?.recipientTarget] || '학부모';
   const lines = [
     `리포트 구성: 신규 ${compose?.created || 0} · 갱신 ${compose?.updated || 0} · 건너뜀 ${compose?.skipped || 0} · 실패 ${compose?.failed || 0}`,
-    `알림톡 발송: 대상 ${send?.total || 0}명 · 발송 ${send?.sent || 0} · 대기 ${send?.ready || 0} · 실패 ${send?.failed || 0}`,
+    `알림톡 발송(${targetLabel}): 대상 ${send?.total || 0}명 · 발송 ${send?.sent || 0} · 대기 ${send?.ready || 0} · 실패 ${send?.failed || 0}`,
   ];
   const failedNames = (send?.details || []).filter((d) => d.status === 'failed').map((d) => `${d.studentName}(${String(d.message || '').slice(0, 40)})`);
   if (failedNames.length) lines.push(`실패 학생: ${failedNames.slice(0, 15).join(', ')}${failedNames.length > 15 ? ` 외 ${failedNames.length - 15}명` : ''}`);
@@ -215,7 +216,7 @@ export async function runWeeklyReportAuto({ supabase, force = false, week: weekO
   try {
     compose = await composeReports({ week, composeMode: settings.composeMode, actorName });
     const picked = await pickSendTargets(supabase, week);
-    send = { ...(await sendReports({ targets: picked.targets, actorName })), skipped: picked.skipped };
+    send = { ...(await sendReports({ targets: picked.targets, actorName, recipientTarget: settings.recipientTarget })), skipped: picked.skipped, recipientTarget: settings.recipientTarget };
     // 대상이 있었는데 전부 실패하면 failed (30분 뒤 재시도). 대상 0명은 정상 종료입니다.
     const status = send.total > 0 && send.sent === 0 && send.ready === 0 ? 'failed' : 'done';
     const row = await finishRun(supabase, run.id, {
