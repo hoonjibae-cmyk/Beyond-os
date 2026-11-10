@@ -16763,6 +16763,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
   const [autoRules, setAutoRules] = useState(DEFAULT_POINT_AUTO_RULES);
   const [autoRulesOpen, setAutoRulesOpen] = useState(false);
   const [autoRulesSaving, setAutoRulesSaving] = useState(false);
+  const [studyAlertSending, setStudyAlertSending] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [autoAwardOpen, setAutoAwardOpen] = useState(false);
   // v41-275: 자율학습 중 장시간 외출 — 전날 명단을 불러와 건마다 벌점 부여 여부를 정합니다.
@@ -16875,6 +16876,24 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
 
   function updateAutoRules(patch) {
     setAutoRules((prev) => ({ ...prev, ...patch }));
+  }
+
+  // v41-289: 지난 주 순공 부족 명단을 지금 슬랙으로
+  async function sendWeeklyStudyAlertNow() {
+    const saved = normalizePointAutoRules(autoRules);
+    const ok = confirm(`지난 주(월~일) 순공시간 ${saved.weeklyStudyAlertMinHours}시간 미만 학생 명단을 지금 슬랙 #비욘드-학습관리센터로 보낼까요?\n\n▶ 화면에서 고친 기준이 있으면 먼저 [기준 저장]을 눌러야 그 값으로 집계됩니다.\n▶ 자동 발송과 별개로 한 번 더 나갑니다.`);
+    if (!ok) return;
+    try {
+      setStudyAlertSending(true);
+      const data = await apiFetch('/api/cron/weekly-study-alert', { method: 'POST', body: JSON.stringify({ force: true }) });
+      setMessage?.(data.message || (data.ok ? '슬랙 발송 완료' : data.error || '발송 실패'));
+      if (data.summary?.headline) alert(`슬랙으로 보냈습니다.\n\n${data.summary.headline}`);
+    } catch (error) {
+      setMessage?.(error.message || '슬랙 발송 실패');
+      alert(error.message || '슬랙 발송 실패');
+    } finally {
+      setStudyAlertSending(false);
+    }
   }
 
   function updateAutoTier(index, patch) {
@@ -17451,6 +17470,59 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                   onChange={(e) => updateAutoRules({ longAwayPoints: Number(e.target.value || 0) })}
                 />
                 <em>[벌점 부여]를 누르면 기록되는 점수. (기본 3점)</em>
+              </div>
+            </div>
+          </div>
+
+          {/* v41-289: 주간 순공시간 부족 학생 슬랙 알림 */}
+          <div className="point-auto-perfect-block point-auto-studyalert-block">
+            <div className="point-auto-tier-head">
+              <strong>주간 순공 부족 학생 슬랙 알림</strong>
+              <span>
+                지난 주(월~일) 순공시간이 아래 기준 <b>미만</b>인 학생 명단을 정한 요일·시각에 슬랙 #비욘드-학습관리센터(비욘드 봇)로 보냅니다.
+                {' '}형식: <b>주간 순공 시간 {autoRules.weeklyStudyAlertMinHours}시간 미만 학생: 홍길동(12시간 30분), …</b>
+                {' '}순공시간은 주간 자동 상점과 같은 계산이며, 지금 보고 있는 기수 명단이 대상입니다. 같은 주는 한 번만 보냅니다.
+              </span>
+            </div>
+            <label className="point-auto-toggle">
+              <input
+                type="checkbox"
+                checked={autoRules.weeklyStudyAlertEnabled === true}
+                onChange={(e) => updateAutoRules({ weeklyStudyAlertEnabled: e.target.checked })}
+              />
+              <span>주간 순공 부족 슬랙 알림 사용 (저장해야 적용)</span>
+            </label>
+            <div className="point-auto-perfect-grid point-auto-studyalert-grid">
+              <div className="field">
+                <label>기준 순공 시간(시간)</label>
+                <input
+                  type="number"
+                  min="0.5"
+                  max="168"
+                  step="0.5"
+                  value={autoRules.weeklyStudyAlertMinHours}
+                  onChange={(e) => updateAutoRules({ weeklyStudyAlertMinHours: Number(e.target.value || 0) })}
+                />
+                <em>이 값 미만이면 명단에 오릅니다. (기본 20시간)</em>
+              </div>
+              <div className="field">
+                <label>보내는 요일</label>
+                <select value={autoRules.weeklyStudyAlertWeekday} onChange={(e) => updateAutoRules({ weeklyStudyAlertWeekday: Number(e.target.value) })}>
+                  {WEEKDAY_LABELS_KO.map((label, index) => <option key={label} value={index}>{label}요일</option>)}
+                </select>
+                <em>기본 월요일. 지난 주(월~일) 기준으로 집계합니다.</em>
+              </div>
+              <div className="field">
+                <label>보내는 시각 (한국시간)</label>
+                <input type="time" value={autoRules.weeklyStudyAlertTime} onChange={(e) => updateAutoRules({ weeklyStudyAlertTime: e.target.value })} />
+                <em>기본 10:00. 10분 간격으로 확인해 그 시각부터 10분 안에 보냅니다.</em>
+              </div>
+              <div className="field">
+                <label>지금 확인</label>
+                <button type="button" className="secondary section-action" onClick={sendWeeklyStudyAlertNow} disabled={studyAlertSending}>
+                  {studyAlertSending ? '보내는 중...' : '지난 주 명단 지금 보내기'}
+                </button>
+                <em>저장된 기준으로 지난 주 명단을 지금 슬랙에 보냅니다. (설정이 꺼져 있어도 보냄)</em>
               </div>
             </div>
           </div>

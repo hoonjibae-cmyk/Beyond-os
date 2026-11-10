@@ -19519,3 +19519,9 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .weekly-no-activity-note { display: grid; gap: 3px; padding: 10px 12px; border-radius: var(--ui-r-sm, 10px); background: var(--ap-surface-2, #fafafa); border: 1px dashed var(--ap-sep-strong, #d6d6dc); }
 .weekly-no-activity-note strong { font-size: var(--ui-fs-sm, 13px); color: var(--ap-text-2, #555); }
 .weekly-no-activity-note span { font-size: var(--ui-fs-sm, 12.5px); color: var(--ap-text-3, #777); line-height: 1.45; }
+
+/* v41-289: 주간 순공 부족 슬랙 알림 설정 */
+.point-auto-studyalert-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.point-auto-studyalert-grid select, .point-auto-studyalert-grid input[type="time"] { width: 100%; min-height: 36px; }
+.point-auto-studyalert-grid .field button { width: 100%; }
+@media (max-width: 900px) { .point-auto-studyalert-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

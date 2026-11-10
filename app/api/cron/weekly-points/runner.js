@@ -61,7 +61,7 @@ async function loadLateThresholdMinutes(supabase) {
 }
 
 /** 대상 학생 명단. 기수 명단을 못 읽으면 활성 학생 전원으로 떨어집니다. */
-async function loadTargetStudents(supabase, cohortRange) {
+export async function loadTargetStudents(supabase, cohortRange) {
   const { data, error } = await supabase
     .from('students')
     .select('id, name, school, grade, status');
@@ -85,7 +85,7 @@ async function loadTargetStudents(supabase, cohortRange) {
 }
 
 /** 지난 주 학생별 순공시간(분) */
-async function loadWeeklyStudyMinutes(supabase, week, studentIds) {
+export async function loadWeeklyStudyMinutes(supabase, week, studentIds) {
   const idSet = new Set(studentIds.map(String));
   const scheduleConfig = await getDefaultScheduleConfig(supabase);
 

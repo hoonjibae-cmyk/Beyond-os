@@ -246,7 +246,8 @@ export async function runWeeklyReportAuto({ supabase, force = false, week: weekO
 /** 화면용: 최근 실행 기록 */
 export async function loadRecentAutoRuns(supabase, limit = 10) {
   try {
-    const { data, error } = await supabase.from(AUTO_RUNS_TABLE).select('*').order('started_at', { ascending: false }).limit(limit);
+    // v41-289: 주간 순공 슬랙 알림 실행 기록(trigger=study_alert)은 이 표를 함께 쓰지만 위클리 패널에는 보이지 않습니다.
+    const { data, error } = await supabase.from(AUTO_RUNS_TABLE).select('*').neq('trigger', 'study_alert').order('started_at', { ascending: false }).limit(limit);
     if (error) throw error;
     return { rows: data || [], warning: '' };
   } catch (error) {
