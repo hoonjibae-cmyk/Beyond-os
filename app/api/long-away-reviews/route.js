@@ -46,9 +46,27 @@ async function loadReviews(supabase, date) {
   }
 }
 
+// v41-291: 휴무일(운영 안 함)과 토요일·일요일·공휴일 유형은 장시간 외출 확인 대상이 아닙니다. (부원장님 지시)
+export function isLongAwayExemptDay(dayInfo, date) {
+  if (!dayInfo) return { exempt: false, reason: '' };
+  if (dayInfo.operating === false) return { exempt: true, reason: '휴무일' };
+  if (['saturday', 'sunday', 'holiday'].includes(String(dayInfo.dayType || ''))) {
+    return { exempt: true, reason: { saturday: '토요일', sunday: '일요일', holiday: '공휴일' }[dayInfo.dayType] };
+  }
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+  if (weekday === 6) return { exempt: true, reason: '토요일' };
+  if (weekday === 0) return { exempt: true, reason: '일요일' };
+  return { exempt: false, reason: '' };
+}
+
 async function buildCandidates(supabase, date, rules) {
   const scheduleConfig = await getDefaultScheduleConfig(supabase);
   const dayInfo = resolveScheduleForDate(scheduleConfig, date);
+
+  const exempt = isLongAwayExemptDay(dayInfo, date);
+  if (exempt.exempt) {
+    return { dayInfo, candidates: [], selfStudyLabel: '', selfStudySource: '', reason: 'exempt_day', exemptReason: exempt.reason };
+  }
 
   const { data: sessions, error: sessionError } = await supabase
     .from('daily_sessions')
@@ -153,6 +171,7 @@ export async function GET(request) {
       operating: built.dayInfo.operating,
       selfStudyLabel: built.selfStudyLabel,
       selfStudySource: built.selfStudySource || '',
+      exemptDay: built.reason === 'exempt_day' ? (built.exemptReason || '휴무일') : '',
       candidates,
       pendingCount: candidates.filter((item) => !item.decision).length,
       warning: reviews.warning || (built.reason === 'no_self_study'

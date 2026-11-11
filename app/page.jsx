@@ -17479,7 +17479,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                 외출 → 복귀로 <b>닫힌 외출</b> 중 자율학습 시간대에 겹치는 시간이 기준 이상이면
                 <b> 다음 날 명단</b>에 오릅니다. 복귀 없이 퇴실·자동 퇴실된 외출은 세지 않습니다. 벌점은 명단에서 <b>[벌점 부여]를 눌러야</b> 들어갑니다.
                 {' '}자율학습 시간대는 그 날짜에 적용되는 <b>기수별 기본 시간표의 "자율학습" 차시</b>(설정 › 기본 시간표)에서 가져옵니다. 그런 차시가 없으면 마지막 관리 차시 끝부터 기본 하원 시각까지로 봅니다.
-                {' '}<b>휴무일(일요일·공휴일 등 운영 안 함)</b>은 관리 차시가 없으므로 그날의 <b>공부 인정 구간 전체</b>가 자율학습입니다.
+                {' '}<b>휴무일·토요일·일요일·공휴일</b>은 확인 대상이 아닙니다. (평일 운영일만 명단에 오릅니다)
               </span>
             </div>
             <label className="point-auto-toggle">
@@ -17690,7 +17690,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
                 })}
               </div>
             ) : (
-              <div className="all-clear">{longAwayLoading ? '조회 중...' : `${longAwayDate}에는 기준을 넘는 자율학습 외출이 없습니다.`}</div>
+              <div className="all-clear">{longAwayLoading ? '조회 중...' : longAway?.exemptDay ? `${longAwayDate}은(는) ${longAway.exemptDay}이라 장시간 외출 확인 대상이 아닙니다. (휴무일·토·일·공휴일 제외)` : `${longAwayDate}에는 기준을 넘는 자율학습 외출이 없습니다.`}</div>
             )}
           </div>
         );
