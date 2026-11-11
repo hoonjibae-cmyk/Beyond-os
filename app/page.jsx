@@ -2097,7 +2097,7 @@ function buildEffectiveSchedulesForPresence({ schedules = [], businessDate = '' 
   return explicitSchedules;
 }
 
-function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, students = [], defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, businessDate = '' }) {
+function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, students = [], defaultSchedule = DEFAULT_SCHEDULE_SETTINGS, businessDate = '', scopeIds = null }) {
   const today = businessDate || getKstDateString();
   const now = currentKstMinutes();
   const breaksBySchedule = groupBreaksBySchedule(scheduleBreaks);
@@ -2118,6 +2118,8 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
     const student = schedule.students;
     // v41-72: 비활성 학생은 오늘 알림(미입실·외출·복귀 등) 대상에서 제외합니다.
     if ((student?.status || 'active') === 'inactive') continue;
+    // v41-290: 보고 있는 기수 명단에 없는 학생(명단에서 뺀 퇴원생 등)의 시간표도 알림을 띄우지 않습니다.
+    if (scopeIds && scopeIds.size && !scopeIds.has(String(schedule.student_id))) continue;
     const session = sessionByStudentId[schedule.student_id];
     const seat = seatByStudentId[schedule.student_id] || {};
     const studentName = student?.name || '학생';
@@ -2616,8 +2618,9 @@ export default function Page() {
       students,
       defaultSchedule,
       businessDate,
+      scopeIds: cohortScopeIds,
     }).filter((alert) => !dismissedAlerts.includes(alert.id));
-  }, [todaySchedules, todayScheduleBreaks, sessions, seatsForDisplay, students, defaultSchedule, dismissedAlerts, nowTick, businessDate]);
+  }, [todaySchedules, todayScheduleBreaks, sessions, seatsForDisplay, students, defaultSchedule, dismissedAlerts, nowTick, businessDate, cohortScopeIds]);
 
   const summary = useMemo(() => {
     const values = Object.values(sessionBySeat);
@@ -4271,6 +4274,34 @@ export default function Page() {
     });
   }
 
+  // v41-290: 좌석 패널 빠른 수정 팝업에서 바로 퇴원(비활성화) 처리
+  async function deactivateStudentFromPanel() {
+    const popup = studentQuickEdit;
+    if (!popup?.studentId || popup.saving) return;
+    const ok = confirm(`${popup.name} 학생을 퇴원(비활성화) 처리할까요?\n\n처리되는 일\n- 현재 좌석 배정이 해제됩니다.\n- 오늘 이후 개인 시간표가 삭제되어 '출결상태 확인 필요' 같은 알림과 시간표·위클리 대상에서 빠집니다.\n- 멘토링 담당 연결이 해제됩니다.\n- 데일리/위클리 리포트·상벌점 대상에서 제외됩니다.\n\n남는 것\n- 과거 출결·리포트·상벌점 기록은 그대로 보존됩니다.\n- 설정 › 학생 정보에서 다시 활성화할 수 있습니다. (시간표는 다시 만들어야 합니다)`);
+    if (!ok) return;
+    const typed = prompt(`확인을 위해 학생 이름 "${popup.name}"을(를) 그대로 입력하세요.`);
+    if (typed === null) return;
+    if (String(typed).trim() !== String(popup.name).trim()) return alert('입력한 이름이 달라 취소했습니다.');
+    try {
+      setStudentQuickEdit((prev) => (prev ? { ...prev, saving: true } : prev));
+      setMessage('퇴원(비활성화) 처리 중...');
+      const data = await apiFetch('/api/students', {
+        method: 'DELETE',
+        body: JSON.stringify({ id: popup.studentId, mode: 'deactivate' }),
+      });
+      setStudentQuickEdit(null);
+      await loadDashboard({ silent: true, suppressChangeNotice: true });
+      await loadSettingsStudents?.();
+      setMessage(data?.message || '퇴원(비활성화) 처리 완료');
+      if (data?.warning) alert(data.warning);
+    } catch (error) {
+      setStudentQuickEdit((prev) => (prev ? { ...prev, saving: false } : prev));
+      setMessage(error.message || '퇴원 처리 실패');
+      alert(error.message || '퇴원 처리 실패');
+    }
+  }
+
   async function saveStudentQuickEdit() {
     const popup = studentQuickEdit;
     if (!popup || popup.saving) return;
@@ -5890,7 +5921,7 @@ export default function Page() {
 
   async function deactivateStudentEditor() {
     if (!studentEditor?.id) return;
-    const ok = confirm(`${studentEditor.name || '학생'} 학생을 비활성화할까요?\n\n- 현재 좌석 배정이 해제됩니다.\n- 데일리/위클리 운영 대상에서 제외됩니다.\n- 과거 출결/리포트/시간표 기록은 삭제되지 않습니다.\n- 나중에 다시 활성화할 수 있습니다.`);
+    const ok = confirm(`${studentEditor.name || '학생'} 학생을 비활성화(퇴원 처리)할까요?\n\n- 현재 좌석 배정이 해제됩니다.\n- 오늘 이후 개인 시간표가 삭제되어 출결 알림·시간표·위클리 대상에서 빠집니다.\n- 멘토링 담당 연결이 해제됩니다.\n- 과거 출결/리포트/시간표 기록은 삭제되지 않습니다.\n- 나중에 다시 활성화할 수 있습니다.`);
     if (!ok) return;
 
     try {
@@ -5902,7 +5933,7 @@ export default function Page() {
       setStudentEditor(null);
       await loadDashboard({ silent: true, suppressChangeNotice: true });
       await loadSettingsStudents();
-      setMessage('학생 비활성화 완료');
+      setMessage('학생 비활성화(퇴원 처리) 완료');
     } catch (error) {
       setMessage(error.message);
     }
@@ -6605,7 +6636,7 @@ export default function Page() {
         <RemoteChangeNotice notice={remoteChangeNotice} onClose={() => setRemoteChangeNotice(null)} />
         <AwayDetailPopup popup={awayPopup} setPopup={setAwayPopup} savePopup={saveAwayDetail} />
         <AttendanceAdjustPopup popup={attendanceAdjustPopup} setPopup={setAttendanceAdjustPopup} savePopup={saveAttendanceAdjust} />
-        <StudentQuickEditPopup popup={studentQuickEdit} setPopup={setStudentQuickEdit} save={saveStudentQuickEdit} />
+        <StudentQuickEditPopup popup={studentQuickEdit} setPopup={setStudentQuickEdit} save={saveStudentQuickEdit} onDeactivate={hasPagePermission(currentUser, 'studentInfo') ? deactivateStudentFromPanel : null} />
         <ParentConfirmationAlertModal
           popup={parentAlertPopup}
           setPopup={setParentAlertPopup}
@@ -7253,7 +7284,7 @@ function AwayDetailPopup({ popup, setPopup, savePopup }) {
 }
 
 // v41-267: 좌석 패널 학생 이름 클릭 → 빠른 수정
-function StudentQuickEditPopup({ popup, setPopup, save }) {
+function StudentQuickEditPopup({ popup, setPopup, save, onDeactivate = null }) {
   if (!popup) return null;
   const close = () => { if (!popup.saving) setPopup(null); };
   const set = (patch) => setPopup((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -7308,6 +7339,17 @@ function StudentQuickEditPopup({ popup, setPopup, save }) {
           <button type="button" className="secondary" onClick={close} disabled={popup.saving}>취소</button>
           <button type="button" className="primary" onClick={save} disabled={popup.saving}>{popup.saving ? '저장 중...' : '저장'}</button>
         </div>
+
+        {/* v41-290: 퇴원 학생을 여기서 바로 비활성화합니다. (전에는 설정 › 학생 정보에서만 가능해 좌석·시간표 알림이 남았습니다) */}
+        {onDeactivate ? (
+          <div className="quick-edit-deactivate">
+            <div>
+              <strong>퇴원 처리</strong>
+              <span>좌석 해제 · 오늘 이후 시간표 삭제 · 멘토링 해제 · 운영 대상 제외. 과거 기록은 보존되고 설정 › 학생 정보에서 되돌릴 수 있습니다.</span>
+            </div>
+            <button type="button" className="danger" onClick={onDeactivate} disabled={popup.saving}>퇴원(비활성화) 처리</button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

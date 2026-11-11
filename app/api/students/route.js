@@ -322,19 +322,38 @@ export async function DELETE(request) {
         supabase.from('mentoring_date_assignments').update({ is_active: false }).eq('student_id', studentId).eq('is_active', true).gte('schedule_date', detachToday),
       ]);
 
+      // v41-290: 오늘 이후 개인 시간표를 지웁니다. (퇴원생의 '출결상태 확인 필요' 알림·시간표 탭·주간 리포트 대상에서 빠지게)
+      // 과거 날짜 시간표는 기록이므로 그대로 둡니다. 외출(breaks)은 FK cascade 로 함께 지워집니다.
+      let removedSchedules = 0;
+      let scheduleWarning = '';
+      try {
+        const { data: removed, error: scheduleError } = await supabase
+          .from('student_daily_schedules')
+          .delete()
+          .eq('student_id', studentId)
+          .gte('schedule_date', detachToday)
+          .select('id');
+        if (scheduleError) throw scheduleError;
+        removedSchedules = (removed || []).length;
+      } catch (error) {
+        scheduleWarning = `오늘 이후 개인 시간표는 지우지 못했습니다: ${error?.message || '원인 미상'}`;
+      }
+
       await writeUserActionLog(supabase, request, {
         actionType: 'student.deactivate',
         targetType: 'student',
         targetId: studentId,
         targetName: student.name,
-        payload: { mode },
+        payload: { mode, removedFutureSchedules: removedSchedules, scheduleWarning: scheduleWarning || null, previousSeatNo: student.default_seat_no || null },
       });
 
       return Response.json({
         ok: true,
         mode,
         student: data,
-        message: '학생을 비활성화했습니다. DB와 과거 기록은 보존됩니다.',
+        removedSchedules,
+        warning: scheduleWarning || null,
+        message: `${student.name} 학생을 비활성화(퇴원 처리)했습니다. 좌석 해제 · 오늘 이후 개인 시간표 ${removedSchedules}건 삭제 · 과거 기록은 보존됩니다.${scheduleWarning ? ` (${scheduleWarning})` : ''}`,
       });
     }
 

@@ -19525,3 +19525,10 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .point-auto-studyalert-grid select, .point-auto-studyalert-grid input[type="time"] { width: 100%; min-height: 36px; }
 .point-auto-studyalert-grid .field button { width: 100%; }
 @media (max-width: 900px) { .point-auto-studyalert-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* v41-290: 좌석 패널 빠른 수정 · 퇴원 처리 */
+.quick-edit-deactivate { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--ap-sep-strong, #d6d6dc); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.quick-edit-deactivate > div { display: grid; gap: 3px; min-width: 0; flex: 1 1 260px; }
+.quick-edit-deactivate strong { font-size: var(--ui-fs-sm, 13px); color: #b42318; }
+.quick-edit-deactivate span { font-size: 12px; color: var(--ap-text-3, #888); line-height: 1.45; }
+.quick-edit-deactivate button.danger { flex: 0 0 auto; }
