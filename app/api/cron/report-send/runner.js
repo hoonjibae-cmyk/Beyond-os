@@ -109,9 +109,11 @@ export function buildScheduleSlackSummary({ schedule = {}, summary = {}, status 
   const typeLabel = schedule.report_type === 'weekly' ? '위클리 리포트' : '데일리 리포트';
   const when = formatScheduleTime(schedule.scheduled_at);
   const title = `${typeLabel} 예약 발송 결과 · ${when}`;
-  const counts = `대상 ${summary.total || 0}명 · 발송 완료 ${summary.sent || 0}${summary.ready ? ` · 발송대기 ${summary.ready}` : ''} · 실패 ${summary.failed || 0}${summary.skipped ? ` (미발송 제외 ${summary.skipped} 포함)` : ''}`;
-  // 발송대기 = 발송 서버(솔라피)가 요청을 접수한 상태. 실제 도착 여부는 나중에 카카오 결과로 갱신됩니다.
-  const readyNote = summary.ready ? '발송대기는 발송 서버가 접수한 건입니다. 실제 도착 결과는 설정 › 알림톡 발송 이력에서 확인하세요.' : '';
+  // v41-292.2: 프로그램은 솔라피의 실제 도착 결과를 따로 받지 않으므로 '발송 완료/발송대기'를 나누지 않고
+  // '발송요청 완료'(요청이 접수됨)로 묶어 셉니다. (부원장님 지시)
+  const requested = Number(summary.accepted ?? ((summary.sent || 0) + (summary.ready || 0)));
+  const counts = `대상 ${summary.total || 0}명 · 알림톡 발송요청 완료 ${requested} · 실패 ${summary.failed || 0}${summary.skipped ? ` (미발송 제외 ${summary.skipped} 포함)` : ''}`;
+  const readyNote = '';
   const failedRows = (summary.details || []).filter((item) => !item.ok);
   const failedText = failedRows.length
     ? `실패: ${failedRows.slice(0, 15).map((item) => `${item.studentName || '학생'}(${String(item.error || item.message || '사유 없음').replace(/\s+/g, ' ').slice(0, 40)})`).join(', ')}${failedRows.length > 15 ? ` 외 ${failedRows.length - 15}명` : ''}`

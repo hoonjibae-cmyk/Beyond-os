@@ -16101,7 +16101,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
                           <td>{formatScheduleTime(run.started_at)}<br /><small>{run.trigger === 'auto' ? '예약' : `수동 · ${run.triggered_by || ''}`}</small></td>
                           <td>{String(run.week_start).slice(5).replace('-', '/')}~{String(run.week_end).slice(5).replace('-', '/')}</td>
                           <td>{run.compose_summary ? `신규 ${c.created || 0} · 갱신 ${c.updated || 0} · 건너뜀 ${c.skipped || 0}${c.failed ? ` · 실패 ${c.failed}` : ''}` : '-'}</td>
-                          <td>{run.send_summary ? `${{ parent: '학부모', student: '학생', both: '학부모+학생' }[sd.recipientTarget] || '학부모'} · 대상 ${sd.total || 0} · 발송 ${sd.sent || 0}${sd.ready ? ` · 대기 ${sd.ready}` : ''}${sd.failed ? ` · 실패 ${sd.failed}` : ''}${sd.skipped?.alreadySent ? ` · 기발송 제외 ${sd.skipped.alreadySent}` : ''}${sd.skipped?.noActivity ? ` · 미발송(시간표·등원 없음) ${sd.skipped.noActivity}` : ''}` : '-'}</td>
+                          <td>{run.send_summary ? `${{ parent: '학부모', student: '학생', both: '학부모+학생' }[sd.recipientTarget] || '학부모'} · 대상 ${sd.total || 0} · 발송요청 완료 ${(sd.sent || 0) + (sd.ready || 0)}${sd.failed ? ` · 실패 ${sd.failed}` : ''}${sd.skipped?.alreadySent ? ` · 기발송 제외 ${sd.skipped.alreadySent}` : ''}${sd.skipped?.noActivity ? ` · 미발송(시간표·등원 없음) ${sd.skipped.noActivity}` : ''}` : '-'}</td>
                           <td><b>{formatAutoRunStatus(run)}</b>{run.last_error ? <><br /><small>{String(run.last_error).slice(0, 80)}</small></> : null}</td>
                         </tr>
                       );

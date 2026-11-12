@@ -178,7 +178,7 @@ function buildSlackSummary({ week, trigger, compose, send, error }) {
   const targetLabel = { parent: '학부모', student: '학생', both: '학부모+학생' }[send?.recipientTarget] || '학부모';
   const lines = [
     `리포트 구성: 신규 ${compose?.created || 0} · 갱신 ${compose?.updated || 0} · 건너뜀 ${compose?.skipped || 0} · 실패 ${compose?.failed || 0}`,
-    `알림톡 발송(${targetLabel}): 대상 ${send?.total || 0}명 · 발송 ${send?.sent || 0} · 대기 ${send?.ready || 0} · 실패 ${send?.failed || 0}`,
+    `알림톡 발송요청(${targetLabel}): 대상 ${send?.total || 0}명 · 요청 완료 ${(send?.sent || 0) + (send?.ready || 0)} · 실패 ${send?.failed || 0}`,
   ];
   if (send?.skipped?.noActivity) lines.push(`미발송(시간표·등원 기록 없음): ${send.skipped.noActivity}명${send.skipped.noActivityNames?.length ? ` · ${send.skipped.noActivityNames.slice(0, 12).join(', ')}${send.skipped.noActivityNames.length > 12 ? ' 외' : ''}` : ''}`);
   const failedNames = (send?.details || []).filter((d) => d.status === 'failed').map((d) => `${d.studentName}(${String(d.message || '').slice(0, 40)})`);
@@ -233,7 +233,7 @@ export async function runWeeklyReportAuto({ supabase, force = false, week: weekO
     if (settings.notifySlack) await sendSlackText(buildSlackSummary({ week, trigger, compose, send })).catch(() => {});
     return {
       ok: true, status, week, trigger, compose, send, run: row,
-      message: `${formatWeek(week)} · 구성 신규 ${compose.created || 0}·갱신 ${compose.updated || 0} · 발송 ${send.sent}명${send.ready ? ` · 대기 ${send.ready}` : ''}${send.failed ? ` · 실패 ${send.failed}` : ''}${send.skipped?.noActivity ? ` · 미발송(시간표·등원 없음) ${send.skipped.noActivity}` : ''}${send.total === 0 ? ' · 보낼 대상 없음' : ''}`,
+      message: `${formatWeek(week)} · 구성 신규 ${compose.created || 0}·갱신 ${compose.updated || 0} · 발송요청 완료 ${send.sent + send.ready}명${send.failed ? ` · 실패 ${send.failed}` : ''}${send.skipped?.noActivity ? ` · 미발송(시간표·등원 없음) ${send.skipped.noActivity}` : ''}${send.total === 0 ? ' · 보낼 대상 없음' : ''}`,
     };
   } catch (error) {
     const message = String(error?.message || error).slice(0, 500);
