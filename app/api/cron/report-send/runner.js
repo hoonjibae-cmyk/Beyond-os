@@ -64,19 +64,22 @@ async function processSchedule(supabase, schedule, actorName) {
   let sent = 0;
   let failed = 0;
 
+  let ready = 0;
   for (const target of targets) {
     const result = await sendOneTarget(schedule.report_type, target, actorName);
     details.push(result);
-    if (result.ok) sent += 1; else failed += 1;
+    // v41-292.1: '발송 완료'와 '발송대기(제공자 접수)'를 따로 셉니다. 전에는 대기 건이 완료에도 함께 세어졌습니다.
+    if (!result.ok) failed += 1;
+    else if (result.status === 'ready') ready += 1;
+    else sent += 1;
     if (SEND_GAP_MS) await sleep(SEND_GAP_MS);
   }
 
-  // 한 건이라도 나갔으면 done으로 둡니다. 전부 실패한 경우만 failed입니다.
+  // 한 건이라도 접수됐으면(완료 또는 대기) done으로 둡니다. 전부 실패한 경우만 failed입니다.
   // (일부 실패를 failed로 두면 재실행 시 성공분까지 다시 보내게 됩니다)
-  const status = sent > 0 ? 'done' : 'failed';
-  const ready = details.filter((item) => item.status === 'ready').length;
+  const status = sent + ready > 0 ? 'done' : 'failed';
   const skipped = details.filter((item) => item.status === 'skipped').length;
-  const summary = { sent, failed, ready, skipped, total: targets.length, details };
+  const summary = { sent, failed, ready, skipped, accepted: sent + ready, total: targets.length, details };
 
   const { data: updated } = await supabase
     .from('report_send_schedules')
@@ -107,11 +110,13 @@ export function buildScheduleSlackSummary({ schedule = {}, summary = {}, status 
   const when = formatScheduleTime(schedule.scheduled_at);
   const title = `${typeLabel} 예약 발송 결과 · ${when}`;
   const counts = `대상 ${summary.total || 0}명 · 발송 완료 ${summary.sent || 0}${summary.ready ? ` · 발송대기 ${summary.ready}` : ''} · 실패 ${summary.failed || 0}${summary.skipped ? ` (미발송 제외 ${summary.skipped} 포함)` : ''}`;
+  // 발송대기 = 발송 서버(솔라피)가 요청을 접수한 상태. 실제 도착 여부는 나중에 카카오 결과로 갱신됩니다.
+  const readyNote = summary.ready ? '발송대기는 발송 서버가 접수한 건입니다. 실제 도착 결과는 설정 › 알림톡 발송 이력에서 확인하세요.' : '';
   const failedRows = (summary.details || []).filter((item) => !item.ok);
   const failedText = failedRows.length
     ? `실패: ${failedRows.slice(0, 15).map((item) => `${item.studentName || '학생'}(${String(item.error || item.message || '사유 없음').replace(/\s+/g, ' ').slice(0, 40)})`).join(', ')}${failedRows.length > 15 ? ` 외 ${failedRows.length - 15}명` : ''}`
     : '';
-  const lines = [schedule.label ? `예약: ${schedule.label}` : '', counts, failedText].filter(Boolean);
+  const lines = [schedule.label ? `예약: ${schedule.label}` : '', counts, failedText, readyNote].filter(Boolean);
   const footer = `상태: ${status === 'done' ? '완료' : '실패'} · 예약자: ${schedule.created_by || '-'} · 실행: ${actorName}`;
   const icon = status === 'done' ? (failedRows.length ? ':warning:' : ':white_check_mark:') : ':x:';
   return {
