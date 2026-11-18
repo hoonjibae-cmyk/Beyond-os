@@ -17039,7 +17039,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
     const stageText = thresholdLabel ? `순벌점 ${thresholdLabel}` : `벌점 ${stage}점 단계`;
     const confirmText = done
       ? `${studentName} 학생 — ${stageText} [${stageLabel}] 안내 알림톡을 발송할까요?\n\n▶ 보호자와 학생 본인에게 상벌점 누적 안내가 실제로 발송됩니다.\n▶ 발송과 함께 이 단계 조치가 완료로 기록되어 목록에서 내려갑니다.`
-      : `${studentName} 학생 — ${stageText} [${stageLabel}]을 보류할까요?\n\n▶ 알림톡은 발송되지 않습니다.\n▶ 이 카드는 목록에서 내려가고 [보류 명단 보기]로 옮겨집니다. 나중에 거기서 알림톡을 보낼 수 있습니다.\n▶ 순벌점이 더 쌓여 다음 단계에 닿으면 다시 목록에 뜹니다.`;
+      : `${studentName} 학생 — ${stageText} [${stageLabel}]을 보류할까요?\n\n▶ 알림톡은 발송되지 않습니다.\n▶ 이 카드는 목록에서 내려가고 [보류 명단 보기]로 옮겨집니다. 나중에 거기서 알림톡을 보낼 수 있습니다.\n▶ 보류 뒤 새 벌점이 기록되면 보류가 풀려 다시 조치 대상 목록에 뜹니다.`;
     if (!confirm(confirmText)) return;
 
     try {
@@ -17713,7 +17713,7 @@ function StudentPointsTab({ students, apiFetch, currentUser, setMessage, cohortS
             </div>
             <div className="penalty-stage-alert-score">
               <b className={`penalty-stage-badge tone-${item.tone}`}>{item.thresholdLabel || `${item.stage}점 이상`} · {item.stageLabel}</b>
-              <em>순벌점 {item.penaltyNet}점 (벌 {item.penalty} - 상 {item.reward}){inDeferredList ? ' · 보류 중' : ''}</em>
+              <em>순벌점 {item.penaltyNet}점 (벌 {item.penalty} - 상 {item.reward}){inDeferredList ? ' · 보류 중' : item.deferralExpired ? ' · 보류했었으나 새 벌점으로 다시 대상' : ''}</em>
             </div>
             <p>{item.message}. {item.actionHint}</p>
             {item.pendingStages.length > 1 ? (

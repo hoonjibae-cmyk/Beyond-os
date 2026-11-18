@@ -356,6 +356,7 @@ export async function GET(request) {
           tone: state.currentStage.tone,
           actionHint: state.currentStage.action,
           deferred: state.currentStage.deferred,
+          deferralExpired: Boolean(state.currentStage.deferralExpired),
           message: state.currentStage.message,
           pendingStages: state.pendingStages.map((item) => ({
             stage: item.stage, label: item.label, deferred: item.deferred,
