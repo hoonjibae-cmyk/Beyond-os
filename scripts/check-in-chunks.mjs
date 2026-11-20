@@ -39,6 +39,7 @@ const SAFE = {
   // 좌석 26석 기준 명단 크기(수십 명)
   'app/api/schedules/coverage/route.js:student_id': '기수 명단(수십 명)',
   'app/api/schedules/bulk-generate/route.js:id': '기수 명단(수십 명)',
+  'app/api/schedules/route.js:id': '한 시간표(하루)의 외출 몇 건 — 등하원 변경 시 창 밖 외출 삭제',
   'app/api/schedules/bulk-generate/route.js:student_id': '기수 명단(수십 명)',
   'app/api/schedules/route.js:student_id': '기수 명단(수십 명)',
   'app/api/schedule-import/route.js:student_id': '업로드한 명단(수십 명)',

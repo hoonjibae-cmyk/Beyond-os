@@ -246,6 +246,58 @@ async function replaceBreaksForSchedule(supabase, scheduleId, breaks) {
   }
 }
 
+// v41-294: 등하원 예정을 바꾸면 그 창 밖으로 밀려난 외출 일정을 자동 취소합니다.
+//
+// 예) 13:00~14:00 외출이 잡힌 날, 늦은 등원 15:00 으로 바꾸면 그 외출은 "등원 전 외출"이 되어
+// 뜻이 없는데도 '외출 예정'·'복귀 확인' 알림과 차시 배지에 그대로 영향을 주었습니다.
+// 등원 전에 시작하거나 하원 뒤에 끝나는 외출(= 등하원 창 안에 온전히 들어오지 않는 외출)은 지우고,
+// 무엇을 지웠는지 돌려주어 화면이 작은 글씨로 안내합니다.
+export function pickBreaksOutsideWindow(breaks = [], plannedCheckIn, plannedCheckOut) {
+  const checkIn = timeToMinutes(plannedCheckIn);
+  const checkOut = timeToMinutes(plannedCheckOut);
+  return (breaks || []).filter((item) => {
+    const leave = timeToMinutes(item.leave_start || item.leaveStart);
+    const ret = timeToMinutes(item.return_time || item.returnTime);
+    if (leave === null) return false;
+    if (checkIn !== null && leave < checkIn) return true;
+    if (checkOut !== null && leave >= checkOut) return true;
+    if (checkOut !== null && ret !== null && ret > checkOut) return true;
+    return false;
+  });
+}
+
+function describePrunedBreak(item) {
+  const start = String(item.leave_start || item.leaveStart || '').slice(0, 5);
+  const end = String(item.return_time || item.returnTime || '').slice(0, 5);
+  const reason = [item.reason, item.reason_detail || item.reasonDetail].filter(Boolean).join(' · ');
+  return `${start}${end ? `~${end}` : '~'}${reason ? ` ${reason}` : ''}`;
+}
+
+async function pruneBreaksOutsideWindow(supabase, schedule) {
+  if (!schedule?.id) return [];
+  const { data: rows, error } = await supabase
+    .from('student_schedule_breaks')
+    .select('id, leave_start, return_time, reason, reason_detail')
+    .eq('schedule_id', schedule.id);
+  if (error || !rows?.length) return [];
+  const outside = pickBreaksOutsideWindow(rows, schedule.planned_check_in, schedule.planned_check_out);
+  if (!outside.length) return [];
+  const { error: deleteError } = await supabase
+    .from('student_schedule_breaks')
+    .delete()
+    .in('id', outside.map((row) => row.id));
+  if (deleteError) return [];
+  return outside.map(describePrunedBreak);
+}
+
+export function buildPruneNotice(prunedByDate = []) {
+  const items = (prunedByDate || []).filter((entry) => entry.breaks?.length);
+  if (!items.length) return '';
+  const total = items.reduce((sum, entry) => sum + entry.breaks.length, 0);
+  const sample = items.slice(0, 3).map((entry) => `${String(entry.date).slice(5).replace('-', '/')} ${entry.breaks.join(', ')}`).join(' / ');
+  return `등하원 변경으로 등원 전·하원 후가 된 외출 일정 ${total}건을 자동 취소했습니다: ${sample}${items.length > 3 ? ' 외' : ''}`;
+}
+
 // v41-96: 이벤트별(등하원/외출/결석) 개별 저장.
 // 선택한 이벤트만 반복 날짜에 적용하고, 같은 날짜의 다른 이벤트 필드는 기존 값을 보존합니다.
 async function saveScopedEvent(supabase, request, body) {
@@ -282,6 +334,7 @@ async function saveScopedEvent(supabase, request, body) {
   const validBreakCount = (Array.isArray(body.breaks) ? body.breaks : []).filter((item) => item.leaveStart).length;
 
   const saved = [];
+  const prunedByDate = [];
   for (const date of dates) {
     const { data: existing } = await supabase
       .from('student_daily_schedules')
@@ -330,6 +383,11 @@ async function saveScopedEvent(supabase, request, body) {
     if (scope === 'break') {
       await replaceBreaksForSchedule(supabase, schedule.id, body.breaks || []);
     }
+    if (scope === 'commute') {
+      // v41-294: 바뀐 등하원 창 밖으로 밀려난 외출은 자동 취소
+      const pruned = await pruneBreaksOutsideWindow(supabase, schedule);
+      if (pruned.length) prunedByDate.push({ date, breaks: pruned });
+    }
     if (scope === 'absent' && absenceSupported && schedule.planned_absent) {
       await applyPlannedAbsentSession(supabase, { studentId: body.studentId, date, seatNo: defaultSeatNo, reason: body.absentReason || '' });
     } else if (absenceSupported && !schedule.planned_absent) {
@@ -353,15 +411,19 @@ async function saveScopedEvent(supabase, request, body) {
       repeatWeekdays: body.repeatWeekdays || [],
       cohortId: plan.cohort?.id || null,
       blockedCount: plan.blocked.length,
+      prunedBreaks: prunedByDate.length ? prunedByDate : undefined,
     },
   });
 
+  const pruneNotice = buildPruneNotice(prunedByDate);
   return Response.json({
     schedules: saved,
     affectedDates: dates,
     eventScope: scope,
     blockedDates: plan.blocked,
     cohortNotice,
+    prunedBreaks: prunedByDate,
+    pruneNotice,
     cohort: plan.cohort ? { id: plan.cohort.id, name: plan.cohort.name } : null,
   });
 }

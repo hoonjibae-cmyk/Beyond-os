@@ -1979,6 +1979,20 @@ function makeDateRange(start, end) {
   return dates;
 }
 
+// v41-294: 등하원 창 안에 온전히 들어오지 않는 외출(등원 전 시작·하원 후 종료)은 알림·배지에서 무시합니다.
+// 서버가 등하원 변경 때 지우지만, 예전 데이터나 다른 경로로 남은 것도 영향을 주지 않게 합니다.
+function isBreakWithinPlannedWindow(schedule = {}, item = {}) {
+  const checkIn = timeToMinutes(schedule?.planned_check_in);
+  const checkOut = timeToMinutes(schedule?.planned_check_out);
+  const leave = timeToMinutes(item.leave_start || item.leaveStart);
+  const ret = timeToMinutes(item.return_time || item.returnTime);
+  if (leave === null) return false;
+  if (checkIn !== null && leave < checkIn) return false;
+  if (checkOut !== null && leave >= checkOut) return false;
+  if (checkOut !== null && ret !== null && ret > checkOut) return false;
+  return true;
+}
+
 function getCurrentScheduleBreak(scheduleBreaks = [], nowMinutes = currentKstMinutes()) {
   return (scheduleBreaks || []).find((item) => {
     const leave = timeToMinutes(item.leave_start || item.leaveStart);
@@ -2123,7 +2137,8 @@ function createScheduleAlerts({ schedules, scheduleBreaks, sessions, seats, stud
     const session = sessionByStudentId[schedule.student_id];
     const seat = seatByStudentId[schedule.student_id] || {};
     const studentName = student?.name || '학생';
-    const scheduleBreakList = breaksBySchedule[schedule.id] || [];
+    // v41-294: 등하원 창 밖 외출은 알림 대상이 아닙니다.
+    const scheduleBreakList = (breaksBySchedule[schedule.id] || []).filter((item) => isBreakWithinPlannedWindow(schedule, item));
 
     // v41-51: 관리자가 이미 결석 처리한 학생은 오늘의 시간표 알림센터/관리 포커스에서
     // 모든 알림(미입실·출결상태·외출 예정·복귀 확인)을 자동으로 내립니다.
@@ -5785,6 +5800,9 @@ export default function Page() {
       if (result?.cohortNotice) {
         alert(result.cohortNotice);
         setMessage(result.cohortNotice);
+      } else if (result?.pruneNotice) {
+        // v41-294: 등하원 변경으로 자동 취소된 외출이 있으면 작은 안내로 알립니다.
+        setMessage(`${EVENT_TYPE_LABELS[scope] || '일정'} 저장 완료 · ${result.pruneNotice}`);
       } else {
         setMessage(`${EVENT_TYPE_LABELS[scope] || '일정'} 저장 완료`);
       }
@@ -7701,6 +7719,13 @@ function ActivitySchedulePopup({ popup, setPopup, savePopup, updateBreak, addBre
                   <div className="field"><label>예정 하원</label><TimeSelect value={popup.plannedCheckOut} onChange={(value) => setField({ plannedCheckOut: value })} /></div>
                   <div className="field"><label>학부모 확인</label><select value={popup.parentConfirmed ? 'yes' : 'no'} onChange={(e) => setField({ parentConfirmed: e.target.value === 'yes' })}><option value="yes">확인 완료</option><option value="no">미확인</option></select></div>
                 </div>
+                {/* v41-294: 바꾼 등하원 창 밖으로 밀려나는 기존 외출은 저장 시 자동 취소됩니다. 미리 작은 글씨로 알립니다. */}
+                {(() => {
+                  const dropped = (popup.breaks || []).filter((item) => item.leaveStart && !isBreakWithinPlannedWindow({ planned_check_in: popup.plannedCheckIn, planned_check_out: popup.plannedCheckOut }, item));
+                  if (!dropped.length) return null;
+                  const text = dropped.map((item) => `${item.leaveStart}${item.returnTime ? `~${item.returnTime}` : '~'}${[item.reason, item.reasonDetail].filter(Boolean).length ? ` ${[item.reason, item.reasonDetail].filter(Boolean).join(' · ')}` : ''}`).join(', ');
+                  return <div className="hint schedule-prune-hint">저장하면 등원 전·하원 후가 되는 외출 {dropped.length}건({text})은 자동 취소됩니다. 외출을 남기려면 등하원 시각을 외출을 포함하게 잡아 주세요.</div>;
+                })()}
                 <div className="field"><label>학부모 확인 메모</label><input value={popup.confirmationNote || ''} onChange={(e) => setField({ confirmationNote: e.target.value })} placeholder="예: 6/25 어머니 확인 완료" /></div>
                 <div className="field">
                   <label>일정 메모</label>
@@ -8540,7 +8565,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
         candidates.push({ window: checkOutWindow, kind: 'early_leave', time: String(schedule.planned_check_out || '').slice(0, 5), reason: '' });
       }
       // 외출: 외출 시작시각이 차시 진행 중에 위치
-      for (const b of breaksBySchedule[schedule.id] || []) {
+      for (const b of (breaksBySchedule[schedule.id] || []).filter((item) => isBreakWithinPlannedWindow(schedule, item))) {
         const leaveWindow = windowContaining(timeToMinutes(b.leave_start));
         if (!leaveWindow) continue;
         candidates.push({

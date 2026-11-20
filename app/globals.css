@@ -19532,3 +19532,6 @@ button.month-summary-chip.month-chip-button:hover{ filter: brightness(0.96); }
 .quick-edit-deactivate strong { font-size: var(--ui-fs-sm, 13px); color: #b42318; }
 .quick-edit-deactivate span { font-size: 12px; color: var(--ap-text-3, #888); line-height: 1.45; }
 .quick-edit-deactivate button.danger { flex: 0 0 auto; }
+
+/* v41-294: 등하원 변경 시 자동 취소될 외출 안내 */
+.schedule-prune-hint { color: #b45309; background: #fffbeb; border: 1px dashed #f5d58a; border-radius: var(--ui-r-sm, 8px); padding: 6px 10px; font-size: 12px; line-height: 1.45; margin: 2px 0 8px; }
