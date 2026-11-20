@@ -25281,8 +25281,9 @@ function DefaultScheduleSettingsTab({ defaultScheduleConfig, defaultScheduleConf
         </div>
 
         <div className="schedule-window-list">
+          {/* v41-293.1: key 에 구간명·시각을 넣으면 글자를 칠 때마다 입력창이 다시 만들어져 포커스를 잃습니다. 자리(index)로만 구분합니다. */}
           {(variant.studyWindows || []).map((item, index) => (
-            <div className="break-row schedule-window-row" key={`${activeDayType}-${index}-${item.label}-${item.start}-${item.end}`}>
+            <div className="break-row schedule-window-row" key={`${activeDayType}-${index}`}>
               <div className="time-grid">
                 <div className="field">
                   <label>구간명</label>
