@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateSeatMapFit } from '../lib/seatMapFit.js';
+import { calculateSeatMapFit, getDashboardSeatMapHeight } from '../lib/seatMapFit.js';
 
 test('a wide monitor caps the map at 125 percent', () => {
   const fit = calculateSeatMapFit({width:760,height:630,availableWidth:2400,availableHeight:1600});
@@ -50,4 +50,23 @@ test('fractional viewport height does not create a one-pixel scrollbar', () => {
   const fit=calculateSeatMapFit({width:760,height:630,availableWidth:1160,availableHeight:730.203125});
   assert.equal(fit.needsVerticalScroll,false);
   assert.ok(fit.scaledHeight<=fit.viewportHeight);
+});
+
+test('opening or growing alerts never shrinks the map or adds an internal scrollbar', () => {
+  for (const [width,height] of [[775,600],[760,630]]) {
+    const baseline = calculateSeatMapFit({ width,height,availableWidth:width*1.25,availableHeight:1000 });
+    for (const alertHeight of [0,160,550,1200]) {
+      const availableHeight=getDashboardSeatMapHeight({availableBottom:1440,headerBottom:100,workspaceTop:100+alertHeight,mapTop:260+alertHeight});
+      assert.deepEqual(calculateSeatMapFit({width,height,availableWidth:width*1.25,availableHeight}),baseline);
+    }
+  }
+});
+
+test('screen resize still fits the map even when alerts start expanded', () => {
+  const makeFit=(screenHeight,availableWidth)=>calculateSeatMapFit({width:775,height:600,availableWidth,
+    availableHeight:getDashboardSeatMapHeight({availableBottom:screenHeight,headerBottom:90,workspaceTop:890,mapTop:1040})});
+  assert.equal(makeFit(1440,970).scale,1.25);
+  const smaller=makeFit(900,700);
+  assert.ok(smaller.scale>0.75&&smaller.scale<1.25);
+  assert.equal(smaller.needsHorizontalScroll||smaller.needsVerticalScroll,false);
 });

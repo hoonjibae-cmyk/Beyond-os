@@ -1,7 +1,7 @@
 'use client';
 
 import { useLayoutEffect, useRef, useState } from 'react';
-import { calculateSeatMapFit, MIN_SEAT_MAP_SCALE, MAX_SEAT_MAP_SCALE } from '../../lib/seatMapFit';
+import { calculateSeatMapFit, getDashboardSeatMapHeight, MIN_SEAT_MAP_SCALE, MAX_SEAT_MAP_SCALE } from '../../lib/seatMapFit';
 import './ResponsiveSeatMap.css';
 
 // Reserve a readable tools column only when it fits beside the capped map.
@@ -57,13 +57,23 @@ export default function ResponsiveSeatMap({ width, height, className = 'seat-map
         const hint = card?.querySelector('.hint')?.offsetHeight || 0;
         availableHeight = modalHeight - header - actions - title - unassign - hint - 48;
       } else {
-        // Document position stays constant while scrolling; scrolling must not resize the map.
+        // Ignore alert height above the workspace, including alerts open on first load.
+        // Use document coordinates so scrolling also leaves the map size unchanged.
         const layoutTop = viewport.getBoundingClientRect().top + window.scrollY;
+        const workspace = viewport.closest('.dashboard-workspace');
+        const header = viewport.closest('.main')?.querySelector(':scope > .header');
         const consolePanel = document.querySelector('.patrol-shell.is-patrol .quick-patrol-console');
         const bottom = consolePanel && window.getComputedStyle(consolePanel).position === 'fixed'
           ? Math.min(screenHeight, consolePanel.getBoundingClientRect().top)
           : screenHeight;
-        availableHeight = bottom - layoutTop - 20;
+        availableHeight = workspace && header
+          ? getDashboardSeatMapHeight({
+            availableBottom: bottom,
+            headerBottom: header.getBoundingClientRect().bottom + window.scrollY,
+            workspaceTop: workspace.getBoundingClientRect().top + window.scrollY,
+            mapTop: layoutTop,
+          })
+          : bottom - layoutTop - 20;
       }
       const next = calculateSeatMapFit({ width, height, availableWidth: viewport.clientWidth, availableHeight: Math.max(160, availableHeight) });
       setFit(previous => previous.scale === next.scale && previous.scaledWidth === next.scaledWidth && previous.scaledHeight === next.scaledHeight && previous.viewportHeight === next.viewportHeight ? previous : next);
@@ -78,6 +88,7 @@ export default function ResponsiveSeatMap({ width, height, className = 'seat-map
       viewport, viewport.parentElement, viewport.closest('.main'), viewport.closest('.map-shell'),
       viewport.closest('.student-editor-modal'), document.querySelector('.sidebar'),
       document.querySelector('.quick-patrol-console'),
+      viewport.closest('.dashboard-workspace'), viewport.closest('.main')?.querySelector(':scope > .header'),
     ]);
     for (const target of targets) if (target) observer.observe(target);
     window.addEventListener('resize', scheduleMeasure);
