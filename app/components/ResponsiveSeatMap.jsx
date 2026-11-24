@@ -1,8 +1,34 @@
 'use client';
 
 import { useLayoutEffect, useRef, useState } from 'react';
-import { calculateSeatMapFit, MIN_SEAT_MAP_SCALE } from '../../lib/seatMapFit';
+import { calculateSeatMapFit, MIN_SEAT_MAP_SCALE, MAX_SEAT_MAP_SCALE } from '../../lib/seatMapFit';
 import './ResponsiveSeatMap.css';
+
+// Reserve a readable tools column only when it fits beside the capped map.
+// ResizeObserver avoids size containment, which would trap the mobile fixed patrol sheet.
+export function SeatMapWorkspace({ width, view, children }) {
+  const workspaceRef = useRef(null);
+  const [hasSideRoom, setHasSideRoom] = useState(false);
+  const mapColumnWidth = Math.ceil(width * MAX_SEAT_MAP_SCALE) + 48;
+
+  useLayoutEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return undefined;
+    const measure = () => setHasSideRoom(workspace.clientWidth >= mapColumnWidth + 320 + 16);
+    const observer = new window.ResizeObserver(measure);
+    observer.observe(workspace);
+    measure();
+    return () => observer.disconnect();
+  }, [mapColumnWidth]);
+
+  return (
+    <div ref={workspaceRef} className="dashboard-workspace" style={{ '--seat-column-max': `${mapColumnWidth}px` }}>
+      <div className={`dashboard-workspace-grid ${view === 'map' && hasSideRoom ? 'has-side-tools' : ''}`}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export default function ResponsiveSeatMap({ width, height, className = 'seat-map-wrap', canvasClassName = 'seat-map', canvasStyle, mode = 'dashboard', children }) {
   const viewportRef = useRef(null);

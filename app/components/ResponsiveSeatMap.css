@@ -38,6 +38,59 @@
   width: 92px !important;
   height: 64px !important;
 }
+.dashboard-workspace,
+.dashboard-workspace-grid {
+  min-width: 0;
+  width: 100%;
+}
+.dashboard-workspace-grid.has-side-tools {
+  display: grid;
+  grid-template-columns: minmax(0, var(--seat-column-max)) minmax(320px, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas: "seats patrol" "seats insights";
+  align-items: start;
+  gap: 16px;
+}
+.dashboard-workspace-grid.has-side-tools .map-shell {
+  grid-area: seats;
+  min-width: 0;
+  margin: 0 !important;
+}
+.dashboard-workspace-grid.has-side-tools .quick-patrol-console {
+  grid-area: patrol;
+  min-width: 0;
+  margin: 0 !important;
+}
+.dashboard-workspace-grid.has-side-tools .dashboard-realtime-grid {
+  grid-area: insights;
+  min-width: 0;
+  margin: 0 !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) !important;
+  align-items: start;
+}
+.dashboard-workspace-grid.has-side-tools .quick-patrol-head {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.dashboard-workspace-grid.has-side-tools .quick-patrol-head > div {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.dashboard-workspace-grid.has-side-tools .quick-patrol-selectors {
+  grid-template-columns: 1fr;
+}
+.dashboard-workspace-grid.has-side-tools .quick-patrol-content-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.dashboard-workspace-grid.has-side-tools .quick-patrol-content-row input {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+}
+.dashboard-workspace-grid.has-side-tools .quick-patrol-content-row button {
+  min-width: 0;
+  white-space: normal;
+}
 @media (max-width: 1260px) {
   /* The navigation becomes a top bar here; a full-screen height would hide the map. */
   .app:has(.responsive-seat-viewport) > .sidebar {

@@ -1,6 +1,6 @@
 'use client';
 
-import ResponsiveSeatMap from './components/ResponsiveSeatMap';
+import ResponsiveSeatMap, { SeatMapWorkspace } from './components/ResponsiveSeatMap';
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
@@ -9038,6 +9038,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
           </div>
         );
       })() : null}
+      <SeatMapWorkspace width={775} view={view}>
       <div className={`patrol-shell ${quickMode ? 'is-patrol' : ''}`}>
       <div className="patrol-topbar">
         <strong>순찰 모드</strong>
@@ -9272,6 +9273,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
           ) : null}
         </div>
       </section>
+      </SeatMapWorkspace>
 
     </>
   );

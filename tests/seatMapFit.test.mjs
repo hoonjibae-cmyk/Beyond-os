@@ -2,11 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateSeatMapFit } from '../lib/seatMapFit.js';
 
-test('a wide monitor grows the map until height is exhausted', () => {
-  const fit = calculateSeatMapFit({width:760,height:630,availableWidth:1300,availableHeight:900});
-  assert.ok(fit.scale > 1);
-  assert.ok(fit.scaledWidth <= 1300 && fit.scaledHeight <= 900);
-  assert.ok(900 - fit.scaledHeight < 2);
+test('a wide monitor caps the map at 125 percent', () => {
+  const fit = calculateSeatMapFit({width:760,height:630,availableWidth:2400,availableHeight:1600});
+  assert.equal(fit.scale,1.25);
+  assert.equal(64 * fit.scale,80);
+  assert.equal(fit.scaledWidth,950);
+  assert.equal(fit.scaledHeight,788);
+  assert.equal(fit.needsHorizontalScroll || fit.needsVerticalScroll, false);
+});
+
+test('height limits the map before the maximum scale when necessary', () => {
+  const fit = calculateSeatMapFit({width:760,height:630,availableWidth:1300,availableHeight:730});
+  assert.ok(fit.scale > 1 && fit.scale < 1.25);
+  assert.ok(fit.scaledWidth <= 1300 && fit.scaledHeight <= 730);
+  assert.ok(730 - fit.scaledHeight < 2);
   assert.equal(fit.needsHorizontalScroll || fit.needsVerticalScroll, false);
 });
 test('a narrow monitor uses width as the limiting dimension', () => {
