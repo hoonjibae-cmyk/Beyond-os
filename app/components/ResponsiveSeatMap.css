@@ -65,7 +65,7 @@
   grid-area: insights;
   min-width: 0;
   margin: 0 !important;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) !important;
+  grid-template-columns: 1fr !important;
   align-items: start;
 }
 .dashboard-workspace-grid.has-side-tools .quick-patrol-head {
