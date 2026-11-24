@@ -1,0 +1,47 @@
+.seat-map-wrap.responsive-seat-viewport,
+.seat-editor-card .seat-picker-scroll.responsive-seat-viewport {
+  position: relative;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: var(--seat-viewport-height) !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex: 0 0 auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  margin: 0 !important;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+}
+.responsive-seat-stage {
+  position: relative;
+  margin-inline: auto;
+  overflow: hidden;
+}
+.responsive-seat-viewport .responsive-seat-stage > .seat-map.responsive-seat-canvas,
+.responsive-seat-viewport .responsive-seat-stage > .seat-picker-map.responsive-seat-canvas {
+  position: absolute !important;
+  inset: 0 auto auto 0;
+  width: var(--seat-base-width) !important;
+  min-width: var(--seat-base-width) !important;
+  max-width: var(--seat-base-width) !important;
+  height: var(--seat-base-height) !important;
+  min-height: var(--seat-base-height) !important;
+  max-height: var(--seat-base-height) !important;
+  aspect-ratio: auto !important;
+  margin: 0 !important;
+  transform-origin: top left;
+  transition: none;
+}
+.responsive-seat-canvas .seat-picker-seat {
+  width: 92px !important;
+  height: 64px !important;
+}
+@media (max-width: 1260px) {
+  /* The navigation becomes a top bar here; a full-screen height would hide the map. */
+  .app:has(.responsive-seat-viewport) > .sidebar {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+}

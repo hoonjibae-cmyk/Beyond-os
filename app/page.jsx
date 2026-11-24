@@ -1,5 +1,7 @@
 'use client';
 
+import ResponsiveSeatMap from './components/ResponsiveSeatMap';
+
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { calculateScheduledPureStudyMinutes } from '../lib/studyTime';
 import { isTimeEditableEvent } from '../lib/attendanceEventTime';
@@ -9096,8 +9098,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
         ) : null}
 
         {view === 'map' ? (
-          <div className="seat-map-wrap">
-            <div className={`seat-map seat-map-v4111 seat-map-v4112 ${quickMode ? 'quick-mode' : ''}`}>
+          <ResponsiveSeatMap width={775} height={600} canvasClassName={`seat-map seat-map-v4111 seat-map-v4112 ${quickMode ? 'quick-mode' : ''}`}>
               <div className="zone-label">FOCUS ROOM · 26 SEATS</div>
               {seatRows.map((row) => {
                 const { seat, student, status } = row;
@@ -9124,8 +9125,7 @@ function DashboardTab({ summary, view, seatsForDisplay, sessionBySeat, selectedS
                   </button>
                 );
               })}
-            </div>
-          </div>
+          </ResponsiveSeatMap>
         ) : (
           <div className={`list-view seat-list-v4111 seat-list-v4112 ${quickMode ? 'quick-mode' : ''}`} style={{ display: 'grid' }}>
             {visibleRows.length ? visibleRows.map((row) => {
@@ -12505,8 +12505,7 @@ function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, save
               미배정으로 두기
             </button>
 
-            <div className="seat-picker-scroll">
-              <div className="seat-picker-map">
+            <ResponsiveSeatMap width={920} height={650} mode="picker" className="seat-picker-scroll" canvasClassName="seat-picker-map">
                 <div className="zone-label">FOCUS ROOM · 좌석 선택</div>
                 {(seatsForDisplay || []).map((seat) => {
                   const assigned = assignedStudentNameBySeat[seat.seat_no];
@@ -12528,8 +12527,7 @@ function StudentEditorModal({ editor, setEditor, seatsForDisplay, students, save
                     </button>
                   );
                 })}
-              </div>
-            </div>
+            </ResponsiveSeatMap>
             <div className="hint">이미 다른 학생에게 배정된 좌석은 선택할 수 없습니다. 자리 교체가 필요한 경우 먼저 한 학생을 미배정 상태로 저장하세요.</div>
           </section>
         </div>
