@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { getKstDateString } from '../../../lib/date';
-import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
+import { calculateManualAttendanceStudyMinutes } from '../../../lib/manualAttendanceStudy.js';
 import { getClosingOffsetMinutes } from '../../../lib/businessDateServer';
 import { getOperatingDayString, getDayBoundaryMinutes } from '../../../lib/businessDate';
 import { parseTimeOfDay, resolveEventIso } from '../../../lib/attendanceEventTime';
@@ -36,15 +36,6 @@ function toIso(dateString, timeValue, boundaryMinutes = 0) {
   const minuteOfDay = parseTimeOfDay(timeValue);
   if (minuteOfDay === null) return null;
   return resolveEventIso(dateString, minuteOfDay, boundaryMinutes) || null;
-}
-
-function calculatePureStudyMinutes({ checkInAt, checkOutAt, awayTotalMinutes, awayStartedAt, studyWindows }) {
-  return calculateScheduledPureStudyMinutes({
-    check_in_at: checkInAt,
-    check_out_at: checkOutAt,
-    away_total_minutes: awayTotalMinutes,
-    away_started_at: awayStartedAt,
-  }, { studyWindows });
 }
 
 async function resolveSession(supabase, body) {
@@ -138,12 +129,16 @@ export async function POST(request) {
     const checkOutAt = body.checkOutTime ? toIso(targetDate, body.checkOutTime, boundaryMinutes) : null;
     const awayTotalMinutes = Math.max(0, Number(body.awayTotalMinutes || 0));
 
-    const pureStudyMinutes = calculatePureStudyMinutes({
-      checkInAt,
-      checkOutAt,
-      awayTotalMinutes,
-      awayStartedAt: session.away_started_at,
-      studyWindows: defaultSchedule.studyWindows,
+    const { data: events, error: eventsError } = await supabase.from('attendance_events')
+      .select('event_type, event_at').eq('session_id', session.id);
+    if (eventsError) throw eventsError;
+    const pureStudyMinutes = calculateManualAttendanceStudyMinutes({
+      ...session, check_in_at: checkInAt, check_out_at: checkOutAt,
+      away_total_minutes: awayTotalMinutes,
+      seat_status: body.desiredSeatStatus || (checkOutAt ? 'out' : 'occupied'),
+    }, {
+      events: events || [], studyWindows: defaultSchedule.studyWindows,
+      useEvents: awayTotalMinutes === Number(session.away_total_minutes || 0),
     });
 
     const desiredSeatStatus = body.desiredSeatStatus || null;

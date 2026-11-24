@@ -3,7 +3,7 @@ import { getAuthorizedUser, isAuthorized, unauthorizedResponse } from '../../../
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { diffMinutes } from '../../../lib/date';
 import { getBusinessDate } from '../../../lib/businessDateServer';
-import { calculateScheduledPureStudyMinutes } from '../../../lib/studyTime';
+import { calculateManualAttendanceStudyMinutes, projectManualAttendanceEvents } from '../../../lib/manualAttendanceStudy.js';
 import { getDefaultScheduleSettings } from '../../../lib/defaultScheduleServer';
 import { sendAttendanceNotification } from '../../../lib/attendanceNotifications';
 
@@ -123,15 +123,6 @@ async function deleteAbsentEvents(supabase, sessionId) {
     .eq('event_type', 'absent');
 
   if (error) throw error;
-}
-
-function calculatePureStudyMinutes({ checkInAt, checkOutAt, awayStartedAt, awayTotalMinutes, nowIso, studyWindows }) {
-  return calculateScheduledPureStudyMinutes({
-    check_in_at: checkInAt,
-    check_out_at: checkOutAt,
-    away_started_at: awayStartedAt,
-    away_total_minutes: awayTotalMinutes,
-  }, { nowIso, studyWindows });
 }
 
 export async function POST(request) {
@@ -255,14 +246,21 @@ export async function POST(request) {
       }
     }
 
-    let pureStudyMinutes = calculatePureStudyMinutes({
-      checkInAt,
-      checkOutAt,
-      awayStartedAt,
-      awayTotalMinutes,
-      nowIso,
-      studyWindows: defaultSchedule.studyWindows,
+    const { data: existingEvents, error: eventsError } = existingSession?.id
+      ? await supabase.from('attendance_events').select('event_type, event_at').eq('session_id', existingSession.id)
+      : { data: [], error: null };
+    if (eventsError) throw eventsError;
+    const projectedEvents = projectManualAttendanceEvents(existingEvents || [], {
+      resetEvents: deleteAllEventsBeforeInsert,
+      removeAbsent: deleteAbsentBeforeInsert,
+      convertLastCheckout: convertLastCheckoutToAway,
+      eventType: suppressGenericEvent ? null : (forcedEventType || (returningFromAway ? 'return' : EVENT_MAP[body.seatStatus])),
+      eventAt: nowIso,
     });
+    let pureStudyMinutes = calculateManualAttendanceStudyMinutes({
+      seat_status: seatStatus, check_in_at: checkInAt, check_out_at: checkOutAt,
+      away_started_at: awayStartedAt, away_total_minutes: awayTotalMinutes,
+    }, { events: projectedEvents, nowIso, studyWindows: defaultSchedule.studyWindows });
 
     if (seatStatus === 'absent') pureStudyMinutes = 0;
 
