@@ -15032,7 +15032,8 @@ h1,h2,h3{ color:var(--ap-text); }
 .student-name{ color:var(--ap-text-2) !important; }
 .seat-map-v4111 .student-name, .seat-map-v4112 .student-name{ font-size:12px !important; }
 .seat-live-mini{ color:var(--ap-text-3) !important; font-size:9px !important; }
-.seat::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--_sc,transparent); border-radius:14px 0 0 14px; }
+/* Clip only the accent to the rounded card; keep floating seat badges visible. */
+.seat::before{ content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(to right,var(--_sc,transparent) 0 3px,transparent 3px); pointer-events:none; }
 
 /* Seat status colors (의미 보존, 애플톤) */
 .seat.occupied{ --_sc:var(--ap-ok); background:var(--ap-ok-fill) !important; border-color:color-mix(in srgb,var(--ap-ok) 30%,var(--ap-sep)) !important; }
