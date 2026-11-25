@@ -35,8 +35,8 @@ import { buildConfirmDetail, summarizeConfirmDetail } from '../lib/scheduleConfi
 import { MENTORING_DAY_OPTIONS, FALLBACK_MENTORING_POLICY, normalizeMentoringPolicy, getSelectableMentoringDays, formatMentoringDays } from '../lib/mentoringPolicy';
 import { FALLBACK_DEFAULT_SCHEDULE_SETTINGS, normalizeDefaultScheduleSettings, normalizeDefaultScheduleConfig, resolveScheduleForDate, normalizeHolidayList, getDayTypeForDate, DEFAULT_SCHEDULE_DAY_TYPES, DEFAULT_SCHEDULE_DAY_TYPE_LABELS, timeToMinutes24, minutesToTime24, isFiveMinuteTime24 } from '../lib/defaultSchedule';
 
-const STUDY_STATUS_OPTIONS = ['인강', '문제풀이', '암기', '독서', '수면', '비학습'];
-const SUBJECT_OPTIONS = ['수학', '영어', '국어', '사탐', '과탐', '기타'];
+const STUDY_STATUS_OPTIONS = ['인강', '문제풀이', '암기', '독서', '수행평가', '수면', '비학습'];
+const SUBJECT_OPTIONS = ['수학', '영어', '국어', '사탐', '과탐', '정보', '기타'];
 const BREAK_REASON_OPTIONS = ['식사', '병원', '타학원 수업', '학교 일정', '가정 사유', '기타'];
 const REPEAT_OPTIONS = [
   ['none', '반복 없음'],
