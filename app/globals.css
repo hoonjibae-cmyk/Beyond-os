@@ -7209,6 +7209,25 @@ button.danger {
 .delivery-verdict.failed strong { color: #c4271d; }
 .delivery-verdict.pending { background: #fff8e0; border-color: rgba(122,92,0,.22); }
 .delivery-verdict.pending strong { color: #7a5c00; }
+.delivery-verdict.duplicate,
+.report-activity-stat.duplicate,
+.status-pill.duplicate,
+.report-schedule-status.duplicate { background: #fff5dc; border-color: #dfbb68; color: #79540a; }
+.report-activity-row.duplicate,
+.report-schedule-row.status-duplicate,
+.bulk-result-row.duplicate { border-color: #dfbb68; background: #fffcf4; }
+.report-date-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 0 0 14px; padding: 14px; border: 1px solid #b7c9ee; border-radius: 12px; background: #f1f6ff; }
+.report-date-summary span { display: block; color: #53627b; font-size: 12px; }
+.report-date-summary strong { display: block; margin-top: 5px; font-size: 21px; }
+.report-date-warning { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; padding: 14px; border: 1px solid #d6a337; border-radius: 12px; background: #fff7df; color: #715111; }
+.report-date-warning > div { flex: 1; min-width: 200px; }
+.report-date-warning strong, .report-date-warning div > span { display: block; line-height: 1.6; }
+.report-date-acknowledgement { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-weight: 700; }
+.report-date-acknowledgement input { width: auto; min-width: 16px; margin-top: 3px; }
+.report-confirm-fields { border: 0; padding: 0; margin: 0; min-width: 0; width: 100%; }
+.report-schedule-results { margin-top: 8px; }
+.report-schedule-results summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+.report-schedule-results > div { display: flex; flex-wrap: wrap; gap: 8px; padding: 5px 0; }
 .report-activity-footer-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 
 .report-activity-list {

@@ -11,6 +11,7 @@ import { POST as sendDailyReport } from '../../report-send/route';
 import { POST as sendWeeklyReport } from '../../weekly-report-send/route';
 import { sendSlackText } from '../../../../lib/slackNotify';
 import { formatScheduleTime } from '../../../../lib/reportSchedules';
+import { getReportAttemptStatus, summarizeReportSchedule, getScheduleOutcome } from '../../../../lib/reportDelivery';
 
 // 한 번에 처리할 예약 수. 한 예약 안의 대상 수는 별도로 제한하지 않습니다.
 const MAX_SCHEDULES_PER_RUN = 5;
@@ -50,8 +51,7 @@ async function sendOneTarget(reportType, target, actorName) {
       return { id: target.id, studentName: target.studentName, ok: false, error: data?.error || `HTTP ${response.status}`, status: data?.skipped ? 'skipped' : 'failed' };
     }
     // v41-292: 슬랙 요약용으로 제공자 상태(발송 완료 / 발송대기)를 함께 남깁니다.
-    const providerStatus = String(data?.report?.send_status || data?.status || '').toLowerCase();
-    const status = ['failed', 'error'].includes(providerStatus) ? 'failed' : ['ready', 'queued', 'accepted'].includes(providerStatus) ? 'ready' : 'sent';
+    const status = getReportAttemptStatus(data);
     return { id: target.id, studentName: target.studentName, ok: status !== 'failed', status, message: data?.message || '', error: status === 'failed' ? (data?.message || data?.report?.send_error || '발송 실패') : '' };
   } catch (error) {
     return { id: target.id, studentName: target.studentName, ok: false, error: error?.message || '발송 중 오류' };
@@ -61,32 +61,24 @@ async function sendOneTarget(reportType, target, actorName) {
 async function processSchedule(supabase, schedule, actorName) {
   const targets = Array.isArray(schedule.targets) ? schedule.targets : [];
   const details = [];
-  let sent = 0;
-  let failed = 0;
-
-  let ready = 0;
   for (const target of targets) {
     const result = await sendOneTarget(schedule.report_type, target, actorName);
     details.push(result);
-    // v41-292.1: '발송 완료'와 '발송대기(제공자 접수)'를 따로 셉니다. 전에는 대기 건이 완료에도 함께 세어졌습니다.
-    if (!result.ok) failed += 1;
-    else if (result.status === 'ready') ready += 1;
-    else sent += 1;
     if (SEND_GAP_MS) await sleep(SEND_GAP_MS);
   }
 
-  // 한 건이라도 접수됐으면(완료 또는 대기) done으로 둡니다. 전부 실패한 경우만 failed입니다.
-  // (일부 실패를 failed로 두면 재실행 시 성공분까지 다시 보내게 됩니다)
-  const status = sent + ready > 0 ? 'done' : 'failed';
-  const skipped = details.filter((item) => item.status === 'skipped').length;
-  const summary = { sent, failed, ready, skipped, accepted: sent + ready, total: targets.length, details };
+  const summary = summarizeReportSchedule({ details });
+  const { failed } = summary;
+  // done means processing finished, not that every target was sent. A handled
+  // duplicate must not be retried automatically or counted as a new send.
+  const status = failed === targets.length && targets.length > 0 ? 'failed' : 'done';
 
   const { data: updated } = await supabase
     .from('report_send_schedules')
     .update({
       status,
       result: summary,
-      last_error: failed ? (details.find((item) => !item.ok)?.error || '일부 발송 실패') : null,
+      last_error: failed ? (summary.details.find((item) => item.status === 'failed')?.error || '일부 발송 실패') : null,
       finished_at: new Date().toISOString(),
     })
     .eq('id', schedule.id)
@@ -106,21 +98,24 @@ async function processSchedule(supabase, schedule, actorName) {
  *         실패: 김민준(학부모 연락처가 없습니다.), …
  */
 export function buildScheduleSlackSummary({ schedule = {}, summary = {}, status = 'done', actorName = '예약 발송' }) {
+  summary = summarizeReportSchedule(summary);
   const typeLabel = schedule.report_type === 'weekly' ? '위클리 리포트' : '데일리 리포트';
   const when = formatScheduleTime(schedule.scheduled_at);
   const title = `${typeLabel} 예약 발송 결과 · ${when}`;
   // v41-292.2: 프로그램은 솔라피의 실제 도착 결과를 따로 받지 않으므로 '발송 완료/발송대기'를 나누지 않고
   // '발송요청 완료'(요청이 접수됨)로 묶어 셉니다. (부원장님 지시)
   const requested = Number(summary.accepted ?? ((summary.sent || 0) + (summary.ready || 0)));
-  const counts = `대상 ${summary.total || 0}명 · 알림톡 발송요청 완료 ${requested} · 실패 ${summary.failed || 0}${summary.skipped ? ` (미발송 제외 ${summary.skipped} 포함)` : ''}`;
+  const counts = `대상 ${summary.total || 0}명 · 알림톡 발송요청 접수 ${requested} · 중복 차단(미발송) ${summary.duplicate} · 실패 ${summary.failed || 0}${summary.skipped ? ` · 미발송 제외 ${summary.skipped}` : ''}`;
   const readyNote = '';
-  const failedRows = (summary.details || []).filter((item) => !item.ok);
+  const failedRows = (summary.details || []).filter((item) => item.status === 'failed');
   const failedText = failedRows.length
     ? `실패: ${failedRows.slice(0, 15).map((item) => `${item.studentName || '학생'}(${String(item.error || item.message || '사유 없음').replace(/\s+/g, ' ').slice(0, 40)})`).join(', ')}${failedRows.length > 15 ? ` 외 ${failedRows.length - 15}명` : ''}`
     : '';
-  const lines = [schedule.label ? `예약: ${schedule.label}` : '', counts, failedText, readyNote].filter(Boolean);
-  const footer = `상태: ${status === 'done' ? '완료' : '실패'} · 예약자: ${schedule.created_by || '-'} · 실행: ${actorName}`;
-  const icon = status === 'done' ? (failedRows.length ? ':warning:' : ':white_check_mark:') : ':x:';
+  const duplicateNames = summary.details.filter((item) => item.status === 'duplicate').map((item) => item.studentName || '학생');
+  const duplicateText = duplicateNames.length ? `중복 차단: ${duplicateNames.join(', ')} (이번 요청에서 발송하지 않음)` : '';
+  const lines = [schedule.label ? `예약: ${schedule.label}` : '', counts, failedText, duplicateText, readyNote].filter(Boolean);
+  const footer = `상태: ${getScheduleOutcome({ status, result: summary }).label} · 예약자: ${schedule.created_by || '-'} · 실행: ${actorName}`;
+  const icon = status === 'done' ? (failedRows.length || summary.duplicate ? ':warning:' : ':white_check_mark:') : ':x:';
   return {
     text: `[${title}]\n${lines.join('\n')}\n${footer}`,
     blocks: [
@@ -193,6 +188,8 @@ export async function runDueReportSchedules({ supabase, scheduleId = '', ignoreS
   }
 
   const totalSent = processed.reduce((sum, item) => sum + Number(item.sent || 0), 0);
+  const totalAccepted = processed.reduce((sum, item) => sum + Number(item.accepted || 0), 0);
+  const totalDuplicate = processed.reduce((sum, item) => sum + Number(item.duplicate || 0), 0);
   const totalFailed = processed.reduce((sum, item) => sum + Number(item.failed || 0), 0);
 
   return {
@@ -200,9 +197,11 @@ export async function runDueReportSchedules({ supabase, scheduleId = '', ignoreS
     picked: processed.length,
     processed,
     totalSent,
+    totalAccepted,
+    totalDuplicate,
     totalFailed,
     message: processed.length
-      ? `예약 ${processed.length}건 처리 · 발송 ${totalSent}건${totalFailed ? ` · 실패 ${totalFailed}건` : ''}`
+      ? `예약 ${processed.length}건 처리 · 발송요청 접수 ${totalAccepted}건 · 중복 차단 ${totalDuplicate}건${totalFailed ? ` · 실패 ${totalFailed}건` : ''}`
       : '처리할 예약이 없습니다.',
   };
 }

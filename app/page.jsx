@@ -26,7 +26,8 @@ import { getWeeklyInterviewTitle } from '../lib/weeklyInterview';
 import { DEFAULT_POINT_AUTO_RULES, SAMPLE_POINT_AUTO_TIERS, MAX_AUTO_TIERS, normalizePointAutoRules, formatMinutesKo, getAutoAwardKindLabel } from '../lib/pointAutoRules';
 import { normalizePlannerRotation, turnPlannerRotation, isPlannerRotationSideways } from '../lib/plannerRotation';
 import { FOCUS_MAX, FOCUS_LABELS, normalizeFocusRating, getFocusLabel, summarizeFocusRatings } from '../lib/focusRating';
-import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt } from '../lib/reportSchedules';
+import { SCHEDULE_STATUS_LABELS, formatScheduleTime, kstDateTimeToIso, validateScheduledAt, getReportDateConfirmation, isoToKstParts } from '../lib/reportSchedules';
+import { isDuplicateReportAttempt, getReportAttemptStatus, getScheduleOutcome, DUPLICATE_REPORT_MESSAGE } from '../lib/reportDelivery';
 import { WEEKDAY_LABELS_KO, DEFAULT_WEEKLY_AUTO_SEND_SETTINGS, WEEKLY_AUTO_RECIPIENT_TARGETS } from '../lib/weeklyAutoSend';
 import { APP_VERSION, APP_VERSION_NAME, APP_VERSION_DESCRIPTION, APP_VERSION_SUBTITLE } from '../lib/appVersion';
 import { NOTICE_CATEGORIES, getNoticeCategory, SEAT_NICKNAME_SAMPLE_VARIABLES } from '../lib/noticeTemplates';
@@ -244,6 +245,8 @@ const ACTION_LOG_LABELS = {
   'kakao_webhook.recipient_blocked': '수신번호 제한 차단',
   'kakao_webhook.retry_after_safe_request': '안전모드 이후 재시도',
   'kakao_webhook.duplicate': 'Webhook 중복 요청 차단',
+  'daily_report.duplicate': '데일리 리포트 중복 차단',
+  'weekly_report.duplicate': '위클리 리포트 중복 차단',
   'kakao_webhook.failed': 'Webhook 발송 실패',
   'attendance.status': '출결 상태 변경',
   'study_check.create': '순찰 체크 저장',
@@ -289,6 +292,7 @@ function getActionLogSummary(log = {}) {
 }
 
 function getReportActivityRecipientRows(log = {}) {
+  if (isDuplicateReportAttempt(log)) return [];
   const payload = log.payload || {};
   if (Array.isArray(payload.recipientResults) && payload.recipientResults.length) {
     return payload.recipientResults.map((item, index) => ({
@@ -321,6 +325,7 @@ function getReportActivityRecipientRows(log = {}) {
 }
 
 function getReportActivityRecipientStats(log = {}) {
+  if (isDuplicateReportAttempt(log)) return { total: 0, sent: 0, received: 0, failed: 0, successLike: 0 };
   const payload = log.payload || {};
   if (payload.recipientStats) return payload.recipientStats;
   const rows = getReportActivityRecipientRows(log);
@@ -331,6 +336,7 @@ function getReportActivityRecipientStats(log = {}) {
 }
 
 function getReportActivityStatus(log = {}) {
+  if (isDuplicateReportAttempt(log)) return { label: '중복 차단 · 미발송', className: 'duplicate' };
   const payload = log.payload || {};
   const type = String(log.action_type || '');
   const rawStatus = String(payload.status || '').toLowerCase();
@@ -367,6 +373,8 @@ function getReportActivitySummary(log = {}) {
   const bits = [
     log.actor_name ? `작업자: ${log.actor_name}` : null,
     log.target_name ? `대상: ${log.target_name}` : null,
+    payload.reportDate ? `리포트 기준일: ${payload.reportDate}` : null,
+    log.created_at ? `처리: ${isoToKstParts(log.created_at).date} ${formatKstTimeWithSeconds(log.created_at)}` : null,
     webhookStatus ? `Provider: ${webhookStatus}` : null,
     requestId ? `ID: ${requestId}` : null,
     rows.length ? `수신 ${stats.total || rows.length}명 / 실패 ${stats.failed || 0}명` : null,
@@ -378,6 +386,7 @@ function getReportActivitySummary(log = {}) {
 
 function getDeliveryStatusLabel(status = '') {
   const normalized = String(status || '').toLowerCase();
+  if (normalized === 'duplicate') return { label: '중복 차단 · 미발송', className: 'duplicate' };
   if (normalized === 'sent') return { label: '발송 완료', className: 'done' };
   if (normalized === 'received') return { label: '발송 완료', className: 'done' };
   if (normalized === 'failed') return { label: '실패', className: 'failed' };
@@ -5097,10 +5106,10 @@ export default function Page() {
         setMessage(notice.message);
       } else {
         setSendPreview(data);
-        const sendStatus = data.report?.send_status || data.status || data.providerResult?.status;
+        const sendStatus = getReportAttemptStatus(data);
         const noticeType = sendStatus === 'sent' ? 'success' : sendStatus === 'failed' ? 'failed' : 'neutral';
         const noticeTitle = action === 'send'
-          ? (sendStatus === 'sent' ? '카카오 발송 완료' : sendStatus === 'failed' ? '카카오 발송 실패' : '발송대기 저장')
+          ? (sendStatus === 'duplicate' ? '중복 차단 · 미발송' : sendStatus === 'sent' ? '카카오 발송 완료' : sendStatus === 'failed' ? '카카오 발송 실패' : '발송대기 저장')
           : '발송대기 저장';
         const notice = {
           type: noticeType,
@@ -7101,6 +7110,7 @@ function SendPreviewModal({ preview, setPreview, sendReportToParent, prepareRepo
   const isActionLoading = Boolean(actionState.loading);
 
   function buildActionNotice(mode, data) {
+    if (isDuplicateReportAttempt(data)) return { type: 'neutral', title: '중복 차단 · 미발송', message: DUPLICATE_REPORT_MESSAGE };
     if (!data || data.error) {
       return {
         type: 'failed',
@@ -13344,19 +13354,23 @@ function ReportScheduleSection({ reportType, apiFetch, setMessage, refreshKey = 
         <div className="today-comment-empty">{loading ? '불러오는 중...' : '예약된 발송이 없습니다.'}</div>
       ) : (
         <div className="report-schedule-list">
-          {visible.map((row) => (
-            <article key={row.id} className={`report-schedule-row status-${row.status}`}>
+          {visible.map((row) => {
+            const outcome = getScheduleOutcome(row);
+            const result = outcome.summary;
+            return (
+            <article key={row.id} className={`report-schedule-row status-${outcome.tone}`}>
               <div className="report-schedule-when">
                 <b>{formatScheduleTime(row.scheduled_at)}</b>
-                <i className={`report-schedule-status ${row.status}`}>{SCHEDULE_STATUS_LABELS[row.status] || row.status}</i>
+                <i className={`report-schedule-status ${outcome.tone}`}>{outcome.label || SCHEDULE_STATUS_LABELS[row.status] || row.status}</i>
               </div>
               <div className="report-schedule-body">
                 <strong>{row.label || `${row.target_count}건`}</strong>
                 <span>
                   대상 {row.target_count}건
                   {row.created_by ? ` · 예약 ${row.created_by}` : ''}
-                  {row.result ? ` · 발송 ${row.result.sent || 0}건${row.result.failed ? ` · 실패 ${row.result.failed}건` : ''}` : ''}
+                  {row.result ? ` · 발송요청 접수 ${result.accepted}건 · 중복 차단 ${result.duplicate}건 · 실패 ${result.failed}건${result.skipped ? ` · 제외 ${result.skipped}건` : ''}` : ''}
                 </span>
+                {result.details.length ? <details className="report-schedule-results"><summary>학생별 처리 결과</summary>{result.details.map((item, index) => <div key={item.id || index}><b>{item.studentName || '학생'}</b><span>{({ sent: '발송 완료', ready: '발송요청 접수', duplicate: '중복 차단 · 미발송', failed: '발송 실패', skipped: '미발송 제외' })[item.status]}{item.status === 'failed' ? ` — ${item.error || item.message || '사유 확인 필요'}` : ''}</span></div>)}</details> : null}
                 {row.last_error ? <em className="report-schedule-error">{row.last_error}</em> : null}
               </div>
               <div className="report-schedule-actions">
@@ -13376,7 +13390,7 @@ function ReportScheduleSection({ reportType, apiFetch, setMessage, refreshKey = 
                 ) : null}
               </div>
             </article>
-          ))}
+          ); })}
         </div>
       )}
     </div>
@@ -13387,6 +13401,11 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
   const [statusFilter, setStatusFilter] = useState('all');
   const [issueFilter, setIssueFilter] = useState('all');
   const [confirmSend, setConfirmSend] = useState(null);
+  const [schedulePreparation, setSchedulePreparation] = useState('');
+  const scheduleSavingRef = useRef(false);
+  const targetRequestRef = useRef(0);
+  const activityRequestRef = useRef(0);
+  const [loadedTargetDate, setLoadedTargetDate] = useState('');
   // v41-158: 예약을 만들면 목록을 다시 읽도록 하는 신호
   const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
   const [openCards, setOpenCards] = useState({});
@@ -13428,10 +13447,10 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
     cohortStudentIds ? new Set(cohortStudentIds.map(String)) : null
   ), [cohortStudentIds]);
   const sessionsForReport = useMemo(() => {
-    const base = targetsLoaded ? targetSessions : sessions;
+    const base = targetsLoaded && loadedTargetDate === plannerDate ? targetSessions : [];
     if (!cohortScopeIdSet) return base || [];
     return (base || []).filter((session) => cohortScopeIdSet.has(String(session.student_id || session.students?.id || '')));
-  }, [targetsLoaded, targetSessions, sessions, cohortScopeIdSet]);
+  }, [targetsLoaded, loadedTargetDate, plannerDate, targetSessions, cohortScopeIdSet]);
   const checksBySessionForReport = targetsLoaded ? dailyChecksBySession : checksBySession;
   const eventsBySessionForReport = targetsLoaded ? dailyEventsBySession : eventsBySession;
   const reportsBySessionForReport = targetsLoaded ? dailyReportsBySession : reportsBySession;
@@ -13442,9 +13461,11 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
   }, [plannerDate]);
 
   async function loadDailyReportTargets(date = plannerDate) {
+    const requestId = ++targetRequestRef.current;
     try {
       setTargetLoading(true);
       const data = await apiFetch(`/api/daily-report-targets?date=${date}`);
+      if (requestId !== targetRequestRef.current) return;
       setTargetSessions(data.sessions || []);
       setTargetChecks(data.checks || []);
       setTargetEvents(data.events || []);
@@ -13452,28 +13473,33 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
       setTargetReports(reports);
       setTargetSchedules(data.schedules || []);
       setTargetsLoaded(true);
+      setLoadedTargetDate(date);
       await loadDailyShareLinkStatuses(reports);
     } catch (error) {
+      if (requestId !== targetRequestRef.current) return;
       setTargetSessions([]);
       setTargetChecks([]);
       setTargetEvents([]);
       setTargetReports([]);
       setTargetSchedules([]);
       setTargetsLoaded(false);
+      setLoadedTargetDate('');
     } finally {
-      setTargetLoading(false);
+      if (requestId === targetRequestRef.current) setTargetLoading(false);
     }
   }
 
   async function loadDailyReportActivity(date = plannerDate) {
+    const requestId = ++activityRequestRef.current;
     try {
       setActivityLoading(true);
       const data = await apiFetch(`/api/report-activity?type=daily&date=${date}`);
+      if (requestId !== activityRequestRef.current) return;
       setReportActivityLogs(data.logs || []);
     } catch {
-      setReportActivityLogs([]);
+      if (requestId === activityRequestRef.current) setReportActivityLogs([]);
     } finally {
-      setActivityLoading(false);
+      if (requestId === activityRequestRef.current) setActivityLoading(false);
     }
   }
 
@@ -13920,6 +13946,10 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
   }
 
   function openSendConfirm(title, targets, mode) {
+    if (targetLoading || loadedTargetDate !== plannerDate || targets.some((session) => session.session_date !== plannerDate)) {
+      alert('선택 날짜의 자료를 불러오는 중이거나 날짜가 맞지 않습니다. 새로고침 후 다시 시도하세요.');
+      return;
+    }
     if (!targets.length) return alert('발송 대상이 없습니다.');
 
     const duplicateTargets = targets.filter((session) => ['ready', 'sent'].includes(reportsBySessionForReport[session.id]?.send_status));
@@ -13934,6 +13964,8 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
     const recipientRows = buildStudentRecipientPreviewRows(targets, 'daily', (session) => session.students || {}, sendConfig);
     const safety = getReportSendSafetySummary(sendConfig);
     setConfirmSend({
+      reportDate: plannerDate,
+      dateConfirmation: '',
       title,
       mode,
       targets,
@@ -13968,14 +14000,11 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
 
   function getBulkSendResultStatus(data) {
     if (!data || data.ok === false) return 'failed';
-    const status = String(data.report?.send_status || data.status || data.providerResult?.status || '').toLowerCase();
-    if (status === 'failed' || status === 'error') return 'failed';
-    if (status === 'ready' || status === 'queued' || status === 'accepted') return 'ready';
-    if (status === 'sent' || status === 'received' || status === 'success') return 'sent';
-    return 'sent';
+    return getReportAttemptStatus(data);
   }
 
   function getBulkSendResultLabel(status) {
+    if (status === 'duplicate') return '중복 차단 · 미발송';
     if (status === 'sent') return '발송완료';
     if (status === 'ready') return '발송대기';
     if (status === 'failed') return '발송실패';
@@ -14043,6 +14072,7 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
           sent: nextResults.filter((item) => item.status === 'sent').length,
           ready: nextResults.filter((item) => item.status === 'ready').length,
           failed: nextResults.filter((item) => item.status === 'failed').length,
+          duplicate: nextResults.filter((item) => item.status === 'duplicate').length,
           results: nextResults,
         };
       });
@@ -14054,6 +14084,7 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
   }
 
   async function executeConfirmSend() {
+    if (scheduleSavingRef.current) return;
     if (!confirmSend?.targets?.length) return;
     const safety = confirmSend.safety || getReportSendSafetySummary(sendConfig);
     if (safety.requiresAcknowledgement && !confirmSend.acknowledged) {
@@ -14071,20 +14102,34 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
       alert('발송할 학생을 한 명 이상 선택하세요.');
       return;
     }
+    if (selectedTargets.some((session) => session.session_date !== confirmSend.reportDate)) {
+      alert('리포트 기준일과 학생 자료 날짜가 다릅니다. 창을 닫고 대상을 다시 불러오세요.');
+      return;
+    }
 
     // v41-158: 예약 발송이면 지금 보내지 않고 큐에 넣습니다.
     if (confirmSend.sendMode === 'scheduled') {
       const iso = kstDateTimeToIso(confirmSend.scheduleDate, confirmSend.scheduleTime);
       const check = validateScheduledAt(iso);
       if (!check.ok) { alert(check.error); return; }
+      const dateCheck = getReportDateConfirmation(confirmSend.reportDate, check.iso);
+      if (dateCheck.required && confirmSend.dateConfirmation !== dateCheck.key) { alert(dateCheck.message); return; }
       try {
+        scheduleSavingRef.current = true;
+        for (let index = 0; index < selectedTargets.length; index += 1) {
+          setSchedulePreparation(`리포트·링크 준비 ${index + 1}/${selectedTargets.length}`);
+          await ensureDailyReportAndShareLink(selectedTargets[index], { silent: true });
+        }
+        setSchedulePreparation('날짜 확인 및 예약 저장 중...');
         const data = await apiFetch('/api/report-schedules', {
           method: 'POST',
           body: JSON.stringify({
             action: 'create',
             reportType: 'daily',
             scheduledAt: check.iso,
-            periodLabel: plannerDate,
+            periodLabel: confirmSend.reportDate,
+            reportDate: confirmSend.reportDate,
+            dateConfirmation: confirmSend.dateConfirmation,
             targets: selectedTargets.map((session) => ({
               id: session.id,
               studentName: session.students?.name || '',
@@ -14096,6 +14141,9 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
         alert(data.message || '예약했습니다.');
       } catch (error) {
         alert(error?.message || '예약에 실패했습니다.');
+      } finally {
+        scheduleSavingRef.current = false;
+        setSchedulePreparation('');
       }
       return;
     }
@@ -14215,8 +14263,12 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
   }
 
   const confirmPreviewLimit = 10;
+  const confirmDateCheck = confirmSend?.sendMode === 'scheduled'
+    ? getReportDateConfirmation(confirmSend.reportDate, kstDateTimeToIso(confirmSend.scheduleDate, confirmSend.scheduleTime)) : null;
   const confirmFinalDisabled = Boolean(confirmSend && confirmSafety && (
-    (confirmSafety.requiresAcknowledgement && !confirmSend.acknowledged)
+    schedulePreparation
+    || (confirmDateCheck?.required && confirmSend.dateConfirmation !== confirmDateCheck.key)
+    || (confirmSafety.requiresAcknowledgement && !confirmSend.acknowledged)
     || (confirmSafety.requiresTypedConfirmation && String(confirmSend.confirmPhrase || '').trim() !== confirmSafety.confirmPhrase)
   ));
 
@@ -14229,9 +14281,11 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
         </div>
         {/* v41-174: 오른쪽 칸이 420px 이상 잡혀 있어 날짜 하나만 두고도 큰 빈칸이 생겼습니다. */}
         <div className="report-head-actions report-head-date">
-          <input type="date" onClick={openNativePicker} onFocus={openNativePicker} value={plannerDate} onChange={(e) => { setPlannerDate(e.target.value); loadDailyReportTargets(e.target.value); }} />
+          <input aria-label="리포트 기준일" type="date" onClick={openNativePicker} onFocus={openNativePicker} value={plannerDate} onChange={(e) => setPlannerDate(e.target.value)} />
         </div>
       </div>
+
+      {plannerDate !== getKstDateString() ? <div className="report-date-warning" role="status"><div><strong>오늘이 아닌 {plannerDate} 자료를 보고 있습니다.</strong><span>오늘은 {getKstDateString()}입니다. 예약 발송 시 선택한 리포트 기준일을 다시 확인하세요.</span></div><button className="secondary" onClick={() => setPlannerDate(getKstDateString())}>오늘 자료로 변경</button></div> : null}
 
       {/* v41-174: 발송 상태 표시를 탭 줄 오른쪽으로 옮겨 한 줄을 줄였습니다. */}
       <div className="report-page-tabs-row">
@@ -14297,6 +14351,7 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
               <div><strong>{bulkSendRun.sent}</strong><span>발송완료</span></div>
               <div><strong>{bulkSendRun.ready}</strong><span>발송대기</span></div>
               <div><strong>{bulkSendRun.failed}</strong><span>발송실패</span></div>
+              <div><strong>{bulkSendRun.duplicate || 0}</strong><span>중복 차단 · 미발송</span></div>
             </div>
             {bulkSendRun.results?.length ? (
               <div className="bulk-result-list">
@@ -14523,16 +14578,21 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
       ) : null}
 
       {confirmSend ? (
-        <div className="modal-backdrop" {...backdropCloseProps(() => setConfirmSend(null))}>
+        <div className="modal-backdrop" {...backdropCloseProps(() => { if (!scheduleSavingRef.current) setConfirmSend(null); })}>
           <div className="send-preview-modal compact-send-modal" onClick={(event) => event.stopPropagation()}>
             <div className="popup-head">
               <div>
                 <h2>{confirmSend.title}</h2>
                 <p>{confirmSend.mode === 'single' ? '개별 발송 전 최종 확인입니다.' : '전체 발송 전 대상과 제외/불가 인원을 확인하세요.'}</p>
               </div>
-              <button onClick={() => setConfirmSend(null)}>닫기</button>
+              <button disabled={Boolean(schedulePreparation)} onClick={() => setConfirmSend(null)}>닫기</button>
             </div>
 
+            <fieldset className="report-confirm-fields" disabled={Boolean(schedulePreparation)}>
+            <div className="report-date-summary">
+              <div><span>리포트 기준일 · 이 날짜의 자료가 발송됩니다</span><strong>{confirmSend.reportDate}</strong></div>
+              <div><span>실제 발송 예정일 (한국시간)</span><strong>{confirmSend.sendMode === 'scheduled' ? (confirmSend.scheduleDate || '날짜 선택 필요') : getKstDateString()}</strong></div>
+            </div>
             <div className={`send-live-safety-card ${confirmSafety?.className || 'safe'}`}>
               <div>
                 <strong>{confirmSafety?.title || '발송 상태 확인'}</strong>
@@ -14553,7 +14613,7 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
             {confirmSend.shareLinkRows?.length ? (
               <div className="send-recipient-preview-box share-link-confirm-box">
                 <strong>리포트 링크 상태</strong>
-                <p>링크가 없거나 만료된 학생은 발송 직전에 자동 생성/재생성 후 발송합니다.</p>
+                <p>예약 시 본문과 링크가 없는 학생은 저장 전에 준비합니다. 이미 생성된 리포트 본문은 유지됩니다.</p>
                 <div className="recipient-preview-list">
                   {confirmSend.shareLinkRows.slice(0, confirmPreviewLimit).map((row) => (
                     <div key={row.id}>
@@ -14664,7 +14724,7 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
                       onClick={openNativePicker}
                       onFocus={openNativePicker}
                       value={confirmSend.scheduleDate || ''}
-                      onChange={(event) => setConfirmSend((prev) => prev ? { ...prev, scheduleDate: event.target.value } : prev)}
+                      onChange={(event) => setConfirmSend((prev) => prev ? { ...prev, scheduleDate: event.target.value, dateConfirmation: '' } : prev)}
                     />
                   </div>
                   <div className="field">
@@ -14683,6 +14743,12 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
               ) : null}
             </div>
 
+            {confirmDateCheck?.required ? <div className="report-date-warning" role="alert">
+              <div><strong>리포트 날짜가 오늘 또는 발송 예정일과 다릅니다.</strong><span>{confirmDateCheck.message}</span>
+                <label className="report-date-acknowledgement"><input type="checkbox" checked={confirmSend.dateConfirmation === confirmDateCheck.key} onChange={(event) => setConfirmSend((prev) => prev ? { ...prev, dateConfirmation: event.target.checked ? confirmDateCheck.key : '' } : prev)} /><span>{confirmSend.reportDate} 리포트를 {confirmSend.scheduleDate}에 발송하는 것이 맞습니다.</span></label>
+              </div>
+            </div> : null}
+            {schedulePreparation ? <p role="status">{schedulePreparation}</p> : null}
             <div className="popup-bottom-actions">
               <button className="secondary" onClick={() => setConfirmSend(null)}>취소</button>
               <button
@@ -14690,12 +14756,14 @@ function DailyReportsTab({ cohortStudentIds = null, cohortScopeName = '', sessio
                 onClick={executeConfirmSend}
                 disabled={confirmFinalDisabled || confirmSelectedCount === 0}
               >
-                {confirmFinalDisabled ? '확인 필요'
+                {schedulePreparation ? '리포트 준비 및 예약 중...'
+                  : confirmFinalDisabled ? '확인 필요'
                   : confirmSelectedCount === 0 ? '대상 선택 필요'
                     : confirmSend.sendMode === 'scheduled' ? `선택 ${confirmSelectedCount}명 예약`
                       : `선택 ${confirmSelectedCount}명 발송`}
               </button>
             </div>
+            </fieldset>
           </div>
         </div>
       ) : null}
@@ -15441,6 +15509,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   }
 
   function buildWeeklySendNotice(data) {
+    if (isDuplicateReportAttempt(data)) return { type: 'neutral', title: '중복 차단 · 미발송', message: DUPLICATE_REPORT_MESSAGE };
     if (!data || data.error) {
       return {
         type: 'failed',
@@ -15673,12 +15742,10 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
   // ── 위클리 리포트 전체 발송 ──
   function getWeeklyBulkResultStatus(data) {
     if (!data || data.ok === false) return 'failed';
-    const status = String(data.report?.send_status || data.status || '').toLowerCase();
-    if (status === 'failed' || status === 'error') return 'failed';
-    if (status === 'ready' || status === 'queued' || status === 'accepted') return 'ready';
-    return 'sent';
+    return getReportAttemptStatus(data);
   }
   function getWeeklyBulkResultLabel(status) {
+    if (status === 'duplicate') return '중복 차단 · 미발송';
     if (status === 'sent') return '발송완료';
     if (status === 'ready') return '발송대기';
     if (status === 'failed') return '발송실패';
@@ -15799,6 +15866,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
           sent: nextResults.filter((r) => r.status === 'sent').length,
           ready: nextResults.filter((r) => r.status === 'ready').length,
           failed: nextResults.filter((r) => r.status === 'failed').length,
+          duplicate: nextResults.filter((r) => r.status === 'duplicate').length,
           results: nextResults,
         };
       });
@@ -16170,6 +16238,7 @@ function WeeklyReportsTab({ students, apiFetch, operatingRules, setMessage, send
               <div><strong>{weeklyBulkSendRun.sent}</strong><span>발송완료</span></div>
               <div><strong>{weeklyBulkSendRun.ready}</strong><span>발송대기</span></div>
               <div><strong>{weeklyBulkSendRun.failed}</strong><span>발송실패</span></div>
+              <div><strong>{weeklyBulkSendRun.duplicate || 0}</strong><span>중복 차단 · 미발송</span></div>
             </div>
             {weeklyBulkSendRun.results?.length ? (
               <div className="bulk-result-list">
@@ -21139,6 +21208,7 @@ function ReportActivityPanel({ title, logs = [], loading = false, onRefresh, onR
   const classNameOf = (log) => getReportActivityStatus(log).className;
   const logsByStatus = {
     all: deliveryLogs,
+    duplicate: deliveryLogs.filter((log) => classNameOf(log) === 'duplicate'),
     done: deliveryLogs.filter((log) => classNameOf(log) === 'done'),
     partial: deliveryLogs.filter((log) => classNameOf(log) === 'partial'),
     pending: deliveryLogs.filter((log) => classNameOf(log) === 'pending'),
@@ -21148,11 +21218,14 @@ function ReportActivityPanel({ title, logs = [], loading = false, onRefresh, onR
   const doneCount = logsByStatus.done.length + logsByStatus.partial.length;
   const failedCount = logsByStatus.failed.length;
   const pendingCount = logsByStatus.pending.length;
+  const duplicateCount = logsByStatus.duplicate.length;
   const verdict = failedCount > 0
-    ? { tone: 'failed', text: `발송 실패 ${failedCount}건 — 확인이 필요합니다.` }
+    ? { tone: 'failed', text: `발송 실패 ${failedCount}건 · 중복 차단 ${duplicateCount}건 — 확인이 필요합니다.` }
+    : duplicateCount > 0
+      ? { tone: 'duplicate', text: `발송 완료(접수) ${doneCount}건 · 중복 차단(미발송) ${duplicateCount}건 · 대기 ${pendingCount}건` }
     : pendingCount > 0
       ? { tone: 'pending', text: `발송 완료 ${doneCount}건 · 미발송(대기) ${pendingCount}건` }
-      : { tone: 'done', text: `모두 정상 발송되었습니다 (발송 완료 ${doneCount}건).` };
+      : { tone: 'done', text: doneCount ? `발송 요청이 정상 접수되었습니다 (${doneCount}건).` : '발송 완료 기록이 없습니다.' };
 
   const filteredLogs = logsByStatus[statusFilter] || deliveryLogs;
   const listSource = showDiagnostics ? [...filteredLogs, ...diagnosticLogs] : filteredLogs;
@@ -21161,6 +21234,7 @@ function ReportActivityPanel({ title, logs = [], loading = false, onRefresh, onR
   const summaryCards = [
     ['all', '전체', logsByStatus.all.length, 'neutral'],
     ['done', '발송 완료', logsByStatus.done.length, 'done'],
+    ['duplicate', '중복 차단(미발송)', duplicateCount, 'duplicate'],
     ['failed', '발송 실패', logsByStatus.failed.length, 'failed'],
     ['pending', '미발송(대기)', logsByStatus.pending.length, 'pending'],
     ...(logsByStatus.partial.length ? [['partial', '부분 성공', logsByStatus.partial.length, 'partial']] : []),
@@ -21193,14 +21267,14 @@ function ReportActivityPanel({ title, logs = [], loading = false, onRefresh, onR
           <span>최근 48시간 발송 결과입니다. 실패 건이 있으면 사유를 확인하고 실패 건만 다시 발송하세요.</span>
         </div>
         <div className="report-activity-actions">
-          <span className="report-activity-count">발송 {deliveryLogs.length}건</span>
+          <span className="report-activity-count">처리 {deliveryLogs.length}건</span>
           <button className="secondary" onClick={onRefresh} disabled={loading}>{loading ? '조회 중...' : '새로고침'}</button>
         </div>
       </div>
 
       <div className={`delivery-verdict ${verdict.tone}`}>
         <strong>{verdict.tone === 'done' ? '✅' : verdict.tone === 'failed' ? '⚠️' : '🕒'} {verdict.text}</strong>
-        <span>알림톡은 통신사에 정상 접수되면 &lsquo;발송 완료&rsquo;로 표시됩니다. 실패 0건이면 모두 정상 발송된 것입니다.</span>
+        <span>발송 완료는 제공자 정상 접수 기준입니다. 중복 차단은 이번 요청에서 발송하지 않은 건이며, 발송 완료 수에 포함하지 않습니다.</span>
       </div>
 
       <div className="report-activity-summary interactive delivery-summary-grid">
@@ -21269,7 +21343,7 @@ function ReportActivityPanel({ title, logs = [], loading = false, onRefresh, onR
                     })}
                   </div>
                 ) : (
-                  <div className="delivery-empty-note">보호자별 상세 결과가 없는 과거 로그입니다. SOLAPI 발송 내역과 함께 확인하세요.</div>
+                  <div className="delivery-empty-note">{isDuplicateReportAttempt(log) ? DUPLICATE_REPORT_MESSAGE : '보호자별 상세 결과가 없는 과거 로그입니다. SOLAPI 발송 내역과 함께 확인하세요.'}</div>
                 )}
 
                 {payload.errorMessage || payload.reason || payload.message ? (

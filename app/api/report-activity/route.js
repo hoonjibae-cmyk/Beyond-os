@@ -1,6 +1,8 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { isAuthorized, unauthorizedResponse } from '../../../lib/auth';
 import { cleanupOldUserActionLogs } from '../../../lib/actionLog';
+import { isoToKstParts } from '../../../lib/reportSchedules';
+import { isDuplicateReportAttempt, normalizeReportActivityLogs } from '../../../lib/reportDelivery';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +10,7 @@ const DAILY_ACTIONS = [
   'daily_report.preview',
   'daily_report.prepare',
   'daily_report.send',
+  'daily_report.duplicate',
   'daily_report.manual_sent',
   'daily_report.failed',
   'daily_report.webhook_test',
@@ -17,6 +20,7 @@ const WEEKLY_ACTIONS = [
   'weekly_report.save',
   'weekly_report.preview',
   'weekly_report.send',
+  'weekly_report.duplicate',
   'weekly_report.failed',
   'weekly_report.webhook_test',
 ];
@@ -39,8 +43,8 @@ function toDate(value) {
 function matchesDailyDate(log, date) {
   if (!date) return true;
   const payload = log.payload || {};
-  return String(payload.reportDate || log.created_at || '').slice(0, 10) === date
-    || String(log.created_at || '').slice(0, 10) === date;
+  return String(payload.reportDate || '').slice(0, 10) === date
+    || isoToKstParts(log.created_at).date === date;
 }
 
 function matchesWeeklyRange(log, start, end) {
@@ -51,7 +55,7 @@ function matchesWeeklyRange(log, start, end) {
 
   if (logStart && logEnd) return logStart <= end && logEnd >= start;
 
-  const created = String(log.created_at || '').slice(0, 10);
+  const created = isoToKstParts(log.created_at).date;
   return created >= start && created <= end;
 }
 
@@ -108,7 +112,7 @@ export async function GET(request) {
 
     if (error) throw error;
 
-    const logs = (data || []).filter((log) => {
+    const logs = normalizeReportActivityLogs(data || []).filter((log) => {
       if (!matchesReportType(log, type)) return false;
       return type === 'weekly' ? matchesWeeklyRange(log, start, end) : matchesDailyDate(log, date);
     });
@@ -122,10 +126,11 @@ export async function GET(request) {
       logs,
       summary: {
         total: logs.length,
-        sent: logs.filter((log) => ['daily_report.send', 'weekly_report.send', 'daily_report.manual_sent'].includes(log.action_type)).length,
+        sent: logs.filter((log) => !isDuplicateReportAttempt(log) && ['daily_report.send', 'weekly_report.send', 'daily_report.manual_sent'].includes(log.action_type)).length,
+        duplicate: logs.filter((log) => !log.action_type.startsWith('kakao_webhook.') && isDuplicateReportAttempt(log)).length,
         failed: logs.filter(hasRecipientFailure).length,
         partial: logs.filter(hasPartialSuccess).length,
-        ready: logs.filter((log) => ['daily_report.prepare'].includes(log.action_type) || ['received', 'queued', 'accepted', 'ready'].includes(String(log.payload?.status || '').toLowerCase())).length,
+        ready: logs.filter((log) => !isDuplicateReportAttempt(log) && (['daily_report.prepare'].includes(log.action_type) || ['received', 'queued', 'accepted', 'ready'].includes(String(log.payload?.status || '').toLowerCase()))).length,
       },
     });
   } catch (error) {

@@ -385,8 +385,9 @@ export async function POST(request) {
         report_date: session.session_date,
         report_text: reportText,
         mentor_comment: mentorComment || null,
-        send_status: 'draft',
-        sent_channel: 'kakao_copy',
+        // Regenerating text must not erase an existing delivery record before
+        // a duplicate-blocked send attempt returns the original report.
+        ...(!existingReport ? { send_status: 'draft', sent_channel: 'kakao_copy' } : {}),
         created_by: body.adminName || '관리자',
       }, { onConflict: 'session_id' })
       .select()

@@ -17,7 +17,9 @@ import {
   normalizeTargets,
   validateScheduledAt,
   buildScheduleLabel,
+  validateDailySchedule,
 } from '../../../lib/reportSchedules';
+import { summarizeReportSchedule } from '../../../lib/reportDelivery';
 import { runDueReportSchedules } from '../cron/report-send/runner';
 
 export const dynamic = 'force-dynamic';
@@ -48,7 +50,7 @@ export async function GET(request) {
     const { data, error } = await query;
     if (error) throw error;
 
-    const rows = data || [];
+    const rows = (data || []).map((row) => ({ ...row, result: row.result ? summarizeReportSchedule(row.result) : row.result }));
     return Response.json({
       ok: true,
       rows,
@@ -92,6 +94,15 @@ export async function POST(request) {
       const check = validateScheduledAt(body.scheduledAt);
       if (!check.ok) return Response.json({ error: check.error }, { status: 400 });
 
+      let periodLabel = String(body.periodLabel || '').slice(0, 60);
+      if (reportType === 'daily') {
+        const validation = await validateDailySchedule(supabase, {
+          targets, reportDate: body.reportDate, scheduledAt: check.iso, dateConfirmation: body.dateConfirmation,
+        });
+        if (!validation.ok) return Response.json(validation, { status: 409 });
+        periodLabel = validation.reportDate;
+      }
+
       const { data, error } = await supabase
         .from('report_send_schedules')
         .insert({
@@ -100,7 +111,7 @@ export async function POST(request) {
           status: 'pending',
           targets,
           target_count: targets.length,
-          label: buildScheduleLabel(reportType, targets, String(body.periodLabel || '').slice(0, 60)),
+          label: buildScheduleLabel(reportType, targets, periodLabel),
           memo: String(body.memo || '').slice(0, 300) || null,
           created_by: actorName,
         })
@@ -113,7 +124,7 @@ export async function POST(request) {
         targetType: 'report_schedule',
         targetId: data.id,
         targetName: data.label || '',
-        payload: { reportType, scheduledAt: check.iso, count: targets.length },
+        payload: { reportType, scheduledAt: check.iso, reportDate: reportType === 'daily' ? periodLabel : null, dateConfirmation: body.dateConfirmation || null, count: targets.length },
       }).catch(() => {});
 
       return Response.json({

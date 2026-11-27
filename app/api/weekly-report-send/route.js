@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { isDuplicateReportAttempt, DUPLICATE_REPORT_MESSAGE } from '../../../lib/reportDelivery';
 import { isStudentInactiveForWeek, WEEKLY_NO_ACTIVITY_CODE, WEEKLY_NO_ACTIVITY_MESSAGE } from '../../../lib/weeklyActivity';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
@@ -208,6 +209,7 @@ function normalizeWebhookResult(response, json, text) {
   return {
     configured: true,
     ok,
+    duplicate: json?.duplicate === true,
     status: mappedStatus,
     providerStatus: providerStatus || (response.ok ? 'received' : 'failed'),
     provider: json?.provider || 'webhook',
@@ -524,6 +526,17 @@ export async function POST(request) {
     }
 
     const result = await callWebhook(sendPayload);
+    if (isDuplicateReportAttempt(result)) {
+      await writeUserActionLog(supabase, request, {
+        actionType: 'weekly_report.duplicate', targetType: 'weekly_report', targetId: report.id, targetName: student?.name,
+        payload: {
+          status: 'duplicate', duplicate: true, message: DUPLICATE_REPORT_MESSAGE,
+          studentId: student?.id, startDate: report.start_date, endDate: report.end_date,
+          requestId: result.requestId || null, idempotencyKey: sendPayload.idempotencyKey,
+        },
+      });
+      return Response.json({ ok: true, status: 'duplicate', duplicate: true, report, message: DUPLICATE_REPORT_MESSAGE });
+    }
     const nowIso = new Date().toISOString();
     const sendStatus = result.status;
     const sendError = sendStatus === 'failed' ? (result.message || '발송 실패') : null;

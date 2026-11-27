@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { isDuplicateReportAttempt, DUPLICATE_REPORT_MESSAGE } from '../../../lib/reportDelivery';
 import { getAuthorizedUser, isAuthorized, unauthorizedResponse, requireTabPermission } from '../../../lib/auth';
 import { writeUserActionLog } from '../../../lib/actionLog';
 import { ensureReportShareLink } from '../../../lib/reportShare';
@@ -460,6 +461,7 @@ function normalizeWebhookResult(response, json, text) {
   return {
     configured: true,
     ok,
+    duplicate: json?.duplicate === true,
     status: mappedStatus,
     providerStatus: providerStatus || (response.ok ? 'received' : 'failed'),
     provider: json?.provider || 'webhook',
@@ -901,6 +903,18 @@ export async function POST(request) {
 
     if (action === 'send') {
       const providerResult = await callWebhook(sendPayload);
+      if (isDuplicateReportAttempt(providerResult)) {
+        await writeUserActionLog(supabase, request, {
+          actionType: 'daily_report.duplicate', targetType: 'daily_report', targetId: report.id, targetName: student.name,
+          payload: {
+            status: 'duplicate', duplicate: true, message: DUPLICATE_REPORT_MESSAGE,
+            studentId: student.id, sessionId: session.id, reportDate: session.session_date,
+            requestId: providerResult.requestId || null, idempotencyKey: sendPayload.idempotencyKey,
+          },
+        });
+        // Preserve the original report's sent_at and send_status.
+        return Response.json({ ok: true, mode: 'send', status: 'duplicate', duplicate: true, report, sendPayload, session: sessionForPreview, providerResult, message: DUPLICATE_REPORT_MESSAGE });
+      }
       const sendStatus = providerResult.status || (providerResult.ok ? 'sent' : 'ready');
       const sentAt = providerResult.ok ? new Date().toISOString() : null;
       const errorMessage = providerResult.ok ? null : (providerResult.message || '카카오 발송 API 호출 실패 또는 미연동');
